@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Permanent+Marker&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-marker: "Permanent Marker", cursive;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --color-brand-red: #D31F24;
+  --color-brand-red-hover: #A81418;
+  --color-brand-dark: #0D0D0C;
+  --color-brand-charcoal: #181818;
+  --color-brand-gold: #F2C94C;
+  --color-brand-cream: #FAF8F5;
+  
+  /* Additional Bento Theme Variables adapted to Red/Dark style */
+  --color-bento-green: #F2C94C;
+  --color-bento-green-light: #F4D368;
+  --color-bento-beige: #251E1E;
+  --color-bento-charcoal: #FFFFFF;
+}
+
+/* Custom styles for high-fidelity food ordering app */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0D0D0C;
+}
+::-webkit-scrollbar-thumb {
+  background: #D31F24;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #A81418;
+}
+
+/* Custom modern borders and shadows to simulate bento dividers */
+.bento-border {
+  border: 2px solid rgba(211, 31, 36, 0.15);
+}
+.bento-card-green {
+  background-color: #181818;
+  color: #FFFFFF;
+}
+.bento-card-beige {
+  background-color: #251E1E;
+  color: #FFFFFF;
+}
+.bento-card-gold {
+  background-color: #F2C94C;
+  color: #121212;
+}
+.bento-card-orange {
+  background-color: #D31F24;
+  color: #FFFFFF;
+}
+
+

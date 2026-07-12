@@ -1,0 +1,6 @@
+{
+  "name": "Curvada's Kitchen",
+  "description": "An interactive web ordering application for Curvada's Kitchen, offering quick bento, silog, and rice bowl meals inspired by Filipino flavor, built with real-time order status tracking and an integrated chef kitchen view.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
