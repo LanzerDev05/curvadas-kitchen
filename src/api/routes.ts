@@ -43,7 +43,7 @@ apiRouter.post('/orders/place', async (req: Request, res: Response) => {
 // 3. Update Order Status
 apiRouter.post('/orders/status', async (req: Request, res: Response) => {
   try {
-    const { orderId, status, logs } = req.body;
+    const { orderId, status, logs, cookingStartTime, estimatedPrepTime } = req.body;
     if (!orderId || !status) {
       res.status(400).json({ error: 'Missing orderId or status' });
       return;
@@ -52,7 +52,40 @@ apiRouter.post('/orders/status', async (req: Request, res: Response) => {
     const db = await readDB();
     db.orders = db.orders.map((o: Order) => {
       if (o.id === orderId) {
-        return { ...o, status, logs };
+        const updatedOrder = { ...o, status, logs };
+        if (cookingStartTime !== undefined) updatedOrder.cookingStartTime = cookingStartTime;
+        if (estimatedPrepTime !== undefined) updatedOrder.estimatedPrepTime = estimatedPrepTime;
+        return updatedOrder;
+      }
+      return o;
+    });
+
+    await writeDB(db);
+    res.json({ success: true, db });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3.5. Update Cooked Items and Staff Name in Order
+apiRouter.post('/orders/cook-item', async (req: Request, res: Response) => {
+  try {
+    const { orderId, cookedItemIds, cookedBy, estimatedPrepTime, cookingStartTime, startedItemIds } = req.body;
+    if (!orderId) {
+      res.status(400).json({ error: 'Missing orderId' });
+      return;
+    }
+
+    const db = await readDB();
+    db.orders = db.orders.map((o: Order) => {
+      if (o.id === orderId) {
+        const updated = { ...o };
+        if (cookedItemIds !== undefined) updated.cookedItemIds = cookedItemIds;
+        if (cookedBy !== undefined) updated.cookedBy = cookedBy;
+        if (estimatedPrepTime !== undefined) updated.estimatedPrepTime = estimatedPrepTime;
+        if (cookingStartTime !== undefined) updated.cookingStartTime = cookingStartTime;
+        if (startedItemIds !== undefined) updated.startedItemIds = startedItemIds;
+        return updated;
       }
       return o;
     });

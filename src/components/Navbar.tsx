@@ -1,6 +1,7 @@
 import React from 'react';
 import Logo from './Logo';
-import { ShoppingBag, ClipboardList, Utensils, History, MapPin, ChefHat, Users } from 'lucide-react';
+import { ShoppingBag, ClipboardList, Utensils, History, MapPin, ChefHat, Users, User, LogOut } from 'lucide-react';
+import { CustomerInfo } from '../types';
 
 interface NavbarProps {
   activeTab: 'home' | 'menu' | 'tracker' | 'history' | 'chef';
@@ -10,6 +11,9 @@ interface NavbarProps {
   hasActiveOrder: boolean;
   onGroupOrderClick: () => void;
   isGroupActive: boolean;
+  onLoginClick: () => void;
+  loggedInCustomer: CustomerInfo | null;
+  onLogout: () => void;
 }
 
 export default function Navbar({
@@ -20,6 +24,9 @@ export default function Navbar({
   hasActiveOrder,
   onGroupOrderClick,
   isGroupActive,
+  onLoginClick,
+  loggedInCustomer,
+  onLogout,
 }: NavbarProps) {
   return (
     <nav className="sticky top-0 z-40 bg-[#0D0D0C]/90 backdrop-blur-md border-b-2 border-white/5 py-4 px-4 md:px-8">
@@ -97,20 +104,29 @@ export default function Navbar({
         {/* Right Controls - Action and Chef Hat */}
         <div className="flex items-center gap-3">
           
-          {/* Chef Kitchen View Toggle (Interactive Admin Role) */}
-          <button
-            id="nav-chef-toggle"
-            onClick={() => setActiveTab(activeTab === 'chef' ? 'menu' : 'chef')}
-            title="Chef Kitchen Dashboard"
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border-2 transition-all ${
-              activeTab === 'chef'
-                ? 'bg-brand-gold text-black border-brand-gold font-black shadow-lg shadow-brand-gold/10'
-                : 'bg-[#181818] text-brand-gold border-brand-gold/20 hover:border-brand-gold hover:bg-brand-gold/5'
-            }`}
-          >
-            <ChefHat className="w-4 h-4" />
-            <span className="hidden sm:inline">Kitchen View</span>
-          </button>
+          {/* Customer Login / Register Button */}
+          {loggedInCustomer ? (
+            <div className="flex items-center gap-2 bg-[#181818] border border-white/5 pl-3 pr-2 py-1.5 rounded-xl text-xs font-bold text-gray-300">
+              <User className="w-3.5 h-3.5 text-brand-red" />
+              <span className="max-w-[80px] sm:max-w-[120px] truncate">{loggedInCustomer.name}</span>
+              <button
+                onClick={onLogout}
+                title="Logout Customer"
+                className="p-1 hover:bg-white/5 rounded-lg text-gray-500 hover:text-brand-red transition-all ml-1 focus:outline-none"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              id="navbar-login-btn"
+              onClick={onLoginClick}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#181818] text-white border border-white/5 hover:border-brand-red hover:bg-[#222222] transition-all focus:outline-none"
+            >
+              <User className="w-4 h-4" />
+              <span>Login</span>
+            </button>
+          )}
 
           {/* Group Order Button */}
           <button

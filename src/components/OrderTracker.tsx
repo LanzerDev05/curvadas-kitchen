@@ -18,6 +18,14 @@ export default function OrderTracker({
   onUpdateOrderStatus,
 }: OrderTrackerProps) {
   const [riderProgress, setRiderProgress] = useState(0); // 0 to 100% on the map
+  const [timeTick, setTimeTick] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeTick((t) => t + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const confirmedItemIds = activeOrder?.confirmedItemIds || [];
 
@@ -110,6 +118,32 @@ export default function OrderTracker({
     return 'upcoming';
   };
 
+  const estimatedTimeText = (() => {
+    if (status === 'delivered') return 'Delivered 🎉';
+    if (status === 'cancelled') return 'Cancelled ❌';
+    
+    if (status === 'preparing' && activeOrder?.cookingStartTime && activeOrder?.estimatedPrepTime) {
+      const startMs = new Date(activeOrder.cookingStartTime).getTime();
+      const durationMs = activeOrder.estimatedPrepTime * 60 * 1000;
+      const elapsedMs = Date.now() - startMs;
+      const remainingMs = durationMs - elapsedMs;
+      const isOverdue = remainingMs <= 0;
+
+      const absDiffSec = Math.ceil(Math.abs(remainingMs) / 1000);
+      const mins = Math.floor(absDiffSec / 60);
+      const secs = absDiffSec % 60;
+      const formatted = `${mins}:${secs.toString().padStart(2, '0')}`;
+      
+      return isOverdue ? `${formatted} overdue ⚠️` : `${formatted} remaining ⏳`;
+    }
+
+    if (status === 'dispatched') {
+      return 'Out for Delivery 🏍️';
+    }
+
+    return 'Pending Accept ⏳';
+  })();
+
   return (
     <div className="py-8 px-4 md:px-8 max-w-5xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       
@@ -132,7 +166,7 @@ export default function OrderTracker({
             <div className="text-left sm:text-right">
               <span className="text-gray-500 text-[10px] uppercase tracking-wider block font-bold">Est. Arrival Time</span>
               <span className="text-brand-gold font-display font-black text-sm uppercase tracking-tight">
-                {status === 'delivered' ? 'Delivered 🎉' : status === 'cancelled' ? 'Cancelled ❌' : '15-20 Mins'}
+                {estimatedTimeText}
               </span>
             </div>
           </div>

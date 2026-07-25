@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CartItem, CustomerInfo } from '../types';
 import { X, Truck, Store, MapPin, CreditCard, ShieldCheck, Loader2 } from 'lucide-react';
 
@@ -7,6 +7,7 @@ interface CheckoutModalProps {
   onClose: () => void;
   cartItems: CartItem[];
   onSubmitOrder: (customer: CustomerInfo, paymentMethod: 'cod' | 'ewallet' | 'card') => void;
+  loggedInCustomer: CustomerInfo | null;
 }
 
 export default function CheckoutModal({
@@ -14,6 +15,7 @@ export default function CheckoutModal({
   onClose,
   cartItems,
   onSubmitOrder,
+  loggedInCustomer,
 }: CheckoutModalProps) {
   const [name, setName] = useState(() => localStorage.getItem('curvada_cust_name') || '');
   const [phone, setPhone] = useState(() => localStorage.getItem('curvada_cust_phone') || '');
@@ -22,6 +24,23 @@ export default function CheckoutModal({
   const [orderType, setOrderType] = useState<'delivery' | 'pickup'>(() => (localStorage.getItem('curvada_cust_ordertype') as 'delivery' | 'pickup') || 'delivery');
   const [tableNumber, setTableNumber] = useState(() => localStorage.getItem('curvada_cust_tablenumber') || '');
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'ewallet' | 'card'>(() => (localStorage.getItem('curvada_cust_paymentmethod') as 'cod' | 'ewallet' | 'card') || 'cod');
+
+  // Synchronize inputs when modal opens or loggedInCustomer changes
+  useEffect(() => {
+    if (isOpen) {
+      if (loggedInCustomer) {
+        setName(loggedInCustomer.name);
+        setPhone(loggedInCustomer.phone);
+        setEmail(loggedInCustomer.email);
+        setAddress(loggedInCustomer.address);
+      } else {
+        setName(localStorage.getItem('curvada_cust_name') || '');
+        setPhone(localStorage.getItem('curvada_cust_phone') || '');
+        setEmail(localStorage.getItem('curvada_cust_email') || '');
+        setAddress(localStorage.getItem('curvada_cust_address') || '');
+      }
+    }
+  }, [isOpen, loggedInCustomer]);
   
   // Payment Simulation States
   const [ewalletProvider, setEwalletProvider] = useState<'gcash' | 'maya'>('gcash');

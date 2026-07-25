@@ -31,6 +31,7 @@ export interface MenuItem {
     title: string;
     choices: MenuOption[];
   }[];
+  estimatedPrepTime?: number;
 }
 
 export interface SelectedOption {
@@ -76,6 +77,11 @@ export interface Order {
   isGroupOrder?: boolean;
   groupSessionId?: string;
   confirmedItemIds?: string[];
+  cookingStartTime?: string;
+  estimatedPrepTime?: number;
+  cookedItemIds?: string[];
+  startedItemIds?: string[];
+  cookedBy?: string;
 }
 
 export interface GroupMember {

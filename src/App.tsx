@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { MenuItem, MenuOption, CartItem, Order, CustomerInfo, OrderStatus, OrderLog, GroupMember, GroupCartItem, GroupOrderSession, IngredientStock } from './types';
 import { MENU_ITEMS } from './data/menu';
 import Navbar from './components/Navbar';
@@ -11,6 +12,7 @@ import OrderTracker from './components/OrderTracker';
 import AdminPanel from './components/AdminPanel';
 import OrderHistory from './components/OrderHistory';
 import GroupOrderPanel from './components/GroupOrderPanel';
+import CustomerAuthModal from './components/CustomerAuthModal';
 import { ShoppingBag, ArrowRight, Utensils, ChefHat, Heart, Users } from 'lucide-react';
 
 // --- MOCK SEED DATA FOR KITCHEN ENGAGEMENT ---
@@ -88,11 +90,52 @@ const SEED_ORDERS: Order[] = [
 ];
 
 export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  );
+}
+
+function AppContent() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Compute activeTab from URL path
+  const activeTab = useMemo(() => {
+    const path = location.pathname;
+    if (path.startsWith('/portal')) return 'chef';
+    if (path === '/menu') return 'menu';
+    if (path === '/tracker') return 'tracker';
+    if (path === '/history') return 'history';
+    return 'home';
+  }, [location.pathname]);
+
+  const setActiveTab = (tab: 'home' | 'menu' | 'tracker' | 'history' | 'chef') => {
+    if (tab === 'chef') {
+      navigate('/portal/login');
+    } else if (tab === 'home') {
+      navigate('/');
+    } else {
+      navigate(`/${tab}`);
+    }
+  };
+
   // --- STATE HOOKS ---
-  const [activeTab, setActiveTab] = useState<'home' | 'menu' | 'tracker' | 'history' | 'chef'>('home');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+
+  // Storefront customer auth states
+  const [loggedInCustomer, setLoggedInCustomer] = useState<CustomerInfo | null>(() => {
+    try {
+      const cached = localStorage.getItem('curvada_logged_customer');
+      return cached ? JSON.parse(cached) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
@@ -166,7 +209,7 @@ export default function App() {
       quantity,
       unit,
       lowStockAlert,
-      costPerUnit: costPerUnit !== undefined ? costPerUnit : (unit === 'pcs' ? 15.00 : unit === 'cans' ? 45.00 : unit === 'ml' ? 0.08 : unit === 'kg' ? 150.00 : 0.05)
+      costPerUnit: costPerUnit !== undefined ? costPerUnit : (unit === 'pcs' ? 15.00 : unit === 'cans' ? 45.00 : unit === 'ml' ? 0.08 : unit === 'L' ? 80.00 : unit === 'kg' ? 150.00 : 0.05)
     };
     saveIngredientsInventory([...ingredientsInventory, newIng]);
   };
@@ -1283,7 +1326,12 @@ export default function App() {
   };
 
   // Kitchen Chef Updates (Status Progression)
-  const handleUpdateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
+  const handleUpdateOrderStatus = async (
+    orderId: string, 
+    newStatus: OrderStatus, 
+    cookingStartTime?: string, 
+    estimatedPrepTime?: number
+  ) => {
     const o = orders.find(ord => ord.id === orderId);
     if (!o) return;
     const logs = [
@@ -1295,11 +1343,20 @@ export default function App() {
       },
     ];
 
+    let resolvedStart = cookingStartTime;
+    let resolvedPrepTime = estimatedPrepTime;
+
     try {
       const res = await fetch('/api/orders/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, status: newStatus, logs })
+        body: JSON.stringify({ 
+          orderId, 
+          status: newStatus, 
+          logs,
+          cookingStartTime: resolvedStart,
+          estimatedPrepTime: resolvedPrepTime
+        })
       });
       const data = await res.json();
       setOrders(data.db.orders);
@@ -1307,11 +1364,250 @@ export default function App() {
       console.error(e);
       const updated = orders.map((o) => {
         if (o.id === orderId) {
-          return { ...o, status: newStatus, logs };
+          const updatedO = { ...o, status: newStatus, logs };
+          if (resolvedStart !== undefined) updatedO.cookingStartTime = resolvedStart;
+          if (resolvedPrepTime !== undefined) updatedO.estimatedPrepTime = resolvedPrepTime;
+          return updatedO;
         }
         return o;
       });
       setOrders(updated);
+    }
+  };
+
+  const handleToggleItemCooked = async (orderId: string, itemId: string) => {
+    const o = orders.find(ord => ord.id === orderId);
+    if (!o) return;
+    const cooked = o.cookedItemIds || [];
+    const updatedCooked = cooked.includes(itemId)
+      ? cooked.filter(id => id !== itemId)
+      : [...cooked, itemId];
+
+    const started = o.startedItemIds || [];
+    const updatedStarted = started.includes(itemId) ? started : [...started, itemId];
+
+    // Calculate remaining prep time for undone items
+    const undoneItems = o.items.filter(item => !updatedCooked.includes(item.id));
+    
+    let newPrepTime = o.estimatedPrepTime;
+    let newStartTime = o.cookingStartTime;
+    
+    if (!newStartTime && undoneItems.length > 0) {
+      newStartTime = new Date().toISOString();
+      const itemTimes = undoneItems.map(item => {
+        const match = menuItems.find(m => m.id === item.menuItem.id);
+        return match?.estimatedPrepTime || item.menuItem.estimatedPrepTime || 10;
+      });
+      const maxTime = Math.max(...itemTimes);
+      const totalQty = undoneItems.reduce((sum, item) => sum + item.quantity, 0);
+      newPrepTime = maxTime + (totalQty - 1) * 2;
+    } else if (newStartTime && undoneItems.length > 0) {
+      // Auto-compute remaining time based on remaining menu items
+      const itemTimes = undoneItems.map(item => {
+        const match = menuItems.find(m => m.id === item.menuItem.id);
+        return match?.estimatedPrepTime || item.menuItem.estimatedPrepTime || 10;
+      });
+      const maxTime = Math.max(...itemTimes);
+      const totalQty = undoneItems.reduce((sum, item) => sum + item.quantity, 0);
+      const remainingPrepTime = maxTime + (totalQty - 1) * 2;
+
+      // Calculate elapsed minutes since cooking started
+      const elapsedMs = Date.now() - new Date(newStartTime).getTime();
+      const elapsedMins = elapsedMs / (60 * 1000);
+      newPrepTime = Math.max(1, Math.round(elapsedMins + remainingPrepTime));
+    } else if (undoneItems.length === 0) {
+      // All items completed
+      if (!newStartTime) newStartTime = new Date().toISOString();
+      const elapsedMs = Date.now() - new Date(newStartTime).getTime();
+      const elapsedMins = elapsedMs / (60 * 1000);
+      newPrepTime = Math.max(1, Math.round(elapsedMins));
+    }
+
+    try {
+      const res = await fetch('/api/orders/cook-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          orderId, 
+          cookedItemIds: updatedCooked, 
+          startedItemIds: updatedStarted,
+          estimatedPrepTime: newPrepTime,
+          cookingStartTime: newStartTime
+        })
+      });
+      const data = await res.json();
+      setOrders(data.db.orders);
+    } catch (e) {
+      console.error(e);
+      const updated = orders.map((ord) => {
+        if (ord.id === orderId) {
+          return { 
+            ...ord, 
+            cookedItemIds: updatedCooked, 
+            startedItemIds: updatedStarted,
+            estimatedPrepTime: newPrepTime, 
+            cookingStartTime: newStartTime || undefined 
+          };
+        }
+        return ord;
+      });
+      setOrders(updated);
+    }
+  };
+
+  const handleStartItemCooking = async (orderId: string, itemId: string) => {
+    const o = orders.find(ord => ord.id === orderId);
+    if (!o) return;
+    const started = o.startedItemIds || [];
+    const updatedStarted = started.includes(itemId) ? started : [...started, itemId];
+
+    // If order timer is not started yet, start it now!
+    let newPrepTime = o.estimatedPrepTime;
+    let newStartTime = o.cookingStartTime;
+    if (!newStartTime) {
+      newStartTime = new Date().toISOString();
+      const itemTimes = o.items.map(item => {
+        const match = menuItems.find(m => m.id === item.menuItem.id);
+        return match?.estimatedPrepTime || item.menuItem.estimatedPrepTime || 10;
+      });
+      const maxTime = itemTimes.length > 0 ? Math.max(...itemTimes) : 10;
+      const totalQty = o.items.reduce((sum, item) => sum + item.quantity, 0);
+      newPrepTime = maxTime + (totalQty - 1) * 2;
+    }
+
+    try {
+      const res = await fetch('/api/orders/cook-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          orderId, 
+          startedItemIds: updatedStarted,
+          cookingStartTime: newStartTime,
+          estimatedPrepTime: newPrepTime
+        })
+      });
+      const data = await res.json();
+      setOrders(data.db.orders);
+    } catch (e) {
+      console.error(e);
+      const updated = orders.map((ord) => {
+        if (ord.id === orderId) {
+          return { 
+            ...ord, 
+            startedItemIds: updatedStarted, 
+            cookingStartTime: newStartTime || undefined, 
+            estimatedPrepTime: newPrepTime 
+          };
+        }
+        return ord;
+      });
+      setOrders(updated);
+    }
+  };
+
+  const handleSetCookedBy = async (orderId: string, staffName: string) => {
+    try {
+      const res = await fetch('/api/orders/cook-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, cookedBy: staffName })
+      });
+      const data = await res.json();
+      setOrders(data.db.orders);
+    } catch (e) {
+      console.error(e);
+      const updated = orders.map((ord) => {
+        if (ord.id === orderId) {
+          return { ...ord, cookedBy: staffName };
+        }
+        return ord;
+      });
+      setOrders(updated);
+    }
+  };
+
+  const handleGenerateRandomOrder = async () => {
+    const customers = [
+      { name: 'Juan Dela Cruz', phone: '09171234567', email: 'juan@gmail.com', orderType: 'pickup', tableNumber: '4' },
+      { name: 'Maria Clara', phone: '09187654321', email: 'maria@gmail.com', orderType: 'delivery', address: '456 Rizal Ave, Pasay City' },
+      { name: 'Jose Rizal', phone: '09199998888', email: 'jose@gmail.com', orderType: 'pickup', tableNumber: '7' },
+      { name: 'Andres Bonifacio', phone: '09205554444', email: 'andres@gmail.com', orderType: 'delivery', address: '789 Mabini St, Manila' },
+      { name: 'Gabriela Silang', phone: '09214443333', email: 'gabriela@gmail.com', orderType: 'delivery', address: '12 Pioneer St, Mandaluyong' },
+      { name: 'Melchora Aquino', phone: '09223332222', email: 'melchora@gmail.com', orderType: 'pickup', tableNumber: '2' },
+      { name: 'Arnel Cruz', phone: '09234567890', email: 'arnel@gmail.com', orderType: 'delivery', address: 'Block 5 Lot 12, Metro Manila' }
+    ];
+
+    const randomCustomer = customers[Math.floor(Math.random() * customers.length)];
+    const orderType = randomCustomer.orderType as 'pickup' | 'delivery';
+
+    // Pick 1 to 3 random menu items
+    const numberOfItems = Math.floor(Math.random() * 3) + 1;
+    const selectedItems = [];
+    let totalAmount = 0;
+
+    const shuffledMenu = [...menuItems].sort(() => 0.5 - Math.random());
+    const itemsToPick = shuffledMenu.slice(0, numberOfItems);
+
+    for (const menuItem of itemsToPick) {
+      const quantity = Math.floor(Math.random() * 3) + 1;
+      const selectedOptions: Record<string, string> = {};
+      let itemPrice = menuItem.price;
+
+      if (menuItem.customizableOptions) {
+        menuItem.customizableOptions.forEach(opt => {
+          const choice = opt.choices[Math.floor(Math.random() * opt.choices.length)];
+          selectedOptions[opt.title] = choice.name;
+          itemPrice += choice.price;
+        });
+      }
+
+      selectedItems.push({
+        id: `item-${Math.random().toString(36).substr(2, 9)}`,
+        menuItem,
+        quantity,
+        selectedOptions,
+        price: itemPrice
+      });
+
+      totalAmount += itemPrice * quantity;
+    }
+
+    const randomOrderId = `ord-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    const newOrder: Order = {
+      id: randomOrderId,
+      items: selectedItems,
+      totalAmount,
+      customer: {
+        name: randomCustomer.name,
+        phone: randomCustomer.phone,
+        email: randomCustomer.email,
+        orderType,
+        tableNumber: orderType === 'pickup' ? randomCustomer.tableNumber : undefined,
+        address: orderType === 'delivery' ? randomCustomer.address : undefined
+      },
+      paymentMethod: ['cod', 'ewallet', 'card'][Math.floor(Math.random() * 3)] as 'cod' | 'ewallet' | 'card',
+      status: 'pending',
+      timestamp: new Date().toISOString(),
+      logs: [
+        {
+          status: 'pending',
+          timestamp: new Date().toISOString(),
+          note: 'Sample order generated by system simulator.'
+        }
+      ]
+    };
+
+    try {
+      const res = await fetch('/api/orders/place', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: newOrder })
+      });
+      const data = await res.json();
+      setOrders(data.db.orders);
+    } catch (e) {
+      console.error(e);
+      setOrders([newOrder, ...orders]);
     }
   };
 
@@ -1468,15 +1764,23 @@ export default function App() {
     <div className="bg-[#0D0D0C] min-h-screen text-white font-sans selection:bg-brand-red selection:text-white flex flex-col justify-between">
       
       {/* Navbar Header */}
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        cartCount={cartItemsCount}
-        onCartClick={() => setIsCartOpen(true)}
-        hasActiveOrder={!!activeOrder && (activeOrder.status === 'pending' || activeOrder.status === 'preparing' || activeOrder.status === 'dispatched')}
-        onGroupOrderClick={() => setIsGroupPanelOpen(true)}
-        isGroupActive={!!groupSession}
-      />
+      {activeTab !== 'chef' && (
+        <Navbar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          cartCount={cartItemsCount}
+          onCartClick={() => setIsCartOpen(true)}
+          hasActiveOrder={!!activeOrder && (activeOrder.status === 'pending' || activeOrder.status === 'preparing' || activeOrder.status === 'dispatched')}
+          onGroupOrderClick={() => setIsGroupPanelOpen(true)}
+          isGroupActive={!!groupSession}
+          onLoginClick={() => setIsAuthModalOpen(true)}
+          loggedInCustomer={loggedInCustomer}
+          onLogout={() => {
+            setLoggedInCustomer(null);
+            localStorage.removeItem('curvada_logged_customer');
+          }}
+        />
+      )}
 
       {/* Group Order Active Alert Banner */}
       {groupSession && (
@@ -1592,6 +1896,11 @@ export default function App() {
               onDeleteIngredient={handleDeleteIngredient}
               onResetToDemo={handleResetToDemo}
               onClearAllData={handleClearAllData}
+              onReturnToStore={() => setActiveTab('home')}
+              onToggleItemCooked={handleToggleItemCooked}
+              onSetCookedBy={handleSetCookedBy}
+              onGenerateRandomOrder={handleGenerateRandomOrder}
+              onStartItemCooking={handleStartItemCooking}
             />
           </div>
         )}
@@ -1630,6 +1939,21 @@ export default function App() {
         }}
         cartItems={isCheckoutForGroup ? mappedGroupCartItems as any[] : cart}
         onSubmitOrder={handlePlaceOrder}
+        loggedInCustomer={loggedInCustomer}
+      />
+
+      {/* Customer Login / Register Modal */}
+      <CustomerAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onLoginSuccess={(customer) => {
+          setLoggedInCustomer(customer);
+          localStorage.setItem('curvada_logged_customer', JSON.stringify(customer));
+        }}
+        onStaffPortalClick={() => {
+          setIsAuthModalOpen(false);
+          setActiveTab('chef');
+        }}
       />
 
       {/* Group Order Panel Drawer */}
@@ -1654,18 +1978,20 @@ export default function App() {
       />
 
       {/* Static Footer */}
-      <footer className="bg-[#0D0D0C] border-t-2 border-white/5 text-center py-8 text-xs text-gray-500 px-4">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-white">
-            <span>© 2026 Curvada's Kitchen</span>
-            <span>•</span>
-            <span className="text-brand-red">MADE WITH FLAVOR, MADE TO GO</span>
+      {activeTab !== 'chef' && (
+        <footer className="bg-[#0D0D0C] border-t-2 border-white/5 text-center py-8 text-xs text-gray-500 px-4">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-white">
+              <span>© 2026 Curvada's Kitchen</span>
+              <span>•</span>
+              <span className="text-brand-red">MADE WITH FLAVOR, MADE TO GO</span>
+            </div>
+            <div className="text-gray-500 text-[10px] leading-relaxed max-w-sm sm:text-right font-medium">
+              Enjoy our delicious silog, bento and rich rice bowls cooked with pride. Delivery Hotline: <strong>0922-383-7377</strong>. Cavite HQ.
+            </div>
           </div>
-          <div className="text-gray-500 text-[10px] leading-relaxed max-w-sm sm:text-right font-medium">
-            Enjoy our delicious silog, bento and rich rice bowls cooked with pride. Delivery Hotline: <strong>0922-383-7377</strong>. Cavite HQ.
-          </div>
-        </div>
-      </footer>
+        </footer>
+      )}
 
     </div>
   );
