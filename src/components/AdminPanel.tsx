@@ -1314,14 +1314,27 @@ function AdminPanel({
         {/* Sub Header for Order View Layout selection */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121211] border border-white/5 p-4 rounded-[2rem] shadow-lg">
           <div>
-            <h3 className="font-display font-black text-sm uppercase tracking-wider text-white">
-              📦 Order Command Queue
-            </h3>
-            <p className="text-gray-400 text-[11px]">
+            <div className="flex items-center gap-2">
+              <h3 className="font-display font-black text-sm uppercase tracking-wider text-white">
+                📦 Order Command Queue
+              </h3>
+              <span className="text-[9px] bg-brand-gold/10 text-brand-gold px-2.5 py-0.5 rounded-full border border-brand-gold/20 font-bold">
+                📅 Today's Board
+              </span>
+            </div>
+            <p className="text-gray-400 text-[11px] mt-0.5">
               Accept incoming orders, monitor cooking prep, and manage fulfillment dispatching
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsOrderArchiveOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-[#181818] border border-white/10 hover:border-brand-gold text-brand-gold hover:text-white text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+            >
+              📜 Order History Archive
+            </button>
+
             {onGenerateRandomOrder && (
               <button
                 type="button"
@@ -1373,18 +1386,18 @@ function AdminPanel({
                   </h4>
                 </div>
                 <span className="bg-brand-red/10 text-brand-red font-mono font-bold text-xs px-2.5 py-0.5 rounded-full">
-                  {orders.filter(o => o.status === 'pending').length}
+                  {todayOrders.filter(o => o.status === 'pending').length}
                 </span>
               </div>
 
               <div className="space-y-4 max-h-[640px] overflow-y-auto pr-1 min-h-[300px]">
-                {orders.filter(o => o.status === 'pending').length === 0 ? (
+                {todayOrders.filter(o => o.status === 'pending').length === 0 ? (
                   <div className="text-center py-20 text-gray-500 text-xs font-semibold uppercase tracking-wider leading-relaxed">
                     💤 No pending orders<br/>
                     <span className="text-[10px] text-gray-600 font-normal normal-case">Waiting for customer checkouts...</span>
                   </div>
                 ) : (
-                  orders.filter(o => o.status === 'pending').map(order => (
+                  todayOrders.filter(o => o.status === 'pending').map(order => (
                     <KanbanCard key={order.id} order={order} />
                   ))
                 )}
@@ -1401,18 +1414,18 @@ function AdminPanel({
                   </h4>
                 </div>
                 <span className="bg-brand-gold/10 text-brand-gold font-mono font-bold text-xs px-2.5 py-0.5 rounded-full">
-                  {orders.filter(o => o.status === 'preparing').length}
+                  {todayOrders.filter(o => o.status === 'preparing').length}
                 </span>
               </div>
 
               <div className="space-y-4 max-h-[640px] overflow-y-auto pr-1 min-h-[300px]">
-                {orders.filter(o => o.status === 'preparing').length === 0 ? (
+                {todayOrders.filter(o => o.status === 'preparing').length === 0 ? (
                   <div className="text-center py-20 text-gray-500 text-xs font-semibold uppercase tracking-wider leading-relaxed">
                     🍳 Kitchen is quiet<br/>
                     <span className="text-[10px] text-gray-600 font-normal normal-case">Accept pending orders to start cooking</span>
                   </div>
                 ) : (
-                  orders.filter(o => o.status === 'preparing').map(order => (
+                  todayOrders.filter(o => o.status === 'preparing').map(order => (
                     <KanbanCard key={order.id} order={order} />
                   ))
                 )}
@@ -1429,48 +1442,48 @@ function AdminPanel({
                   </h4>
                 </div>
                 <span className="bg-blue-500/10 text-blue-400 font-mono font-bold text-xs px-2.5 py-0.5 rounded-full">
-                  {orders.filter(o => o.status === 'dispatched').length}
+                  {todayOrders.filter(o => o.status === 'dispatched').length}
                 </span>
               </div>
 
               <div className="space-y-4 max-h-[640px] overflow-y-auto pr-1 min-h-[300px]">
-                {orders.filter(o => o.status === 'dispatched').length === 0 ? (
+                {todayOrders.filter(o => o.status === 'dispatched').length === 0 ? (
                   <div className="text-center py-20 text-gray-500 text-xs font-semibold uppercase tracking-wider leading-relaxed">
                     🛵 No dispatched orders<br/>
                     <span className="text-[10px] text-gray-600 font-normal normal-case">Dispatch orders when food is cooked</span>
                   </div>
                 ) : (
-                  orders.filter(o => o.status === 'dispatched').map(order => (
+                  todayOrders.filter(o => o.status === 'dispatched').map(order => (
                     <KanbanCard key={order.id} order={order} />
                   ))
                 )}
               </div>
             </div>
 
-            {/* COLUMN 4: COMPLETED */}
+            {/* COLUMN 4: COMPLETED TODAY */}
             <div className="bg-[#121211] border border-white/5 rounded-[2rem] p-5 space-y-4 shadow-xl">
               <div className="flex items-center justify-between pb-2.5 border-b border-white/5">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                   <h4 className="font-display font-black text-xs uppercase tracking-wider text-green-400">
-                    Completed Orders
+                    Completed Today
                   </h4>
                 </div>
                 <span className="bg-green-500/10 text-green-400 font-mono font-bold text-xs px-2.5 py-0.5 rounded-full">
-                  {orders.filter(o => o.status === 'delivered').length}
+                  {todayOrders.filter(o => o.status === 'delivered').length}
                 </span>
               </div>
 
               <div className="space-y-4 max-h-[640px] overflow-y-auto pr-1 min-h-[300px]">
-                {orders.filter(o => o.status === 'delivered').length === 0 ? (
+                {todayOrders.filter(o => o.status === 'delivered').length === 0 ? (
                   <div className="text-center py-20 text-gray-500 text-xs font-semibold uppercase tracking-wider leading-relaxed">
-                    🎉 No completed orders<br/>
+                    🎉 No completed orders today<br/>
                     <span className="text-[10px] text-gray-600 font-normal normal-case">Delivered orders will appear here</span>
                   </div>
                 ) : (
-                  orders.filter(o => o.status === 'delivered')
+                  todayOrders.filter(o => o.status === 'delivered')
                     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-                    .slice(0, 10)
+                    .slice(0, 15)
                     .map(order => (
                       <KanbanCard key={order.id} order={order} />
                     ))
@@ -1916,6 +1929,12 @@ function AdminPanel({
   // Order Queue search & status filters
   const [filterStatus, setFilterStatus] = useState<'active' | 'completed' | 'all'>('active');
   const [viewingOrderDetails, setViewingOrderDetails] = useState<Order | null>(null);
+
+  // Order History Archive State
+  const [isOrderArchiveOpen, setIsOrderArchiveOpen] = useState(false);
+  const [archivePeriod, setArchivePeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all'>('all');
+  const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
+  const [archiveStatusFilter, setArchiveStatusFilter] = useState<'all' | 'delivered' | 'cancelled'>('all');
 
   // Stock View state
   const [stockViewMode, setStockViewMode] = useState<'ingredients' | 'recipes'>('ingredients');
@@ -2876,15 +2895,44 @@ function AdminPanel({
     return list;
   })();
 
+  // Helper to check if an order timestamp is today
+  const isTodayOrder = (timestamp?: string) => {
+    if (!timestamp) return false;
+    const d = new Date(timestamp);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() &&
+           d.getMonth() === now.getMonth() &&
+           d.getDate() === now.getDate();
+  };
+
+  const isSameDay = (dateStr1?: string, date2?: Date) => {
+    if (!dateStr1) return false;
+    const d1 = new Date(dateStr1);
+    const d2 = date2 || new Date();
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+  };
+
+  // Active Kitchen Queue: Show all active orders + Today's completed/cancelled orders
+  const todayOrders = useMemo(() => {
+    return orders.filter(o => {
+      if (o.status === 'pending' || o.status === 'preparing' || o.status === 'dispatched') {
+        return true;
+      }
+      return isTodayOrder(o.timestamp);
+    });
+  }, [orders]);
+
   // Filtered Orders for the Queue
-  const filteredOrders = orders.filter((o) => {
+  const filteredOrders = todayOrders.filter((o) => {
     if (filterStatus === 'active') {
       return o.status === 'pending' || o.status === 'preparing' || o.status === 'dispatched';
     }
     if (filterStatus === 'completed') {
       return o.status === 'delivered' || o.status === 'cancelled';
     }
-    return true; // all
+    return true; // all today's orders
   });
 
   // Open Form Modal for Creating dynamic item
@@ -9526,6 +9574,208 @@ function AdminPanel({
           </div>
         </div>
       )}
+
+      {/* Order History & Sales Archive Modal */}
+      {isOrderArchiveOpen && (() => {
+        const filteredArchiveOrders = orders.filter(o => {
+          // 1. Period filter
+          if (archivePeriod !== 'all') {
+            const orderDate = new Date(o.timestamp);
+            const now = new Date();
+            if (archivePeriod === 'today') {
+              if (!isTodayOrder(o.timestamp)) return false;
+            } else if (archivePeriod === 'yesterday') {
+              const yest = new Date(now);
+              yest.setDate(yest.getDate() - 1);
+              if (!isSameDay(o.timestamp, yest)) return false;
+            } else if (archivePeriod === 'week') {
+              const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+              if (orderDate.getTime() < sevenDaysAgo.getTime()) return false;
+            } else if (archivePeriod === 'month') {
+              const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+              if (orderDate.getTime() < thirtyDaysAgo.getTime()) return false;
+            }
+          }
+
+          // 2. Status filter
+          if (archiveStatusFilter !== 'all') {
+            if (o.status !== archiveStatusFilter) return false;
+          }
+
+          // 3. Search query
+          if (archiveSearchQuery.trim()) {
+            const q = archiveSearchQuery.toLowerCase();
+            const matchesId = o.id.toLowerCase().includes(q);
+            const matchesName = o.customer.name.toLowerCase().includes(q);
+            const matchesPhone = o.customer.phone.toLowerCase().includes(q);
+            const matchesDish = o.items.some(i => i.menuItem.name.toLowerCase().includes(q));
+            if (!matchesId && !matchesName && !matchesPhone && !matchesDish) return false;
+          }
+
+          return true;
+        }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        const archiveTotalSales = filteredArchiveOrders
+          .filter(o => o.status === 'delivered')
+          .reduce((sum, o) => sum + o.totalAmount, 0);
+
+        const archiveDeliveredCount = filteredArchiveOrders.filter(o => o.status === 'delivered').length;
+        const archiveCancelledCount = filteredArchiveOrders.filter(o => o.status === 'cancelled').length;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md font-sans">
+            <div className="bg-[#121211] border-2 border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col max-h-[90vh]">
+              
+              {/* Header */}
+              <div className="p-6 border-b-2 border-white/5 bg-[#0D0D0C] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="bg-brand-gold/10 text-brand-gold font-bold px-2.5 py-0.5 rounded-full uppercase text-[9px] tracking-wider border border-brand-gold/20">
+                      📜 Sales & Order Vault
+                    </span>
+                    <span className="text-gray-400 text-xs font-semibold">Historical Archive & Inspection</span>
+                  </div>
+                  <h3 className="font-display font-black text-white text-xl mt-1">
+                    Order History & Sales Archive
+                  </h3>
+                </div>
+                
+                <button
+                  type="button"
+                  onClick={() => setIsOrderArchiveOpen(false)}
+                  className="p-2 rounded-xl bg-[#181818] border border-white/10 text-gray-400 hover:text-white hover:border-brand-gold transition-all self-end sm:self-center cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Filter Bar */}
+              <div className="p-5 bg-[#181818]/60 border-b border-white/5 space-y-4">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+                  {/* Period selection */}
+                  <div className="flex items-center gap-1 bg-[#0D0D0C] p-1 rounded-xl border border-white/10 w-full md:w-auto overflow-x-auto">
+                    {(['all', 'today', 'yesterday', 'week', 'month'] as const).map(p => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setArchivePeriod(p)}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+                          archivePeriod === p
+                            ? 'bg-brand-gold text-black shadow-md'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {p === 'all' ? 'All Time' : p === 'today' ? 'Today' : p === 'yesterday' ? 'Yesterday' : p === 'week' ? 'Last 7 Days' : 'This Month'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Status & Search */}
+                  <div className="flex items-center gap-2.5 w-full md:w-auto flex-1 max-w-md">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                      <input
+                        type="text"
+                        placeholder="Search Order #, Customer, Phone, or Dish..."
+                        value={archiveSearchQuery}
+                        onChange={(e) => setArchiveSearchQuery(e.target.value)}
+                        className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                      />
+                    </div>
+
+                    <select
+                      value={archiveStatusFilter}
+                      onChange={(e) => setArchiveStatusFilter(e.target.value as any)}
+                      className="bg-[#0D0D0C] border border-white/10 text-brand-gold font-bold text-xs rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="delivered">Completed Only</option>
+                      <option value="cancelled">Cancelled Only</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Metrics bar */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-[#0D0D0C] border border-white/5 rounded-xl p-3 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">Archived Sales</span>
+                    <span className="font-mono text-green-400 font-black text-sm">₱{archiveTotalSales.toFixed(2)}</span>
+                  </div>
+                  <div className="bg-[#0D0D0C] border border-white/5 rounded-xl p-3 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">Delivered Orders</span>
+                    <span className="font-mono text-brand-gold font-black text-sm">{archiveDeliveredCount}</span>
+                  </div>
+                  <div className="bg-[#0D0D0C] border border-white/5 rounded-xl p-3 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">Cancelled Orders</span>
+                    <span className="font-mono text-brand-red font-black text-sm">{archiveCancelledCount}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Orders List */}
+              <div className="p-6 overflow-y-auto space-y-3 flex-1">
+                {filteredArchiveOrders.length === 0 ? (
+                  <div className="text-center py-20 text-gray-500 text-xs font-semibold uppercase tracking-wider">
+                    💤 No historical orders found matching filter criteria.
+                  </div>
+                ) : (
+                  filteredArchiveOrders.map(order => (
+                    <div key={order.id} className="bg-[#0D0D0C] border border-white/5 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-white/10 transition-all">
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-white text-xs">#{order.id.slice(0, 8)}</span>
+                          <span className="text-gray-500 text-[10px] font-mono">
+                            📅 {new Date(order.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+                            order.status === 'delivered' ? 'bg-green-500/15 text-green-400 border border-green-500/20' :
+                            order.status === 'cancelled' ? 'bg-red-500/15 text-red-400 border border-red-500/20' : 'bg-brand-gold/15 text-brand-gold border border-brand-gold/20'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-gray-300">
+                          <strong>Customer:</strong> {order.customer.name} ({order.customer.phone}) • <span className="capitalize font-bold text-white">{order.customer.orderType}</span>
+                        </div>
+
+                        <div className="text-[11px] text-gray-400 flex flex-wrap gap-1.5 pt-1">
+                          {order.items.map(i => (
+                            <span key={i.id} className="bg-[#181818] border border-white/5 px-2 py-0.5 rounded text-[10px]">
+                              <strong className="text-brand-red">{i.quantity}x</strong> {i.menuItem.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0 border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0">
+                        <span className="font-mono text-brand-gold font-extrabold text-sm">₱{order.totalAmount.toFixed(2)}</span>
+                        <button
+                          type="button"
+                          onClick={() => setViewingOrderDetails(order)}
+                          className="px-3 py-1.5 rounded-xl bg-[#181818] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Inspect Details
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="p-4 bg-[#0D0D0C] border-t border-white/5 text-right">
+                <button
+                  type="button"
+                  onClick={() => setIsOrderArchiveOpen(false)}
+                  className="px-6 py-2.5 rounded-xl bg-brand-gold hover:opacity-90 text-black text-xs font-black uppercase tracking-wider cursor-pointer shadow-md"
+                >
+                  Close Archive
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Custom Confirmation Modal for Data Reset */}
       {showClearConfirm && (
