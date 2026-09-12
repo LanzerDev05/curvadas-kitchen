@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Order, OrderStatus } from '../types';
 import { MapPin, Clock, Phone, CheckCircle2, ShieldCheck, ShoppingBag, Loader2, RefreshCw } from 'lucide-react';
 
+import { realtimeOrderService } from '../api/websocket';
+
 interface OrderTrackerProps {
   activeOrder: Order | null;
   onCancelOrder: (orderId: string) => void;
@@ -10,7 +12,7 @@ interface OrderTrackerProps {
   onUpdateOrderStatus?: (orderId: string, status: OrderStatus) => void;
 }
 
-export default function OrderTracker({
+function OrderTracker({
   activeOrder,
   onCancelOrder,
   onNewOrderClick,
@@ -19,6 +21,36 @@ export default function OrderTracker({
 }: OrderTrackerProps) {
   const [riderProgress, setRiderProgress] = useState(0); // 0 to 100% on the map
   const [timeTick, setTimeTick] = useState(0);
+  const [currentOrder, setCurrentOrder] = useState<Order | null>(activeOrder);
+
+  useEffect(() => {
+    setCurrentOrder(activeOrder);
+  }, [activeOrder]);
+
+  // Subscribe to live WebSocket / BroadcastChannel events for instant no-refresh status updates
+  useEffect(() => {
+    const unsubscribe = realtimeOrderService.subscribe((event) => {
+      if (event.type === 'STATUS_CHANGED') {
+        setCurrentOrder((prev) => {
+          if (!prev || prev.id !== event.orderId) return prev;
+          const newStatus = event.status;
+          const existingLogs = prev.logs || [];
+          const newLogs = existingLogs.some(l => l.status === newStatus)
+            ? existingLogs
+            : [...existingLogs, { status: newStatus, timestamp: event.timestamp || new Date().toISOString() }];
+
+          return { ...prev, status: newStatus, logs: newLogs };
+        });
+      } else if (event.type === 'ORDER_UPDATED') {
+        setCurrentOrder((prev) => {
+          if (!prev || prev.id !== event.order.id) return prev;
+          return event.order;
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -67,7 +99,9 @@ export default function OrderTracker({
     };
   }, [activeOrder?.status]);
 
-  if (!activeOrder) {
+  const displayOrder = currentOrder || activeOrder;
+
+  if (!displayOrder) {
     return (
       <div className="py-16 px-4 md:px-8 max-w-md mx-auto text-center space-y-6">
         <div className="p-5 rounded-full bg-[#181818] border-2 border-white/5 w-20 h-20 flex items-center justify-center mx-auto text-3xl shadow-lg">
@@ -89,7 +123,7 @@ export default function OrderTracker({
     );
   }
 
-  const { id, items, totalAmount, customer, paymentMethod, status, logs } = activeOrder;
+  const { id, items, totalAmount, customer, paymentMethod, status, logs } = displayOrder;
 
   // Track stages configuration
   const stages: { key: OrderStatus; label: string; desc: string; icon: string }[] = [
@@ -122,9 +156,9 @@ export default function OrderTracker({
     if (status === 'delivered') return 'Delivered 🎉';
     if (status === 'cancelled') return 'Cancelled ❌';
     
-    if (status === 'preparing' && activeOrder?.cookingStartTime && activeOrder?.estimatedPrepTime) {
-      const startMs = new Date(activeOrder.cookingStartTime).getTime();
-      const durationMs = activeOrder.estimatedPrepTime * 60 * 1000;
+    if (status === 'preparing' && displayOrder?.cookingStartTime && displayOrder?.estimatedPrepTime) {
+      const startMs = new Date(displayOrder.cookingStartTime).getTime();
+      const durationMs = displayOrder.estimatedPrepTime * 60 * 1000;
       const elapsedMs = Date.now() - startMs;
       const remainingMs = durationMs - elapsedMs;
       const isOverdue = remainingMs <= 0;
@@ -154,9 +188,14 @@ export default function OrderTracker({
         <div className="bg-[#181818] border-2 border-white/5 rounded-[2rem] p-6 shadow-2xl space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-white/5">
             <div>
-              <span className="text-[10px] bg-brand-gold/10 text-brand-gold font-bold uppercase tracking-widest px-2.5 py-1 rounded-md">
-                Order Tracking
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-brand-gold/10 text-brand-gold font-bold uppercase tracking-widest px-2.5 py-1 rounded-md">
+                  Order Tracking
+                </span>
+                <span className="text-[8.5px] bg-green-500/10 border border-green-500/25 text-green-400 font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span> Live WebSocket Sync
+                </span>
+              </div>
               <h3 className="font-display font-black text-white text-lg mt-1.5 flex items-center gap-2 uppercase tracking-tight">
                 Order #{id.slice(0, 8)}
                 {status === 'preparing' && <Loader2 className="w-4 h-4 text-brand-red animate-spin" />}
@@ -515,3 +554,5 @@ export default function OrderTracker({
     </div>
   );
 }
+
+export default React.memo(OrderTracker);

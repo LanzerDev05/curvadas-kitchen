@@ -101,18 +101,36 @@ export default function Navbar({
           </button>
         </div>
 
-        {/* Right Controls - Action and Chef Hat */}
+        {/* Right Controls - Action, Staff Portal, and Chef Hat */}
         <div className="flex items-center gap-3">
           
+          {/* Staff / Kitchen Portal Direct Link (Hidden when customer is logged in) */}
+          {!loggedInCustomer && (
+            <button
+              id="navbar-staff-portal-btn"
+              onClick={() => setActiveTab('chef')}
+              title="Workplace Console (Kitchen & Admin Portal)"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#181818] text-brand-gold border border-brand-gold/30 hover:bg-brand-gold/10 hover:border-brand-gold transition-all focus:outline-none cursor-pointer"
+            >
+              <ChefHat className="w-4 h-4 text-brand-gold" />
+              <span className="hidden lg:inline font-black text-[11px]">Staff Portal</span>
+            </button>
+          )}
+
           {/* Customer Login / Register Button */}
           {loggedInCustomer ? (
             <div className="flex items-center gap-2 bg-[#181818] border border-white/5 pl-3 pr-2 py-1.5 rounded-xl text-xs font-bold text-gray-300">
               <User className="w-3.5 h-3.5 text-brand-red" />
               <span className="max-w-[80px] sm:max-w-[120px] truncate">{loggedInCustomer.name}</span>
+              {loggedInCustomer.loyaltyPoints !== undefined && loggedInCustomer.loyaltyPoints > 0 && (
+                <span className="bg-brand-gold/10 text-brand-gold text-[10px] px-1.5 py-0.5 rounded font-mono font-bold border border-brand-gold/20">
+                  💎 {loggedInCustomer.loyaltyPoints}
+                </span>
+              )}
               <button
                 onClick={onLogout}
                 title="Logout Customer"
-                className="p-1 hover:bg-white/5 rounded-lg text-gray-500 hover:text-brand-red transition-all ml-1 focus:outline-none"
+                className="p-1 hover:bg-white/5 rounded-lg text-gray-500 hover:text-brand-red transition-all ml-1 focus:outline-none cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
               </button>
@@ -121,7 +139,7 @@ export default function Navbar({
             <button
               id="navbar-login-btn"
               onClick={onLoginClick}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#181818] text-white border border-white/5 hover:border-brand-red hover:bg-[#222222] transition-all focus:outline-none"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#181818] text-white border border-white/5 hover:border-brand-red hover:bg-[#222222] transition-all focus:outline-none cursor-pointer"
             >
               <User className="w-4 h-4" />
               <span>Login</span>
@@ -133,7 +151,7 @@ export default function Navbar({
             id="navbar-group-btn"
             onClick={onGroupOrderClick}
             title="Group Order Session"
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border-2 transition-all ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border-2 transition-all cursor-pointer ${
               isGroupActive
                 ? 'bg-brand-red text-white border-brand-red font-black shadow-lg shadow-brand-red/10 animate-pulse-slow'
                 : 'bg-[#181818] text-gray-300 border-white/5 hover:border-brand-red hover:bg-[#222222]'
@@ -149,7 +167,7 @@ export default function Navbar({
           <button
             id="navbar-cart-btn"
             onClick={onCartClick}
-            className="relative p-2.5 rounded-full bg-[#181818] border-2 border-white/5 hover:border-brand-red text-white hover:bg-white/5 transition-all focus:outline-none"
+            className="relative p-2.5 rounded-full bg-[#181818] border-2 border-white/5 hover:border-brand-red text-white hover:bg-white/5 transition-all focus:outline-none cursor-pointer"
           >
             <ShoppingBag className="w-5 h-5 text-bento-charcoal" />
             {cartCount > 0 && (
@@ -201,7 +219,20 @@ export default function Navbar({
           <History className="w-4 h-4" />
           <span className="text-[10px] font-bold uppercase tracking-wider">Orders</span>
         </button>
+        {!loggedInCustomer && (
+          <button
+            onClick={() => setActiveTab('chef')}
+            className={`flex flex-col items-center gap-0.5 ${
+              activeTab === 'chef' ? 'text-brand-gold font-semibold' : 'text-bento-charcoal/60'
+            }`}
+          >
+            <ChefHat className="w-4 h-4 text-brand-gold" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-gold">Staff</span>
+          </button>
+        )}
       </div>
+
     </nav>
   );
 }
+

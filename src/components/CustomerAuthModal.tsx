@@ -32,7 +32,7 @@ export default function CustomerAuthModal({
 
   if (!isOpen) return null;
 
-  const handleSignInSubmit = (e: React.FormEvent) => {
+  const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -41,20 +41,38 @@ export default function CustomerAuthModal({
       return;
     }
 
-    // Load registered users from localStorage to check
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: signInEmail.trim(), password: signInPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        onLoginSuccess(data.user);
+        onClose();
+        setSignInEmail('');
+        setSignInPassword('');
+        return;
+      } else if (data.error) {
+        setError(data.error);
+        return;
+      }
+    } catch (e) {
+      console.warn("Backend auth offline, using local fallback", e);
+    }
+
+    // Local fallback check if server API is unavailable
     const registeredUsersStr = localStorage.getItem('curvada_registered_users');
     let users = registeredUsersStr ? JSON.parse(registeredUsersStr) : [];
-    
-    // Default fallback demo user
     if (users.length === 0) {
       users.push({
-        email: 'arnel@gmail.com',
+        email: 'lanzer@gmail.com',
         password: 'password123',
-        name: 'Arnel Cruz',
+        name: 'Lanzer Villarlibo',
         phone: '0917-882-9382',
         address: 'Block 3 Lot 15, Springville Homes, Bacoor, Cavite',
       });
-      localStorage.setItem('curvada_registered_users', JSON.stringify(users));
     }
 
     const foundUser = users.find(
@@ -74,11 +92,11 @@ export default function CustomerAuthModal({
       setSignInEmail('');
       setSignInPassword('');
     } else {
-      setError('Invalid email or password! (Try: arnel@gmail.com / password123)');
+      setError('Invalid email or password! (Try: lanzer@gmail.com / password123)');
     }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -87,9 +105,39 @@ export default function CustomerAuthModal({
       return;
     }
 
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: registerName.trim(),
+          email: registerEmail.trim(),
+          phone: registerPhone.trim(),
+          address: registerAddress.trim(),
+          password: registerPassword
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        onLoginSuccess(data.user);
+        onClose();
+        setRegisterName('');
+        setRegisterEmail('');
+        setRegisterPhone('');
+        setRegisterAddress('');
+        setRegisterPassword('');
+        return;
+      } else if (data.error) {
+        setError(data.error);
+        return;
+      }
+    } catch (e) {
+      console.warn("Backend auth register offline, using local fallback", e);
+    }
+
+    // Local fallback check
     const registeredUsersStr = localStorage.getItem('curvada_registered_users');
     let users = registeredUsersStr ? JSON.parse(registeredUsersStr) : [];
-
     const emailExists = users.some((u: any) => u.email.toLowerCase() === registerEmail.trim().toLowerCase());
     if (emailExists) {
       setError('An account with this email already exists!');
@@ -148,7 +196,7 @@ export default function CustomerAuthModal({
           </p>
         </div>
 
-        {/* Tab Selection */}
+        {/* Tab switcher */}
         <div className="grid grid-cols-2 gap-2 bg-[#0D0D0C] p-1 rounded-2xl border border-white/5">
           <button
             type="button"
@@ -156,9 +204,9 @@ export default function CustomerAuthModal({
               setTab('signin');
               setError('');
             }}
-            className={`py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+            className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
               tab === 'signin'
-                ? 'bg-brand-red text-white shadow-lg'
+                ? 'bg-brand-red text-white shadow-md'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -170,9 +218,9 @@ export default function CustomerAuthModal({
               setTab('register');
               setError('');
             }}
-            className={`py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+            className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
               tab === 'register'
-                ? 'bg-brand-red text-white shadow-lg'
+                ? 'bg-brand-red text-white shadow-md'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -192,7 +240,7 @@ export default function CustomerAuthModal({
                 <input
                   type="email"
                   required
-                  placeholder="e.g. arnel@gmail.com"
+                  placeholder="e.g. lanzer@gmail.com"
                   value={signInEmail}
                   onChange={(e) => setSignInEmail(e.target.value)}
                   className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-red font-semibold"
@@ -225,13 +273,13 @@ export default function CustomerAuthModal({
 
             <button
               type="submit"
-              className="w-full py-3 bg-brand-red hover:opacity-90 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-xl shadow-brand-red/10 focus:outline-none"
+              className="w-full py-3 bg-brand-red hover:opacity-90 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-xl shadow-brand-red/10 focus:outline-none cursor-pointer"
             >
               Sign In
             </button>
 
             <div className="bg-black/30 border border-white/5 rounded-2xl p-2.5 text-center text-[10px] text-gray-400">
-              Demo credentials: <span className="font-mono text-white font-bold">arnel@gmail.com</span> / <span className="font-mono text-white font-bold">password123</span>
+              Database seed credentials: <span className="font-mono text-white font-bold">lanzer@gmail.com</span> / <span className="font-mono text-white font-bold">password123</span>
             </div>
           </form>
         )}

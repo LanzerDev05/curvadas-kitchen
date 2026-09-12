@@ -7,6 +7,11 @@ export interface IngredientStock {
   unit: string;
   lowStockAlert: number;
   costPerUnit?: number; // Price/cost per unit (e.g. per gram or per pc)
+  supplier?: {
+    name: string;
+    contact: string;
+    email: string;
+  };
 }
 
 export interface MenuOption {
@@ -32,6 +37,13 @@ export interface MenuItem {
     choices: MenuOption[];
   }[];
   estimatedPrepTime?: number;
+  targetMarginPercent?: number; // Desired target profit margin % (e.g. 50%)
+  utilityOverhead?: {
+    electricity?: number; // Electricity cost per serving (e.g. ₱3.00)
+    gas?: number;         // Cooking gas/LPG cost per serving (e.g. ₱2.50)
+    water?: number;       // Water cost per serving (e.g. ₱1.00)
+    packaging?: number;   // Packaging/misc cost per serving (e.g. ₱2.00)
+  };
 }
 
 export interface SelectedOption {
@@ -63,6 +75,7 @@ export interface CustomerInfo {
   address: string;
   orderType: 'delivery' | 'pickup';
   tableNumber?: string; // If ordering inside the restaurant
+  loyaltyPoints?: number;
 }
 
 export interface Order {
@@ -111,4 +124,66 @@ export interface GroupOrderSession {
   items: GroupCartItem[];
   createdAt: string;
 }
+
+export interface UserAccount {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  password: string;
+  role: 'customer' | 'kitchen' | 'admin';
+  createdAt: string;
+  loyaltyPoints?: number;
+}
+
+export interface PromoVoucher {
+  id: string;
+  code: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number; // % or PHP
+  minSpend: number;
+  isActive: boolean;
+}
+
+export interface SpoilageRecord {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  amount: number;
+  unit: string;
+  cost: number;
+  reason: 'expired' | 'spilled' | 'damaged' | 'quality_defect';
+  timestamp: string;
+  loggedBy: string;
+}
+
+export interface StaffShift {
+  id: string;
+  staffName: string;
+  role: string;
+  clockIn: string;
+  clockOut?: string;
+  hourlyRate: number;
+  totalHours?: number;
+  totalEarned?: number;
+}
+
+export interface ZReadAudit {
+  id: string;
+  date: string;
+  cashSales: number;
+  ewalletSales: number;
+  cardSales: number;
+  totalGross: number;
+  discountTotal: number;
+  voidCount: number;
+  expectedCash: number;
+  actualCashCount: number;
+  discrepancy: number;
+  closedBy: string;
+  timestamp: string;
+}
+
+
 

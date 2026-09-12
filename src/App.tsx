@@ -14,6 +14,7 @@ import OrderHistory from './components/OrderHistory';
 import GroupOrderPanel from './components/GroupOrderPanel';
 import CustomerAuthModal from './components/CustomerAuthModal';
 import { ShoppingBag, ArrowRight, Utensils, ChefHat, Heart, Users } from 'lucide-react';
+import { realtimeOrderService } from './api/websocket';
 
 // --- MOCK SEED DATA FOR KITCHEN ENGAGEMENT ---
 const SEED_ORDERS: Order[] = [
@@ -43,9 +44,9 @@ const SEED_ORDERS: Order[] = [
     ],
     totalAmount: 436,
     customer: {
-      name: 'Arnel Cruz',
+      name: 'Lanzer Villarlibo',
       phone: '0917-882-9382',
-      email: 'arnel@gmail.com',
+      email: 'lanzer@gmail.com',
       address: 'Block 3 Lot 15, Springville Homes, Bacoor, Cavite',
       orderType: 'delivery',
     },
@@ -111,6 +112,26 @@ function AppContent() {
     return 'home';
   }, [location.pathname]);
 
+  // Dynamic Browser Tab Title Sync
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.startsWith('/portal/admin')) {
+      document.title = "Curvada's Kitchen | Admin Workplace Console";
+    } else if (path.startsWith('/portal/kitchen')) {
+      document.title = "Curvada's Kitchen | Kitchen Display System (KDS)";
+    } else if (path.startsWith('/portal')) {
+      document.title = "Curvada's Kitchen | Workplace Portal";
+    } else if (path === '/menu') {
+      document.title = "Curvada's Kitchen | Menu Catalog";
+    } else if (path === '/tracker') {
+      document.title = "Curvada's Kitchen | Order Tracker";
+    } else if (path === '/history') {
+      document.title = "Curvada's Kitchen | Order History";
+    } else {
+      document.title = "Curvada's Kitchen | Authentic Filipino-Fusion Bento & KDS";
+    }
+  }, [location.pathname]);
+
   const setActiveTab = (tab: 'home' | 'menu' | 'tracker' | 'history' | 'chef') => {
     if (tab === 'chef') {
       navigate('/portal/login');
@@ -161,28 +182,33 @@ function AppContent() {
       }
     });
 
-    // Fallbacks if no ingredients are configured
-    if (uniqueIngredients.size === 0) {
+    // Fallbacks and standard packaging items
+    ['Paper Bowl', 'Utensils (Spoon & Fork)'].forEach(ing => uniqueIngredients.add(ing));
+    if (uniqueIngredients.size <= 2) {
       ['Premium Beef Tapa', 'Sunny-Side-Up Egg', 'Garlic Fried Rice', 'Atchara Pickles', 'Sweet Cured Pork', 'Traditional Vinegar Dip', 'Steamed Rice', 'Pork Gyoza (2pcs)', 'Crispy Chicken Fillet', 'Bulldog Tonkatsu Sauce', 'Japanese Mayo', 'Garlic', 'Egg', 'Pork Belly'].forEach(ing => uniqueIngredients.add(ing));
     }
 
     return Array.from(uniqueIngredients).map((name, index) => {
-      const isEggOrGyoza = name.toLowerCase().includes('egg') || name.toLowerCase().includes('gyoza');
-      const unit: string = isEggOrGyoza ? 'pcs' : 'g';
+      const lower = name.toLowerCase();
+      const isPcsItem = lower.includes('egg') || lower.includes('gyoza') || lower.includes('paper bowl') || lower.includes('utensil');
+      const unit: string = isPcsItem ? 'pcs' : 'g';
       let costPerUnit = 0.05;
-      if (name.toLowerCase().includes('egg')) costPerUnit = 8.00;
-      else if (name.toLowerCase().includes('gyoza')) costPerUnit = 12.00;
-      else if (name.toLowerCase().includes('rice')) costPerUnit = 0.03;
-      else if (name.toLowerCase().includes('beef') || name.toLowerCase().includes('pork') || name.toLowerCase().includes('chicken')) costPerUnit = 0.25;
+
+      if (lower.includes('paper bowl')) costPerUnit = 3.50;
+      else if (lower.includes('utensil')) costPerUnit = 1.50;
+      else if (lower.includes('egg')) costPerUnit = 8.00;
+      else if (lower.includes('gyoza')) costPerUnit = 12.00;
+      else if (lower.includes('rice')) costPerUnit = 0.03;
+      else if (lower.includes('beef') || lower.includes('pork') || lower.includes('chicken')) costPerUnit = 0.25;
       else if (unit === 'pcs') costPerUnit = 15.00;
       else if (unit === 'cans') costPerUnit = 45.00;
 
       return {
         id: `ing-${index}-${Math.random().toString(36).substr(2, 4)}`,
         name,
-        quantity: isEggOrGyoza ? 60 : 3000,
+        quantity: isPcsItem ? 200 : 3000,
         unit,
-        lowStockAlert: isEggOrGyoza ? 10 : 500,
+        lowStockAlert: isPcsItem ? 20 : 500,
         costPerUnit
       };
     });
@@ -646,61 +672,38 @@ function AppContent() {
     localStorage.setItem('curvada_hidden_categories', JSON.stringify(updated));
   };
 
-  // Merge manual toggles, 0-stock level items, and items with out-of-stock ingredients for customer menu visibility
-  const finalUnavailableItemIds = useMemo(() => {
-    const outOfStockIds = Object.keys(stockLevels).filter(
-      (id) => (stockLevels[id] ?? 0) <= 0
-    );
+  // Helper function to find matching ingredient by name (supports case, trimmed & alphanumeric fuzzy matching)
+  const findMatchingIngredient = (reqName: string, inventory: IngredientStock[]): IngredientStock | undefined => {
+    if (!reqName || !inventory) return undefined;
+    const cleanReq = reqName.toLowerCase().trim();
     
-    // Check if any ingredient is completely out of stock (0 or less) or insufficient for recipe requirements
-    const ingredientOutOfStockIds: string[] = [];
-    menuItems.forEach((item) => {
-      // If the chef has explicitly overridden the stock level manually, bypass automatic ingredient-driven out-of-stock check
-      if (manualStockOverrides.includes(item.id)) {
-        return;
-      }
+    // 1. Exact match
+    let match = inventory.find(i => i.name.toLowerCase().trim() === cleanReq);
+    if (match) return match;
 
-      // 1. Check structured requirements if configured
-      if (item.recipeRequirements && item.recipeRequirements.length > 0) {
-        const isOutOfStock = item.recipeRequirements.some((req) => {
-          const ing = ingredientsInventory.find(
-            (i) => i.name.toLowerCase() === req.name.toLowerCase()
-          );
-          if (!ing) return true;
-          const reqQty = ing.unit === 'kg' ? req.amount / 1000 : req.amount;
-          return ing.quantity < reqQty;
-        });
-        if (isOutOfStock) {
-          ingredientOutOfStockIds.push(item.id);
-          return;
-        }
-      }
+    // 2. Alphanumeric match (ignores spaces/symbols/numbers e.g. "Cheese Sauce100" vs "Cheese Sauce")
+    const alphaReq = cleanReq.replace(/[^a-z]/g, '');
+    if (alphaReq.length > 0) {
+      match = inventory.find(i => i.name.toLowerCase().replace(/[^a-z]/g, '') === alphaReq);
+      if (match) return match;
+    }
 
-      // 2. Check general ingredient string tags fallback
-      if (item.ingredients && item.ingredients.length > 0) {
-        const isOutOfStock = item.ingredients.some((ingName) => {
-          const ing = ingredientsInventory.find(
-            (i) => i.name.toLowerCase() === ingName.toLowerCase()
-          );
-          if (!ing) return false;
-          const reqQty = (ing.unit === 'pcs' || ing.unit === 'cans') ? 1 : ing.unit === 'kg' ? 0.1 : 100;
-          return ing.quantity < reqQty;
-        });
-        if (isOutOfStock) {
-          ingredientOutOfStockIds.push(item.id);
-        }
-      }
+    // 3. Substring match
+    match = inventory.find(i => {
+      const cleanInv = i.name.toLowerCase().trim();
+      return cleanReq.startsWith(cleanInv) || cleanInv.startsWith(cleanReq);
     });
-
-    return Array.from(new Set([...unavailableItemIds, ...outOfStockIds, ...ingredientOutOfStockIds]));
-  }, [unavailableItemIds, stockLevels, menuItems, ingredientsInventory, manualStockOverrides]);
+    
+    return match;
+  };
 
   // Determine dynamic stock capacity of a dish (minimum of manual stock level and active recipe ingredients limit)
   const getDishStockCapacity = (item: MenuItem): number => {
     const manualQty = stockLevels[item.id] ?? 0;
+    const isManualOverridden = manualStockOverrides.includes(item.id);
 
     // If manual override is active, use manualQty directly
-    if (manualStockOverrides.includes(item.id)) {
+    if (isManualOverridden) {
       return manualQty;
     }
 
@@ -711,13 +714,11 @@ function AppContent() {
       let minServings = Infinity;
       let hasMatchingIngredient = false;
       item.recipeRequirements.forEach((req) => {
-        const ing = ingredientsInventory.find(
-          (i) => i.name.toLowerCase() === req.name.toLowerCase()
-        );
+        const ing = findMatchingIngredient(req.name, ingredientsInventory);
         if (ing) {
           hasMatchingIngredient = true;
           const reqQty = ing.unit === 'kg' ? req.amount / 1000 : req.amount;
-          const possibleServings = Math.floor(ing.quantity / reqQty);
+          const possibleServings = reqQty > 0 ? Math.floor(ing.quantity / reqQty) : 0;
           if (possibleServings < minServings) {
             minServings = possibleServings;
           }
@@ -732,13 +733,11 @@ function AppContent() {
       let minServings = Infinity;
       let hasMatchingIngredient = false;
       item.ingredients.forEach((ingName) => {
-        const ing = ingredientsInventory.find(
-          (i) => i.name.toLowerCase() === ingName.toLowerCase()
-        );
+        const ing = findMatchingIngredient(ingName, ingredientsInventory);
         if (ing) {
           hasMatchingIngredient = true;
           const reqPerServing = (ing.unit === 'pcs' || ing.unit === 'cans') ? 1 : ing.unit === 'kg' ? 0.1 : 100;
-          const possibleServings = Math.floor(ing.quantity / reqPerServing);
+          const possibleServings = reqPerServing > 0 ? Math.floor(ing.quantity / reqPerServing) : 0;
           if (possibleServings < minServings) {
             minServings = possibleServings;
           }
@@ -750,10 +749,36 @@ function AppContent() {
     }
 
     if (recipeCapacity !== null) {
+      // If stockLevels[item.id] is 0 or missing, but recipeCapacity > 0 and NOT manually overridden, fallback to recipeCapacity
+      if (manualQty <= 0 && recipeCapacity > 0) {
+        return recipeCapacity;
+      }
       return Math.min(manualQty, recipeCapacity);
     }
+
     return manualQty;
   };
+
+  // Merge manual toggles, 0-stock level items, and items with out-of-stock ingredients for customer menu visibility
+  const finalUnavailableItemIds = useMemo(() => {
+    const outOfStockIds: string[] = [];
+
+    menuItems.forEach((item) => {
+      // 1. Manually toggled off in unavailableItemIds
+      if (unavailableItemIds.includes(item.id)) {
+        outOfStockIds.push(item.id);
+        return;
+      }
+
+      // 2. Dynamic dish capacity check
+      const capacity = getDishStockCapacity(item);
+      if (capacity <= 0) {
+        outOfStockIds.push(item.id);
+      }
+    });
+
+    return Array.from(new Set(outOfStockIds));
+  }, [unavailableItemIds, stockLevels, menuItems, ingredientsInventory, manualStockOverrides]);
 
   // --- DATABASE PERSISTENCE & SYNCING ---
   const fetchDb = async () => {
@@ -762,13 +787,13 @@ function AppContent() {
       if (!res.ok) throw new Error('API fetch failed');
       const data = await res.json();
       
-      setMenuItems(data.menuItems || []);
-      setIngredientsInventory(data.ingredientsInventory || []);
-      setStockLevels(data.stockLevels || {});
-      setManualStockOverrides(data.manualStockOverrides || []);
-      setHiddenCategories(data.hiddenCategories || []);
-      setOrders(data.orders || []);
-      setGroupSessions(data.groupSessions || []);
+      if (data.menuItems) setMenuItems(prev => JSON.stringify(prev) !== JSON.stringify(data.menuItems) ? data.menuItems : prev);
+      if (data.ingredientsInventory) setIngredientsInventory(prev => JSON.stringify(prev) !== JSON.stringify(data.ingredientsInventory) ? data.ingredientsInventory : prev);
+      if (data.stockLevels) setStockLevels(prev => JSON.stringify(prev) !== JSON.stringify(data.stockLevels) ? data.stockLevels : prev);
+      if (data.manualStockOverrides) setManualStockOverrides(prev => JSON.stringify(prev) !== JSON.stringify(data.manualStockOverrides) ? data.manualStockOverrides : prev);
+      if (data.hiddenCategories) setHiddenCategories(prev => JSON.stringify(prev) !== JSON.stringify(data.hiddenCategories) ? data.hiddenCategories : prev);
+      if (data.orders) setOrders(prev => JSON.stringify(prev) !== JSON.stringify(data.orders) ? data.orders : prev);
+      if (data.groupSessions) setGroupSessions(prev => JSON.stringify(prev) !== JSON.stringify(data.groupSessions) ? data.groupSessions : prev);
       
       // Update active groupSession if we are in one
       const activeGroupId = localStorage.getItem('curvada_active_group_id');
@@ -785,7 +810,6 @@ function AppContent() {
               setActiveTab('tracker');
               localStorage.removeItem('curvada_active_group_id');
               setGroupSession(null);
-              alert(`🎉 The group Host has successfully placed the order! Redirecting you to the Live Kitchen tracker.`);
             } else {
               localStorage.removeItem('curvada_active_group_id');
               setGroupSession(null);
@@ -806,7 +830,7 @@ function AppContent() {
   };
 
   useEffect(() => {
-    // 1. Load cart locally (local user's cart is private to their tab until they add to group)
+    // 1. Load cart locally
     const cachedCart = localStorage.getItem('curvada_cart');
     if (cachedCart) {
       try {
@@ -822,15 +846,37 @@ function AppContent() {
       setActiveOrderId(cachedActiveId);
     }
 
-    // 3. Hydrate state from server
+    // 3. Initial state load from server
     fetchDb();
 
-    // 4. Set up periodic poll every 3 seconds
-    const interval = setInterval(() => {
-      fetchDb();
-    }, 3000);
+    // 4. Real-time WebSocket event subscription (Zero page reloads or aggressive polling!)
+    const unsubscribe = realtimeOrderService.subscribe((event) => {
+      if (event.type === 'STATUS_CHANGED') {
+        setOrders((prevOrders) => {
+          return prevOrders.map((o) => {
+            if (o.id === event.orderId) {
+              const existingLogs = o.logs || [];
+              const newLogs = existingLogs.some(l => l.status === event.status)
+                ? existingLogs
+                : [...existingLogs, { status: event.status, timestamp: event.timestamp || new Date().toISOString() }];
+              return { ...o, status: event.status, logs: newLogs };
+            }
+            return o;
+          });
+        });
+      } else if (event.type === 'NEW_ORDER') {
+        setOrders((prevOrders) => {
+          if (prevOrders.some(o => o.id === event.order.id)) return prevOrders;
+          return [event.order, ...prevOrders];
+        });
+      } else if (event.type === 'ORDER_UPDATED') {
+        setOrders((prevOrders) => {
+          return prevOrders.map(o => o.id === event.order.id ? event.order : o);
+        });
+      }
+    });
 
-    return () => clearInterval(interval);
+    return () => unsubscribe();
   }, []);
 
   // Save changes to cart locally
@@ -1075,6 +1121,63 @@ function AppContent() {
     saveIngredientsInventory(updatedIngredients);
   };
 
+  // Helper to restore ingredient and stock levels when an order is cancelled
+  const restoreOrderStock = (
+    orderItems: any[],
+    currentStockLevels: Record<string, number>,
+    currentIngredientsInventory: IngredientStock[]
+  ) => {
+    const updatedStock = { ...currentStockLevels };
+    const updatedIngredients = currentIngredientsInventory.map(i => ({ ...i }));
+
+    orderItems.forEach((item) => {
+      const menuItem = item.menuItem;
+      const orderQty = item.quantity || 1;
+
+      // 1. Restore item stock level
+      if (menuItem && menuItem.id) {
+        const id = menuItem.id;
+        if (updatedStock[id] !== undefined) {
+          updatedStock[id] += orderQty;
+        }
+      }
+
+      // 2. Restore ingredient stock levels
+      if (menuItem) {
+        if (menuItem.recipeRequirements && menuItem.recipeRequirements.length > 0) {
+          menuItem.recipeRequirements.forEach((req: any) => {
+            const ing = updatedIngredients.find(
+              (i) => i.name.toLowerCase() === req.name.toLowerCase()
+            );
+            if (ing) {
+              const amountPerServing = ing.unit === 'kg' ? req.amount / 1000 : req.amount;
+              const amountToRestore = amountPerServing * orderQty;
+              ing.quantity = Number((ing.quantity + amountToRestore).toFixed(4));
+            }
+          });
+        } else if (menuItem.ingredients) {
+          menuItem.ingredients.forEach((ingName: string) => {
+            const ing = updatedIngredients.find(
+              (i) => i.name.toLowerCase() === ingName.toLowerCase()
+            );
+            if (ing) {
+              let amountPerServing = 100;
+              if (ing.unit === 'pcs' || ing.unit === 'cans') {
+                amountPerServing = 1;
+              } else if (ing.unit === 'kg') {
+                amountPerServing = 0.1;
+              }
+              const amountToRestore = amountPerServing * orderQty;
+              ing.quantity = Number((ing.quantity + amountToRestore).toFixed(4));
+            }
+          });
+        }
+      }
+    });
+
+    return { updatedStock, updatedIngredients };
+  };
+
   // Checkout order submission
   const handlePlaceOrder = async (customer: CustomerInfo, paymentMethod: 'cod' | 'ewallet' | 'card') => {
     let finalOrder: Order;
@@ -1244,6 +1347,9 @@ function AppContent() {
       setActiveTab('tracker');
     }
 
+    // Broadcast live WebSocket event instantly
+    realtimeOrderService.broadcast({ type: 'NEW_ORDER', order: finalOrder });
+
     // Submit to server
     try {
       const res = await fetch('/api/orders/place', {
@@ -1278,10 +1384,18 @@ function AppContent() {
   const handleCancelOrder = async (orderId: string) => {
     const o = orders.find(ord => ord.id === orderId);
     if (!o) return;
+    if (o.status === 'cancelled') return;
+
     const newLogs = [
       ...o.logs,
       { status: 'cancelled' as const, timestamp: new Date().toISOString(), note: 'Cancelled by customer' }
     ];
+
+    // Restore stock in local state immediately
+    const { updatedStock, updatedIngredients } = restoreOrderStock(o.items, stockLevels, ingredientsInventory);
+    setStockLevels(updatedStock);
+    setIngredientsInventory(updatedIngredients);
+    localStorage.setItem('curvada_stock_levels', JSON.stringify(updatedStock));
 
     try {
       const res = await fetch('/api/orders/status', {
@@ -1290,14 +1404,18 @@ function AppContent() {
         body: JSON.stringify({ orderId, status: 'cancelled', logs: newLogs })
       });
       const data = await res.json();
-      setOrders(data.db.orders);
+      if (data.db) {
+        if (data.db.orders) setOrders(data.db.orders);
+        if (data.db.stockLevels) setStockLevels(data.db.stockLevels);
+        if (data.db.ingredientsInventory) setIngredientsInventory(data.db.ingredientsInventory);
+      }
     } catch (e) {
       console.error(e);
-      const updated = orders.map((o) => {
-        if (o.id === orderId) {
-          return { ...o, status: 'cancelled' as OrderStatus, logs: newLogs };
+      const updated = orders.map((ord) => {
+        if (ord.id === orderId) {
+          return { ...ord, status: 'cancelled' as OrderStatus, logs: newLogs };
         }
-        return o;
+        return ord;
       });
       setOrders(updated);
     }
@@ -1325,55 +1443,73 @@ function AppContent() {
     }
   };
 
-  // Kitchen Chef Updates (Status Progression)
-  const handleUpdateOrderStatus = async (
+  // Kitchen Chef Updates (Status Progression) - Memoized to prevent parent re-renders
+  const handleUpdateOrderStatus = React.useCallback(async (
     orderId: string, 
     newStatus: OrderStatus, 
     cookingStartTime?: string, 
     estimatedPrepTime?: number
   ) => {
-    const o = orders.find(ord => ord.id === orderId);
-    if (!o) return;
-    const logs = [
-      ...o.logs,
-      {
-        status: newStatus,
-        timestamp: new Date().toISOString(),
-        note: `Status updated by Chef Kitchen Panel to ${newStatus}.`,
-      },
-    ];
+    // Broadcast live WebSocket status update instantly
+    realtimeOrderService.broadcast({
+      type: 'STATUS_CHANGED',
+      orderId,
+      status: newStatus,
+      timestamp: new Date().toISOString()
+    });
 
-    let resolvedStart = cookingStartTime;
-    let resolvedPrepTime = estimatedPrepTime;
+    setOrders((prevOrders) => {
+      const o = prevOrders.find(ord => ord.id === orderId);
+      if (!o) return prevOrders;
 
-    try {
-      const res = await fetch('/api/orders/status', {
+      // If cancelling an active order, restore item stock & raw ingredients in local state
+      if (newStatus === 'cancelled' && o.status !== 'cancelled') {
+        const { updatedStock, updatedIngredients } = restoreOrderStock(o.items, stockLevels, ingredientsInventory);
+        setStockLevels(updatedStock);
+        setIngredientsInventory(updatedIngredients);
+        localStorage.setItem('curvada_stock_levels', JSON.stringify(updatedStock));
+      }
+
+      const logs = [
+        ...o.logs,
+        {
+          status: newStatus,
+          timestamp: new Date().toISOString(),
+          note: `Status updated by Chef Kitchen Panel to ${newStatus}.`,
+        },
+      ];
+
+      fetch('/api/orders/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           orderId, 
           status: newStatus, 
           logs,
-          cookingStartTime: resolvedStart,
-          estimatedPrepTime: resolvedPrepTime
+          cookingStartTime,
+          estimatedPrepTime
         })
-      });
-      const data = await res.json();
-      setOrders(data.db.orders);
-    } catch (e) {
-      console.error(e);
-      const updated = orders.map((o) => {
-        if (o.id === orderId) {
-          const updatedO = { ...o, status: newStatus, logs };
-          if (resolvedStart !== undefined) updatedO.cookingStartTime = resolvedStart;
-          if (resolvedPrepTime !== undefined) updatedO.estimatedPrepTime = resolvedPrepTime;
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.db) {
+          if (data.db.stockLevels) setStockLevels(data.db.stockLevels);
+          if (data.db.ingredientsInventory) setIngredientsInventory(data.db.ingredientsInventory);
+        }
+      })
+      .catch((e) => console.error("Failed to sync order status to server", e));
+
+      return prevOrders.map((item) => {
+        if (item.id === orderId) {
+          const updatedO = { ...item, status: newStatus, logs };
+          if (cookingStartTime !== undefined) updatedO.cookingStartTime = cookingStartTime;
+          if (estimatedPrepTime !== undefined) updatedO.estimatedPrepTime = estimatedPrepTime;
           return updatedO;
         }
-        return o;
+        return item;
       });
-      setOrders(updated);
-    }
-  };
+    });
+  }, [orders, stockLevels, ingredientsInventory]);
 
   const handleToggleItemCooked = async (orderId: string, itemId: string) => {
     const o = orders.find(ord => ord.id === orderId);

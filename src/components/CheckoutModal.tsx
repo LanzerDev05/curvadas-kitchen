@@ -25,9 +25,25 @@ export default function CheckoutModal({
   const [tableNumber, setTableNumber] = useState(() => localStorage.getItem('curvada_cust_tablenumber') || '');
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'ewallet' | 'card'>(() => (localStorage.getItem('curvada_cust_paymentmethod') as 'cod' | 'ewallet' | 'card') || 'cod');
 
+  // Promo Voucher state
+  const [promoCode, setPromoCode] = useState('');
+  const [voucherDiscount, setVoucherDiscount] = useState(0);
+  const [voucherMsg, setVoucherMsg] = useState('');
+  const [appliedVoucherCode, setAppliedVoucherCode] = useState('');
+
+  // Loyalty Points state
+  const [useLoyaltyPoints, setUseLoyaltyPoints] = useState(false);
+
   // Synchronize inputs when modal opens or loggedInCustomer changes
   useEffect(() => {
     if (isOpen) {
+      const params = new URLSearchParams(window.location.search);
+      const urlTable = params.get('table');
+      if (urlTable) {
+        setOrderType('pickup');
+        setTableNumber(urlTable);
+      }
+
       if (loggedInCustomer) {
         setName(loggedInCustomer.name);
         setPhone(loggedInCustomer.phone);
@@ -54,10 +70,63 @@ export default function CheckoutModal({
 
   if (!isOpen) return null;
 
-  const totalAmount = cartItems.reduce(
+  const rawTotal = cartItems.reduce(
     (sum, item) => sum + item.totalUnitPrice * item.quantity,
     0
   );
+
+  const userLoyaltyPoints = loggedInCustomer?.loyaltyPoints || 0;
+  const maxLoyaltyRedeemable = Math.floor(userLoyaltyPoints / 10) * 50; // 10 pts = ₱50
+  const loyaltyDiscount = useLoyaltyPoints ? Math.min(rawTotal, maxLoyaltyRedeemable) : 0;
+  const totalAmount = Math.max(0, rawTotal - voucherDiscount - loyaltyDiscount);
+
+  const handleApplyVoucher = async () => {
+    setVoucherMsg('');
+    if (!promoCode.trim()) return;
+    try {
+      const res = await fetch('/api/vouchers/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: promoCode, cartTotal: rawTotal })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setVoucherDiscount(data.discountAmount);
+        setAppliedVoucherCode(data.voucher.code);
+        setVoucherMsg(`✅ Applied ${data.voucher.code}! Saved ₱${data.discountAmount.toFixed(2)}`);
+      } else {
+        const clean = promoCode.trim().toUpperCase();
+        if (clean === 'WELCOME10') {
+          const disc = (rawTotal * 10) / 100;
+          setVoucherDiscount(disc);
+          setAppliedVoucherCode('WELCOME10');
+          setVoucherMsg(`✅ Applied WELCOME10! Saved ₱${disc.toFixed(2)}`);
+        } else if (clean === 'CURVADA50') {
+          const disc = Math.min(rawTotal, 50);
+          setVoucherDiscount(disc);
+          setAppliedVoucherCode('CURVADA50');
+          setVoucherMsg(`✅ Applied CURVADA50! Saved ₱${disc.toFixed(2)}`);
+        } else {
+          setVoucherMsg(`❌ ${data.error || 'Invalid promo code'}`);
+        }
+      }
+    } catch (e) {
+      const clean = promoCode.trim().toUpperCase();
+      if (clean === 'WELCOME10') {
+        const disc = (rawTotal * 10) / 100;
+        setVoucherDiscount(disc);
+        setAppliedVoucherCode('WELCOME10');
+        setVoucherMsg(`✅ Applied WELCOME10! Saved ₱${disc.toFixed(2)}`);
+      } else if (clean === 'CURVADA50') {
+        const disc = Math.min(rawTotal, 50);
+        setVoucherDiscount(disc);
+        setAppliedVoucherCode('CURVADA50');
+        setVoucherMsg(`✅ Applied CURVADA50! Saved ₱${disc.toFixed(2)}`);
+      } else {
+        setVoucherMsg('❌ Invalid promo code');
+      }
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -288,6 +357,64 @@ export default function CheckoutModal({
             )}
           </div>
 
+          {/* 3.5 Promo Voucher & Loyalty Rewards */}
+          <div className="bg-[#0D0D0C] border-2 border-white/5 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                🏷️ Promo Voucher & Rewards
+              </span>
+              {loggedInCustomer && userLoyaltyPoints > 0 && (
+                <span className="text-[10px] text-brand-gold font-mono font-bold">
+                  💎 {userLoyaltyPoints} Loyalty Pts
+                </span>
+              )}
+            </div>
+
+            {/* Voucher Input */}
+            <div className="space-y-1.5">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter Promo Code (e.g. WELCOME10)"
+                  value={promoCode}
+                  onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                  className="flex-1 bg-[#181818] text-white rounded-xl px-3 py-2 border border-white/10 text-xs font-mono font-bold focus:outline-none focus:border-brand-red uppercase"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyVoucher}
+                  className="px-4 py-2 bg-brand-red hover:bg-brand-red-hover text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all"
+                >
+                  Apply
+                </button>
+              </div>
+              {voucherMsg && (
+                <p className={`text-[10px] font-bold ${voucherMsg.startsWith('✅') ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {voucherMsg}
+                </p>
+              )}
+            </div>
+
+            {/* Loyalty Points Redemption Toggle */}
+            {loggedInCustomer && userLoyaltyPoints >= 10 && (
+              <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-white block">Redeem Loyalty Points</span>
+                  <span className="text-[10px] text-gray-400 font-medium">Redeem points for ₱{maxLoyaltyRedeemable} off</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUseLoyaltyPoints(!useLoyaltyPoints)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase transition-all ${
+                    useLoyaltyPoints ? 'bg-brand-gold text-black shadow-md' : 'bg-[#181818] border border-white/10 text-gray-400'
+                  }`}
+                >
+                  {useLoyaltyPoints ? 'Applied 💎' : 'Redeem'}
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* 4. Payment Selection */}
           <div className="space-y-4">
             <h4 className="text-white font-display font-black text-sm tracking-wide uppercase border-b-2 border-white/5 pb-1">
@@ -440,7 +567,14 @@ export default function CheckoutModal({
         {/* Footer (Submission Action) */}
         <div className="p-5 bg-[#0D0D0C] border-t-2 border-white/5 flex-shrink-0 flex items-center justify-between gap-4">
           <div className="flex flex-col">
-            <span className="text-gray-500 text-[10px] uppercase tracking-wider font-bold">Total amount</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-gray-500 text-[10px] uppercase tracking-wider font-bold">Total Payable</span>
+              {(voucherDiscount > 0 || loyaltyDiscount > 0) && (
+                <span className="text-gray-500 text-[10px] line-through font-mono">
+                  ₱{rawTotal.toFixed(2)}
+                </span>
+              )}
+            </div>
             <span className="text-brand-gold font-display font-black text-xl leading-none">
               ₱{totalAmount.toFixed(2)}
             </span>

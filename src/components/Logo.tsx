@@ -25,12 +25,16 @@ export default function Logo({ className = '', showText = true, size = 'md' }: L
         />
       </div>
 
-      {showText && size !== 'sm' && (
-        <div className="flex flex-col">
-          <span className="font-display font-black text-xl tracking-tight text-white leading-none">
+      {showText && (
+        <div className="flex flex-col text-left">
+          <span className={`font-display font-black tracking-tight text-white leading-none ${
+            size === 'sm' ? 'text-xs sm:text-sm' : size === 'md' ? 'text-xl' : 'text-2xl md:text-3xl'
+          }`}>
             CURVADA'S
           </span>
-          <span className="font-marker text-brand-red text-lg leading-none -mt-1 transform rotate-[-2deg] origin-left">
+          <span className={`font-marker text-brand-red leading-none transform rotate-[-2deg] origin-left ${
+            size === 'sm' ? 'text-xs mt-0.5' : 'text-lg -mt-1'
+          }`}>
             Kitchen
           </span>
         </div>

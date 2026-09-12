@@ -1,11 +1,20 @@
 import fs from 'fs';
 import path from 'path';
 import { MENU_ITEMS } from '../data/menu';
-import { MenuItem, IngredientStock, Order, GroupOrderSession } from '../types';
+import { MenuItem, IngredientStock, Order, GroupOrderSession, UserAccount, PromoVoucher, SpoilageRecord, StaffShift, ZReadAudit } from '../types';
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-const DB_FILE = path.resolve(process.cwd(), 'db.json');
+const DB_DIR = path.resolve(process.cwd(), '.data');
+const DB_FILE = path.resolve(DB_DIR, 'db.json');
+
+const ensureDbDir = () => {
+  try {
+    if (!fs.existsSync(DB_DIR)) {
+      fs.mkdirSync(DB_DIR, { recursive: true });
+    }
+  } catch (e) {}
+};
 
 let localCache: DatabaseSchema | null = null;
 
@@ -17,6 +26,11 @@ export interface DatabaseSchema {
   hiddenCategories: string[];
   orders: Order[];
   groupSessions: GroupOrderSession[];
+  users: UserAccount[];
+  promoVouchers: PromoVoucher[];
+  spoilageLogs: SpoilageRecord[];
+  staffShifts: StaffShift[];
+  zReadAudits: ZReadAudit[];
   settings: {
     salesPace: number;
     electricityBaseRate: number;
@@ -35,148 +49,106 @@ export interface DatabaseSchema {
     targetProfitMonth: number;
     targetProfitYear: number;
     financesPeriod: 'day' | 'week' | 'month' | 'year';
+    expenseInputMode?: 'monthly' | 'daily';
+    monthlyRatesMap?: Record<string, {
+      electricityBaseRate: number;
+      electricityVariableRate: number;
+      waterBaseRate: number;
+      rentBaseRate: number;
+      laborBaseRate: number;
+      gasBaseRate: number;
+      otherBaseRate: number;
+    }>;
   };
 }
 
-// Generate the initial seed database matching App.tsx's baseline logic
+// Generate the initial seed database (Starts clean with 0 ingredients/dishes/orders, retaining accounts)
 const generateDefaultDB = (): DatabaseSchema => {
-  // Generate realistic ingredients stock
-  const uniqueIngredients = new Set<string>();
-  MENU_ITEMS.forEach(item => {
-    if (item.ingredients) {
-      item.ingredients.forEach(ing => uniqueIngredients.add(ing));
-    }
-  });
-
-  if (uniqueIngredients.size === 0) {
-    ['Premium Beef Tapa', 'Sunny-Side-Up Egg', 'Garlic Fried Rice', 'Atchara Pickles', 'Sweet Cured Pork', 'Traditional Vinegar Dip', 'Steamed Rice', 'Pork Gyoza (2pcs)', 'Crispy Chicken Fillet', 'Bulldog Tonkatsu Sauce', 'Japanese Mayo', 'Garlic', 'Egg', 'Pork Belly'].forEach(ing => uniqueIngredients.add(ing));
-  }
-
-  const ingredientsInventory: IngredientStock[] = Array.from(uniqueIngredients).map((name, index) => {
-    const isEggOrGyoza = name.toLowerCase().includes('egg') || name.toLowerCase().includes('gyoza');
-    const unit: string = isEggOrGyoza ? 'pcs' : 'g';
-    let costPerUnit = 0.05;
-    if (name.toLowerCase().includes('egg')) costPerUnit = 8.00;
-    else if (name.toLowerCase().includes('gyoza')) costPerUnit = 12.00;
-    else if (name.toLowerCase().includes('rice')) costPerUnit = 0.03;
-    else if (name.toLowerCase().includes('beef') || name.toLowerCase().includes('pork') || name.toLowerCase().includes('chicken')) costPerUnit = 0.25;
-    else if (unit === 'pcs') costPerUnit = 15.00;
-    else if (unit === 'cans') costPerUnit = 45.00;
-
-    return {
-      id: `ing-${index}-${Math.random().toString(36).substr(2, 4)}`,
-      name,
-      quantity: isEggOrGyoza ? 60 : 3000,
-      unit,
-      lowStockAlert: isEggOrGyoza ? 10 : 500,
-      costPerUnit
-    };
-  });
-
-  const stockLevels: Record<string, number> = {};
-  MENU_ITEMS.forEach(item => {
-    stockLevels[item.id] = item.category === 'drinks' ? 45 : 18;
-  });
-
-  const seedOrders: Order[] = [
+  const seedUsers: UserAccount[] = [
     {
-      id: 'ord-seed01',
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      items: [
-        {
-          id: 'silog-tapsilog-default',
-          menuItem: MENU_ITEMS[0],
-          selectedOptions: [
-            { optionTitle: 'Rice Upgrade', choice: { id: 'rice-garlic', name: 'Garlic Fried Rice', price: 0 } },
-            { optionTitle: 'Egg Style', choice: { id: 'egg-sunny', name: 'Sunny-side-up', price: 0 } }
-          ],
-          quantity: 2,
-          totalUnitPrice: 149,
-        },
-        {
-          id: 'drink-red-tea-default',
-          menuItem: MENU_ITEMS[2],
-          selectedOptions: [
-            { optionTitle: 'Serving Size', choice: { id: 'size-large', name: 'Large C-Cup (22oz) (+20)', price: 20 } }
-          ],
-          quantity: 2,
-          totalUnitPrice: 69,
-        }
-      ],
-      totalAmount: 436,
-      customer: {
-        name: 'Arnel Cruz',
-        phone: '0917-882-9382',
-        email: 'arnel@gmail.com',
-        address: 'Block 3 Lot 15, Springville Homes, Bacoor, Cavite',
-        orderType: 'delivery',
-      },
-      paymentMethod: 'ewallet',
-      status: 'delivered',
-      logs: [
-        { status: 'pending', timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-        { status: 'preparing', timestamp: new Date(Date.now() - 1.8 * 60 * 60 * 1000).toISOString() },
-        { status: 'dispatched', timestamp: new Date(Date.now() - 1.5 * 60 * 60 * 1000).toISOString() },
-        { status: 'delivered', timestamp: new Date(Date.now() - 1.2 * 60 * 60 * 1000).toISOString() }
-      ]
+      id: 'usr-lanzer',
+      name: 'Lanzer Villarlibo',
+      email: 'lanzer@gmail.com',
+      phone: '0917-882-9382',
+      address: 'Block 3 Lot 15, Springville Homes, Bacoor, Cavite',
+      password: 'password123',
+      role: 'customer',
+      createdAt: new Date().toISOString(),
+      loyaltyPoints: 120
     },
     {
-      id: 'ord-seed02',
-      timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-      items: [
-        {
-          id: 'bento-chicken-katsu-default',
-          menuItem: MENU_ITEMS[1],
-          selectedOptions: [
-            { optionTitle: 'Sauce Option', choice: { id: 'sauce-katsu', name: 'Katsu Sauce & Mayo', price: 0 } }
-          ],
-          quantity: 1,
-          totalUnitPrice: 189,
-        }
-      ],
-      totalAmount: 189,
-      customer: {
-        name: 'Sarah Geronimo',
-        phone: '0922-383-7377',
-        email: 'sarahg@gmail.com',
-        address: 'Zone 4, Curvada National Highway (Eat-in)',
-        orderType: 'pickup',
-        tableNumber: '7',
-      },
-      paymentMethod: 'cod',
-      status: 'pending',
-      logs: [
-        { status: 'pending', timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString() }
-      ]
+      id: 'usr-kitchen-staff',
+      name: 'Kitchen Staff',
+      email: 'kitchen@curvada.com',
+      phone: '0922-000-0001',
+      address: 'Curvada Kitchen Station 1',
+      password: 'kitchen123',
+      role: 'kitchen',
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'usr-admin',
+      name: 'Curvada Manager',
+      email: 'admin@curvada.com',
+      phone: '0922-000-0002',
+      address: 'Curvada HQ Cavite',
+      password: 'admin123',
+      role: 'admin',
+      createdAt: new Date().toISOString()
+    }
+  ];
+
+  const seedVouchers: PromoVoucher[] = [
+    {
+      id: 'vch-10',
+      code: 'WELCOME10',
+      discountType: 'percentage',
+      discountValue: 10,
+      minSpend: 200,
+      isActive: true
+    },
+    {
+      id: 'vch-50',
+      code: 'CURVADA50',
+      discountType: 'fixed',
+      discountValue: 50,
+      minSpend: 350,
+      isActive: true
     }
   ];
 
   return {
-    menuItems: MENU_ITEMS,
-    ingredientsInventory,
-    stockLevels,
+    menuItems: [],
+    ingredientsInventory: [],
+    stockLevels: {},
     manualStockOverrides: [],
     hiddenCategories: [],
-    orders: seedOrders,
+    orders: [],
     groupSessions: [],
+    users: seedUsers,
+    promoVouchers: seedVouchers,
+    spoilageLogs: [],
+    staffShifts: [],
+    zReadAudits: [],
     settings: {
-      salesPace: 30,
-      electricityBaseRate: 250,
-      electricityVariableRate: 10,
-      waterBaseRate: 80,
-      rentBaseRate: 500,
-      laborBaseRate: 1200,
-      gasBaseRate: 200,
-      otherBaseRate: 100,
-      targetSalesDay: 6000,
-      targetSalesWeek: 42000,
-      targetSalesMonth: 180000,
-      targetSalesYear: 2160000,
-      targetProfitDay: 2500,
-      targetProfitWeek: 17500,
-      targetProfitMonth: 75000,
-      targetProfitYear: 900000,
-      financesPeriod: 'day'
+      salesPace: 0,
+      electricityBaseRate: 0,
+      electricityVariableRate: 0,
+      waterBaseRate: 0,
+      rentBaseRate: 0,
+      laborBaseRate: 0,
+      gasBaseRate: 0,
+      otherBaseRate: 0,
+      targetSalesDay: 0,
+      targetSalesWeek: 0,
+      targetSalesMonth: 0,
+      targetSalesYear: 0,
+      targetProfitDay: 0,
+      targetProfitWeek: 0,
+      targetProfitMonth: 0,
+      targetProfitYear: 0,
+      financesPeriod: 'day',
+      expenseInputMode: 'monthly'
     }
   };
 };
@@ -196,6 +168,13 @@ export const readDB = async (): Promise<DatabaseSchema> => {
         const json = (await res.json()) as any;
         if (json && json.result) {
           const parsed = JSON.parse(json.result) as DatabaseSchema;
+          if (!parsed.users || !Array.isArray(parsed.users)) {
+            parsed.users = generateDefaultDB().users;
+          }
+          if (!parsed.promoVouchers) parsed.promoVouchers = generateDefaultDB().promoVouchers;
+          if (!parsed.spoilageLogs) parsed.spoilageLogs = [];
+          if (!parsed.staffShifts) parsed.staffShifts = [];
+          if (!parsed.zReadAudits) parsed.zReadAudits = [];
           localCache = parsed;
           return parsed;
         }
@@ -210,6 +189,7 @@ export const readDB = async (): Promise<DatabaseSchema> => {
   }
 
   try {
+    ensureDbDir();
     if (!fs.existsSync(DB_FILE)) {
       const defaultData = generateDefaultDB();
       fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2), 'utf-8');
@@ -218,8 +198,16 @@ export const readDB = async (): Promise<DatabaseSchema> => {
     }
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as DatabaseSchema;
+    if (!parsed.users || !Array.isArray(parsed.users)) {
+      parsed.users = generateDefaultDB().users;
+    }
+    if (!parsed.promoVouchers) parsed.promoVouchers = generateDefaultDB().promoVouchers;
+    if (!parsed.spoilageLogs) parsed.spoilageLogs = [];
+    if (!parsed.staffShifts) parsed.staffShifts = [];
+    if (!parsed.zReadAudits) parsed.zReadAudits = [];
     localCache = parsed;
     return parsed;
+
   } catch (err) {
     console.error('Failed to read database file, generating default.', err);
     const defaultData = generateDefaultDB();
@@ -250,6 +238,7 @@ export const writeDB = async (data: DatabaseSchema): Promise<void> => {
   }
 
   try {
+    ensureDbDir();
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
     console.error('Failed to write database file.', err);
