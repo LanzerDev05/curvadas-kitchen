@@ -1255,65 +1255,85 @@ function AdminPanel({
 
   const renderMetrics = () => {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3 shadow-xl">
-          <div className="p-2.5 rounded-xl bg-brand-gold/10 text-brand-gold">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+        {/* Card 1: Total Revenue */}
+        <div className="bg-[#181818] border border-white/5 rounded-2xl p-3.5 flex items-center gap-3 shadow-xl">
+          <div className="p-2.5 rounded-xl bg-brand-gold/10 text-brand-gold flex-shrink-0">
             <TrendingUp className="w-4 h-4" />
           </div>
-          <div>
-            <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block">Total Revenue</span>
-            <h4 className="text-white font-display font-extrabold text-sm md:text-base">
+          <div className="min-w-0">
+            <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block truncate">Total Revenue</span>
+            <h4 className="text-white font-display font-extrabold text-xs md:text-sm truncate">
               ₱{stats.totalSales.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </h4>
           </div>
         </div>
 
-        <div className="bg-[#181818] border border-brand-gold/20 bg-brand-gold/[0.02] rounded-2xl p-4 flex items-center gap-3 shadow-xl">
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
+        {/* Card 2: Today's Revenue */}
+        <div className="bg-[#181818] border border-emerald-500/20 bg-emerald-500/[0.02] rounded-2xl p-3.5 flex items-center gap-3 shadow-xl">
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 flex-shrink-0">
             <Calendar className="w-4 h-4" />
           </div>
-          <div>
-            <span className="text-[9px] text-emerald-400 uppercase tracking-wider font-bold block flex items-center gap-1">
+          <div className="min-w-0">
+            <span className="text-[9px] text-emerald-400 uppercase tracking-wider font-bold block truncate">
               📅 Today's Revenue
             </span>
-            <h4 className="text-white font-display font-extrabold text-sm md:text-base">
+            <h4 className="text-white font-display font-extrabold text-xs md:text-sm truncate">
               ₱{stats.todaySales.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </h4>
           </div>
         </div>
 
-        <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3 shadow-xl">
-          <div className="p-2.5 rounded-xl bg-brand-red/10 text-brand-red animate-pulse-slow">
+        {/* Card 3: Today's Total Orders */}
+        <div className="bg-[#181818] border border-blue-500/20 bg-blue-500/[0.02] rounded-2xl p-3.5 flex items-center gap-3 shadow-xl">
+          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 flex-shrink-0">
+            <ShoppingCart className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <span className="text-[9px] text-blue-400 uppercase tracking-wider font-bold block truncate">
+              🛍️ Today's Orders
+            </span>
+            <h4 className="text-white font-display font-extrabold text-xs md:text-sm truncate">
+              {stats.todayOrdersCount} Orders
+            </h4>
+          </div>
+        </div>
+
+        {/* Card 4: Active Prep */}
+        <div className="bg-[#181818] border border-white/5 rounded-2xl p-3.5 flex items-center gap-3 shadow-xl">
+          <div className="p-2.5 rounded-xl bg-brand-red/10 text-brand-red animate-pulse-slow flex-shrink-0">
             <ChefHat className="w-4 h-4" />
           </div>
-          <div>
-            <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block">Cooking/Active</span>
-            <h4 className="text-white font-display font-extrabold text-sm md:text-base">
+          <div className="min-w-0">
+            <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block truncate">Cooking / Active</span>
+            <h4 className="text-white font-display font-extrabold text-xs md:text-sm truncate">
               {stats.activeCount} Orders
             </h4>
           </div>
         </div>
 
-        <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3 shadow-xl">
-          <div className="p-2.5 rounded-xl bg-green-500/10 text-green-400">
+        {/* Card 5: Delivered Today */}
+        <div className="bg-[#181818] border border-white/5 rounded-2xl p-3.5 flex items-center gap-3 shadow-xl">
+          <div className="p-2.5 rounded-xl bg-green-500/10 text-green-400 flex-shrink-0">
             <CheckCircle className="w-4 h-4" />
           </div>
-          <div>
-            <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block">Delivered Orders</span>
-            <h4 className="text-white font-display font-extrabold text-sm md:text-base">
-              {stats.completedCount} Orders
+          <div className="min-w-0">
+            <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block truncate">Delivered Today</span>
+            <h4 className="text-white font-display font-extrabold text-xs md:text-sm truncate">
+              {stats.todayCompletedCount} <span className="text-[9px] text-gray-500 font-normal">({stats.completedCount} total)</span>
             </h4>
           </div>
         </div>
 
-        <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3 shadow-xl">
-          <div className="p-2.5 rounded-xl bg-red-500/10 text-red-500">
+        {/* Card 6: Cancelled Today */}
+        <div className="bg-[#181818] border border-white/5 rounded-2xl p-3.5 flex items-center gap-3 shadow-xl">
+          <div className="p-2.5 rounded-xl bg-red-500/10 text-red-500 flex-shrink-0">
             <Ban className="w-4 h-4" />
           </div>
-          <div>
-            <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block">Cancelled</span>
-            <h4 className="text-white font-display font-extrabold text-sm md:text-base">
-              {stats.cancelledCount} Orders
+          <div className="min-w-0">
+            <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block truncate">Cancelled Today</span>
+            <h4 className="text-white font-display font-extrabold text-xs md:text-sm truncate">
+              {stats.todayCancelledCount} <span className="text-[9px] text-gray-500 font-normal">({stats.cancelledCount} total)</span>
             </h4>
           </div>
         </div>
@@ -2482,29 +2502,48 @@ function AdminPanel({
 
   // Calculate Metrics
   const stats = (() => {
+    const isToday = (timestampStr?: string) => {
+      if (!timestampStr) return true;
+      const d = new Date(timestampStr);
+      if (isNaN(d.getTime())) return true;
+      const now = new Date();
+      return (
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate()
+      );
+    };
+
     const totalSales = orders
       .filter((o) => o.status === 'delivered')
       .reduce((sum, o) => sum + o.totalAmount, 0);
 
     const todaySales = orders
-      .filter((o) => {
-        if (o.status !== 'delivered') return false;
-        if (!o.timestamp) return true;
-        const d = new Date(o.timestamp);
-        if (isNaN(d.getTime())) return true;
-        const now = new Date();
-        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-      })
+      .filter((o) => o.status === 'delivered' && isToday(o.timestamp))
       .reduce((sum, o) => sum + o.totalAmount, 0);
+
+    const todayOrdersCount = orders.filter((o) => isToday(o.timestamp)).length;
 
     const activeCount = orders.filter(
       (o) => o.status === 'pending' || o.status === 'preparing' || o.status === 'dispatched'
     ).length;
 
     const completedCount = orders.filter((o) => o.status === 'delivered').length;
-    const cancelledCount = orders.filter((o) => o.status === 'cancelled').length;
+    const todayCompletedCount = orders.filter((o) => o.status === 'delivered' && isToday(o.timestamp)).length;
 
-    return { totalSales, todaySales, activeCount, completedCount, cancelledCount };
+    const cancelledCount = orders.filter((o) => o.status === 'cancelled').length;
+    const todayCancelledCount = orders.filter((o) => o.status === 'cancelled' && isToday(o.timestamp)).length;
+
+    return { 
+      totalSales, 
+      todaySales, 
+      todayOrdersCount,
+      activeCount, 
+      completedCount, 
+      todayCompletedCount,
+      cancelledCount,
+      todayCancelledCount
+    };
   })();
 
   const getUnitPrice = (unit: string, ingId?: string) => {
