@@ -1578,6 +1578,20 @@ function AppContent() {
       newPrepTime = Math.max(1, Math.round(elapsedMins));
     }
 
+    // Optimistic UI update
+    setOrders((prevOrders) => prevOrders.map((ord) => {
+      if (ord.id === orderId) {
+        return { 
+          ...ord, 
+          cookedItemIds: updatedCooked, 
+          startedItemIds: updatedStarted,
+          estimatedPrepTime: newPrepTime, 
+          cookingStartTime: newStartTime || undefined 
+        };
+      }
+      return ord;
+    }));
+
     try {
       const res = await fetch('/api/orders/cook-item', {
         method: 'POST',
@@ -1591,22 +1605,9 @@ function AppContent() {
         })
       });
       const data = await res.json();
-      setOrders(data.db.orders);
+      if (data?.db?.orders) setOrders(data.db.orders);
     } catch (e) {
-      console.error(e);
-      const updated = orders.map((ord) => {
-        if (ord.id === orderId) {
-          return { 
-            ...ord, 
-            cookedItemIds: updatedCooked, 
-            startedItemIds: updatedStarted,
-            estimatedPrepTime: newPrepTime, 
-            cookingStartTime: newStartTime || undefined 
-          };
-        }
-        return ord;
-      });
-      setOrders(updated);
+      console.error("Failed to sync cook-item to server", e);
     }
   };
 
@@ -1630,6 +1631,19 @@ function AppContent() {
       newPrepTime = maxTime + (totalQty - 1) * 2;
     }
 
+    // Optimistic UI update
+    setOrders((prevOrders) => prevOrders.map((ord) => {
+      if (ord.id === orderId) {
+        return { 
+          ...ord, 
+          startedItemIds: updatedStarted, 
+          cookingStartTime: newStartTime || undefined, 
+          estimatedPrepTime: newPrepTime 
+        };
+      }
+      return ord;
+    }));
+
     try {
       const res = await fetch('/api/orders/cook-item', {
         method: 'POST',
@@ -1642,25 +1656,21 @@ function AppContent() {
         })
       });
       const data = await res.json();
-      setOrders(data.db.orders);
+      if (data?.db?.orders) setOrders(data.db.orders);
     } catch (e) {
-      console.error(e);
-      const updated = orders.map((ord) => {
-        if (ord.id === orderId) {
-          return { 
-            ...ord, 
-            startedItemIds: updatedStarted, 
-            cookingStartTime: newStartTime || undefined, 
-            estimatedPrepTime: newPrepTime 
-          };
-        }
-        return ord;
-      });
-      setOrders(updated);
+      console.error("Failed to sync start item cooking to server", e);
     }
   };
 
   const handleSetCookedBy = async (orderId: string, staffName: string) => {
+    // Optimistic UI update
+    setOrders((prevOrders) => prevOrders.map((ord) => {
+      if (ord.id === orderId) {
+        return { ...ord, cookedBy: staffName };
+      }
+      return ord;
+    }));
+
     try {
       const res = await fetch('/api/orders/cook-item', {
         method: 'POST',
@@ -1668,16 +1678,9 @@ function AppContent() {
         body: JSON.stringify({ orderId, cookedBy: staffName })
       });
       const data = await res.json();
-      setOrders(data.db.orders);
+      if (data?.db?.orders) setOrders(data.db.orders);
     } catch (e) {
-      console.error(e);
-      const updated = orders.map((ord) => {
-        if (ord.id === orderId) {
-          return { ...ord, cookedBy: staffName };
-        }
-        return ord;
-      });
-      setOrders(updated);
+      console.error("Failed to sync cookedBy staff to server", e);
     }
   };
 

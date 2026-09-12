@@ -419,6 +419,7 @@ function AdminPanel({
       if (path === '/portal/kitchen/spoilage') setChefTab('spoilage');
       else if (path === '/portal/kitchen/shifts') setChefTab('shifts');
       else if (path === '/portal/kitchen/qr') setChefTab('qr');
+      else if (path === '/portal/kitchen/orders') setChefTab('orders');
       else setChefTab('orders');
     }
   }, [path]);
@@ -598,22 +599,59 @@ function AdminPanel({
           </div>
         </div>
 
+        {/* Prepared By Staff / Chef Tag */}
+        <div className="flex items-center justify-between gap-2 pt-1 pb-1 border-t border-white/5 text-[9px]">
+          <span className="text-gray-500 font-bold uppercase">Prepared By:</span>
+          {onSetCookedBy ? (
+            <input
+              type="text"
+              placeholder="Chef Name..."
+              defaultValue={order.cookedBy || ''}
+              onBlur={(e) => onSetCookedBy(order.id, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  onSetCookedBy(order.id, (e.target as HTMLInputElement).value);
+                }
+              }}
+              className="bg-[#0D0D0C] border border-white/10 rounded px-2 py-0.5 text-[9px] text-white focus:outline-none focus:border-brand-gold w-28 font-semibold"
+            />
+          ) : (
+            <span className="font-bold text-brand-gold">{order.cookedBy || 'Kitchen Team'}</span>
+          )}
+        </div>
+
         {/* Item checklist */}
         <div className="space-y-1 pb-1">
           <span className="text-[8px] text-gray-500 font-black uppercase tracking-widest block">Ordered Items</span>
           <div className="space-y-1">
             {order.items.map(item => {
               const isCooked = order.cookedItemIds?.includes(item.id);
+              const isStarted = order.startedItemIds?.includes(item.id);
               const canToggle = order.status === 'preparing';
 
               return (
                 <div key={item.id} className="text-xs font-medium flex items-center justify-between gap-2 p-1.5 rounded-lg bg-black/10 border border-white/[0.02]">
-                  <span className={`truncate ${isCooked ? 'line-through text-gray-500' : 'text-gray-300'}`}>
+                  <span className={`truncate ${isCooked ? 'line-through text-gray-500' : isStarted ? 'text-brand-gold font-semibold' : 'text-gray-300'}`}>
                     <strong className="text-brand-red mr-1 font-bold">{item.quantity}x</strong> 
                     {item.menuItem.name}
                   </span>
                   
                   <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {canToggle && !isCooked && !isStarted && onStartItemCooking && (
+                      <button
+                        type="button"
+                        onClick={() => onStartItemCooking(order.id, item.id)}
+                        className="px-1.5 py-0.5 rounded bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/20 text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer"
+                        title="Start cooking this dish item"
+                      >
+                        ▶️ Prep
+                      </button>
+                    )}
+                    {canToggle && isStarted && !isCooked && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[8px] font-bold uppercase tracking-wider border border-amber-500/20 animate-pulse">
+                        🔥 Cooking
+                      </span>
+                    )}
                     {canToggle ? (
                       <button
                         type="button"
@@ -1017,11 +1055,13 @@ function AdminPanel({
                 <button
                   key={link.id}
                   onClick={() => {
+                    setChefTab(link.id as any);
                     if (loginRole === 'admin') {
                       if (link.id === 'orders') navigate('/portal/admin');
                       else navigate(`/portal/admin/${link.id}`);
                     } else {
-                      navigate('/portal/kitchen');
+                      if (link.id === 'orders') navigate('/portal/kitchen');
+                      else navigate(`/portal/kitchen/${link.id}`);
                     }
                     setIsSidebarOpen(false);
                   }}
@@ -1069,7 +1109,7 @@ function AdminPanel({
                     if (loginRole === 'admin') {
                       navigate(`/portal/admin/${tool.id}`);
                     } else {
-                      navigate(`/portal/kitchen`);
+                      navigate(`/portal/kitchen/${tool.id}`);
                     }
                     setIsSidebarOpen(false);
                   }}
@@ -1552,15 +1592,49 @@ function AdminPanel({
                               <div className="text-xs font-bold flex flex-wrap gap-x-2 gap-y-1.5">
                                 {order.items.map((item) => {
                                   const isVerified = order.confirmedItemIds?.includes(item.id);
+                                  const isCooked = order.cookedItemIds?.includes(item.id);
+                                  const isStarted = order.startedItemIds?.includes(item.id);
+                                  const canToggle = order.status === 'preparing';
+
                                   return (
-                                    <span key={item.id} className={`px-2.5 py-1 rounded-lg border-2 flex items-center gap-1.5 ${
+                                    <div key={item.id} className={`px-2.5 py-1 rounded-lg border-2 flex items-center gap-1.5 ${
                                       isVerified 
                                         ? 'bg-green-500/5 border-green-500/20 text-green-400' 
+                                        : isCooked
+                                        ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                                        : isStarted
+                                        ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
                                         : 'bg-[#181818] border-white/5 text-white'
                                     }`}>
-                                      <strong className="text-brand-red">{item.quantity}x</strong> {item.menuItem.name}
+                                      <span className={isCooked ? 'line-through text-gray-400' : ''}>
+                                        <strong className="text-brand-red mr-1">{item.quantity}x</strong> {item.menuItem.name}
+                                      </span>
+                                      
+                                      {canToggle && !isCooked && !isStarted && onStartItemCooking && (
+                                        <button
+                                          type="button"
+                                          onClick={() => onStartItemCooking(order.id, item.id)}
+                                          className="px-1.5 py-0.5 rounded bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer border border-brand-gold/20"
+                                        >
+                                          ▶️ Prep
+                                        </button>
+                                      )}
+                                      
+                                      {canToggle && (
+                                        <button
+                                          type="button"
+                                          onClick={() => onToggleItemCooked?.(order.id, item.id)}
+                                          className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                                            isCooked
+                                              ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                                              : 'bg-black/30 text-gray-400 hover:text-white border-white/10'
+                                          }`}
+                                        >
+                                          {isCooked ? '✓ Cooked' : 'Done?'}
+                                        </button>
+                                      )}
                                       {isVerified && <span className="text-[8px] bg-green-500/10 px-1 py-0.5 rounded font-black uppercase text-green-400">✓ Received</span>}
-                                    </span>
+                                    </div>
                                   );
                                 })}
                               </div>
@@ -1580,59 +1654,106 @@ function AdminPanel({
                                 </div>
                               )}
 
-                              <div className="mt-3 text-xs text-gray-300 leading-relaxed font-normal">
-                                <strong>Recipient:</strong> {order.customer.name} ({order.customer.phone}) <br />
-                                <strong>Type:</strong> <span className="capitalize font-bold text-white">{order.customer.orderType}</span> • <strong>Payment:</strong> <span className="uppercase font-bold text-brand-gold">{order.paymentMethod}</span>
+                              <div className="mt-3 text-xs text-gray-300 leading-relaxed font-normal flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                  <strong>Recipient:</strong> {order.customer.name} ({order.customer.phone}) <br />
+                                  <strong>Type:</strong> <span className="capitalize font-bold text-white">{order.customer.orderType}</span> • <strong>Payment:</strong> <span className="uppercase font-bold text-brand-gold">{order.paymentMethod}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[9px]">
+                                  <span className="text-gray-500 font-bold uppercase">Chef:</span>
+                                  {onSetCookedBy ? (
+                                    <input
+                                      type="text"
+                                      placeholder="Assign..."
+                                      defaultValue={order.cookedBy || ''}
+                                      onBlur={(e) => onSetCookedBy(order.id, e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          onSetCookedBy(order.id, (e.target as HTMLInputElement).value);
+                                        }
+                                      }}
+                                      className="bg-[#0D0D0C] border border-white/10 rounded px-2 py-0.5 text-[9px] text-white focus:outline-none focus:border-brand-gold w-24 font-semibold"
+                                    />
+                                  ) : (
+                                    <span className="font-bold text-brand-gold">{order.cookedBy || 'Kitchen Team'}</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
 
                             {/* Action Trigger Buttons based on Current Status */}
-                            {isActive && (
-                              <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end justify-start">
-                                {order.status === 'pending' && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => onUpdateOrderStatus(order.id, 'preparing')}
-                                      className="py-2 px-4 rounded-xl bg-brand-gold hover:opacity-90 text-black font-black uppercase tracking-wider text-[10px] shadow-lg shadow-brand-gold/5 cursor-pointer"
-                                    >
-                                      👨‍🍳 Cook Order
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (confirm('Cancel this order?')) {
-                                          onUpdateOrderStatus(order.id, 'cancelled');
-                                        }
-                                      }}
-                                      className="py-2 px-3 rounded-xl border border-brand-red/30 text-brand-red font-bold uppercase tracking-wider text-[10px] hover:bg-brand-red/5 cursor-pointer"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </>
-                                )}
-                                
-                                {order.status === 'preparing' && (
+                            <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end justify-start">
+                              {order.status === 'pending' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateOrderStatus(order.id, 'preparing')}
+                                    className="py-2 px-4 rounded-xl bg-brand-gold hover:opacity-90 text-black font-black uppercase tracking-wider text-[10px] shadow-lg shadow-brand-gold/5 cursor-pointer"
+                                  >
+                                    👨‍🍳 Accept & Prep
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm('Cancel this order?')) {
+                                        onUpdateOrderStatus(order.id, 'cancelled');
+                                      }
+                                    }}
+                                    className="py-2 px-3 rounded-xl border border-brand-red/30 text-brand-red font-bold uppercase tracking-wider text-[10px] hover:bg-brand-red/5 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              )}
+                              
+                              {order.status === 'preparing' && (
+                                <>
                                   <button
                                     type="button"
                                     onClick={() => onUpdateOrderStatus(order.id, 'dispatched')}
                                     className="py-2 px-4 rounded-xl bg-brand-red hover:opacity-90 text-white font-black uppercase tracking-wider text-[10px] shadow-lg shadow-brand-red/10 cursor-pointer"
                                   >
-                                    🛵 Dispatch Delivery
+                                    🛵 Dispatch Order
                                   </button>
-                                )}
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateOrderStatus(order.id, 'pending', '', 0)}
+                                    className="py-1 px-3 rounded-xl border border-white/10 bg-black/25 text-gray-400 hover:text-white font-bold uppercase tracking-wider text-[9px] cursor-pointer"
+                                  >
+                                    ← Back to Prep
+                                  </button>
+                                </>
+                              )}
 
-                                {order.status === 'dispatched' && (
+                              {order.status === 'dispatched' && (
+                                <>
                                   <button
                                     type="button"
                                     onClick={() => onUpdateOrderStatus(order.id, 'delivered')}
                                     className="py-2 px-4 rounded-xl bg-green-600 hover:bg-green-500 text-white font-black uppercase tracking-wider text-[10px] shadow-lg shadow-green-500/10 cursor-pointer"
                                   >
-                                    ✓ Complete Transaction
+                                    ✓ Mark Completed
                                   </button>
-                                )}
-                              </div>
-                            )}
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateOrderStatus(order.id, 'preparing')}
+                                    className="py-1 px-3 rounded-xl border border-brand-gold/30 text-brand-gold font-bold uppercase tracking-wider text-[9px] hover:bg-brand-gold/5 cursor-pointer"
+                                  >
+                                    ← Back to Cooking
+                                  </button>
+                                </>
+                              )}
+
+                              {order.status === 'delivered' && (
+                                <button
+                                  type="button"
+                                  onClick={() => onUpdateOrderStatus(order.id, 'dispatched')}
+                                  className="py-2 px-4 rounded-xl border border-blue-500/30 hover:bg-blue-500/5 text-blue-450 font-bold uppercase tracking-wider text-[10px] cursor-pointer"
+                                >
+                                  ← Back to Ready
+                                </button>
+                              )}
+                            </div>
 
                           </div>
                         </div>
