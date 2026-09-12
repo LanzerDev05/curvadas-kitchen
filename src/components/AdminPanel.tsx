@@ -1255,7 +1255,7 @@ function AdminPanel({
 
   const renderMetrics = () => {
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3 shadow-xl">
           <div className="p-2.5 rounded-xl bg-brand-gold/10 text-brand-gold">
             <TrendingUp className="w-4 h-4" />
@@ -1264,6 +1264,20 @@ function AdminPanel({
             <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block">Total Revenue</span>
             <h4 className="text-white font-display font-extrabold text-sm md:text-base">
               ₱{stats.totalSales.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </h4>
+          </div>
+        </div>
+
+        <div className="bg-[#181818] border border-brand-gold/20 bg-brand-gold/[0.02] rounded-2xl p-4 flex items-center gap-3 shadow-xl">
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
+            <Calendar className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-[9px] text-emerald-400 uppercase tracking-wider font-bold block flex items-center gap-1">
+              📅 Today's Revenue
+            </span>
+            <h4 className="text-white font-display font-extrabold text-sm md:text-base">
+              ₱{stats.todaySales.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </h4>
           </div>
         </div>
@@ -2472,6 +2486,17 @@ function AdminPanel({
       .filter((o) => o.status === 'delivered')
       .reduce((sum, o) => sum + o.totalAmount, 0);
 
+    const todaySales = orders
+      .filter((o) => {
+        if (o.status !== 'delivered') return false;
+        if (!o.timestamp) return true;
+        const d = new Date(o.timestamp);
+        if (isNaN(d.getTime())) return true;
+        const now = new Date();
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+      })
+      .reduce((sum, o) => sum + o.totalAmount, 0);
+
     const activeCount = orders.filter(
       (o) => o.status === 'pending' || o.status === 'preparing' || o.status === 'dispatched'
     ).length;
@@ -2479,7 +2504,7 @@ function AdminPanel({
     const completedCount = orders.filter((o) => o.status === 'delivered').length;
     const cancelledCount = orders.filter((o) => o.status === 'cancelled').length;
 
-    return { totalSales, activeCount, completedCount, cancelledCount };
+    return { totalSales, todaySales, activeCount, completedCount, cancelledCount };
   })();
 
   const getUnitPrice = (unit: string, ingId?: string) => {
