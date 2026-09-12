@@ -306,7 +306,7 @@ function AdminPanel({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Navigation sub-tabs inside Chef Dashboard
-  const [chefTab, setChefTab] = useState<'orders' | 'stock' | 'builder' | 'finances' | 'qr' | 'vouchers' | 'po' | 'spoilage' | 'shifts' | 'zread'>('orders');
+  const [chefTab, setChefTab] = useState<'orders' | 'history' | 'stock' | 'builder' | 'finances' | 'qr' | 'vouchers' | 'po' | 'spoilage' | 'shifts' | 'zread'>('orders');
   const [ordersViewMode, setOrdersViewMode] = useState<'kanban' | 'list'>('kanban');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   // Operational & Line Automation States
@@ -405,7 +405,8 @@ function AdminPanel({
   // Sync chefTab state with URL paths
   useEffect(() => {
     if (path.startsWith('/portal/admin')) {
-      if (path === '/portal/admin/stock') setChefTab('stock');
+      if (path === '/portal/admin/history') setChefTab('history');
+      else if (path === '/portal/admin/stock') setChefTab('stock');
       else if (path === '/portal/admin/builder') setChefTab('builder');
       else if (path === '/portal/admin/finances') setChefTab('finances');
       else if (path === '/portal/admin/qr') setChefTab('qr');
@@ -416,7 +417,8 @@ function AdminPanel({
       else if (path === '/portal/admin/zread') setChefTab('zread');
       else setChefTab('orders');
     } else if (path.startsWith('/portal/kitchen')) {
-      if (path === '/portal/kitchen/spoilage') setChefTab('spoilage');
+      if (path === '/portal/kitchen/history') setChefTab('history');
+      else if (path === '/portal/kitchen/spoilage') setChefTab('spoilage');
       else if (path === '/portal/kitchen/shifts') setChefTab('shifts');
       else if (path === '/portal/kitchen/qr') setChefTab('qr');
       else if (path === '/portal/kitchen/orders') setChefTab('orders');
@@ -984,6 +986,7 @@ function AdminPanel({
   const renderSidebar = () => {
     const mainLinks = [
       { id: 'orders', label: 'Order Queue', icon: ChefHat, badge: orders.filter(o => o.status === 'pending' || o.status === 'preparing' || o.status === 'dispatched').length },
+      { id: 'history', label: 'Order History & Sales', icon: Clock, badge: null },
       { id: 'stock', label: 'Stock & Inventory', icon: Sparkles, badge: stockStats.totalCount, adminOnly: true },
       { id: 'builder', label: 'Menu Builder', icon: Edit, badge: null, adminOnly: true },
       { id: 'finances', label: 'Financial Tracker', icon: DollarSign, badge: null, adminOnly: true },
@@ -1341,6 +1344,265 @@ function AdminPanel({
     );
   };
 
+  const renderHistoryScreen = () => {
+    const isSameDay = (d1Str: string, d2Date: Date) => {
+      const d1 = new Date(d1Str);
+      return (
+        d1.getFullYear() === d2Date.getFullYear() &&
+        d1.getMonth() === d2Date.getMonth() &&
+        d1.getDate() === d2Date.getDate()
+      );
+    };
+
+    const filteredArchiveOrders = orders.filter((order) => {
+      // 1. Period filter
+      if (archivePeriod === 'today') {
+        if (!isTodayOrder(order.timestamp)) return false;
+      } else if (archivePeriod === 'yesterday') {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (!isSameDay(order.timestamp, yesterday)) return false;
+      } else if (archivePeriod === 'week') {
+        const d = new Date(order.timestamp).getTime();
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        if (d < cutoff) return false;
+      } else if (archivePeriod === 'month') {
+        const d = new Date(order.timestamp);
+        const now = new Date();
+        if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth()) return false;
+      }
+
+      // 2. Status filter
+      if (archiveStatusFilter !== 'all') {
+        if (order.status !== archiveStatusFilter) return false;
+      }
+
+      // 3. Search query filter
+      if (archiveSearchQuery.trim()) {
+        const q = archiveSearchQuery.toLowerCase();
+        const matchId = order.id.toLowerCase().includes(q);
+        const matchCustomer = order.customer.name.toLowerCase().includes(q) || order.customer.phone.includes(q);
+        const matchItem = order.items.some((i) => i.menuItem.name.toLowerCase().includes(q));
+        if (!matchId && !matchCustomer && !matchItem) return false;
+      }
+
+      return true;
+    }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    const archiveTotalSales = filteredArchiveOrders
+      .filter((o) => o.status === 'delivered')
+      .reduce((sum, o) => sum + o.totalAmount, 0);
+
+    const archiveDeliveredCount = filteredArchiveOrders.filter((o) => o.status === 'delivered').length;
+    const archiveCancelledCount = filteredArchiveOrders.filter((o) => o.status === 'cancelled').length;
+    const archiveAvgValue = archiveDeliveredCount > 0 ? archiveTotalSales / archiveDeliveredCount : 0;
+
+    return (
+      <div className="space-y-6 text-left animate-fade-in">
+        {/* Full Screen Header Banner */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121211] border border-white/5 p-6 rounded-[2rem] shadow-xl">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="bg-brand-gold/10 text-brand-gold font-bold px-3 py-1 rounded-full uppercase text-[10px] tracking-wider border border-brand-gold/20 flex items-center gap-1">
+                📜 Sales & Order Vault
+              </span>
+              <span className="text-xs text-gray-400 font-bold">Historical Archive & Inspection</span>
+            </div>
+            <h2 className="font-display font-black text-white text-xl md:text-2xl mt-1.5 flex items-center gap-2">
+              Order History & Sales Archive
+            </h2>
+            <p className="text-gray-400 text-xs mt-0.5">
+              Inspect historical customer receipts, view payment breakdown, and search past order logs
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setChefTab('orders');
+                if (loginRole === 'admin') navigate('/portal/admin');
+                else navigate('/portal/kitchen');
+              }}
+              className="px-4 py-2 rounded-xl bg-brand-gold hover:opacity-90 text-black text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+            >
+              ← Back to Active Order Queue
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Bar & Metrics */}
+        <div className="bg-[#121211] border border-white/5 p-5 rounded-[2rem] shadow-xl space-y-4">
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
+            
+            {/* Period Filters */}
+            <div className="flex items-center gap-1 bg-[#0D0D0C] p-1.5 rounded-2xl border border-white/10 w-full lg:w-auto overflow-x-auto">
+              {(['all', 'today', 'yesterday', 'week', 'month'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setArchivePeriod(p)}
+                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+                    archivePeriod === p
+                      ? 'bg-brand-gold text-black shadow-md'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {p === 'all' ? 'All Time' : p === 'today' ? 'Today' : p === 'yesterday' ? 'Yesterday' : p === 'week' ? 'Last 7 Days' : 'This Month'}
+                </button>
+              ))}
+            </div>
+
+            {/* Status & Search */}
+            <div className="flex items-center gap-3 w-full lg:w-auto flex-1 max-w-xl">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input
+                  type="text"
+                  placeholder="Search Order #, Customer, Phone, or Dish Item..."
+                  value={archiveSearchQuery}
+                  onChange={(e) => setArchiveSearchQuery(e.target.value)}
+                  className="w-full bg-[#0D0D0C] border border-white/10 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold font-medium"
+                />
+                {archiveSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setArchiveSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <select
+                value={archiveStatusFilter}
+                onChange={(e) => setArchiveStatusFilter(e.target.value as any)}
+                className="bg-[#0D0D0C] border border-white/10 text-brand-gold font-bold text-xs rounded-2xl px-4 py-2.5 focus:outline-none cursor-pointer"
+              >
+                <option value="all">All Statuses</option>
+                <option value="delivered">Completed Only</option>
+                <option value="cancelled">Cancelled Only</option>
+              </select>
+            </div>
+
+          </div>
+
+          {/* Metric Summary Bar */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pt-2 border-t border-white/5">
+            <div className="bg-[#0D0D0C] border border-white/5 rounded-2xl p-4 flex justify-between items-center">
+              <div>
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Archived Gross Sales</span>
+                <span className="font-mono text-emerald-400 font-black text-base md:text-lg">₱{archiveTotalSales.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <span className="text-xl">💰</span>
+            </div>
+
+            <div className="bg-[#0D0D0C] border border-white/5 rounded-2xl p-4 flex justify-between items-center">
+              <div>
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Delivered Orders</span>
+                <span className="font-mono text-brand-gold font-black text-base md:text-lg">{archiveDeliveredCount} Orders</span>
+              </div>
+              <span className="text-xl">✅</span>
+            </div>
+
+            <div className="bg-[#0D0D0C] border border-white/5 rounded-2xl p-4 flex justify-between items-center">
+              <div>
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Cancelled Orders</span>
+                <span className="font-mono text-brand-red font-black text-base md:text-lg">{archiveCancelledCount} Orders</span>
+              </div>
+              <span className="text-xl">🚫</span>
+            </div>
+
+            <div className="bg-[#0D0D0C] border border-white/5 rounded-2xl p-4 flex justify-between items-center">
+              <div>
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Avg Order Value (AOV)</span>
+                <span className="font-mono text-blue-400 font-black text-base md:text-lg">₱{archiveAvgValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <span className="text-xl">📊</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Full Width Archive List Feed */}
+        <div className="bg-[#121211] border border-white/5 rounded-[2rem] p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-white/5 pb-3">
+            <h3 className="font-display font-black text-white text-base flex items-center gap-2">
+              📜 Archived Transactions ({filteredArchiveOrders.length})
+            </h3>
+            <span className="text-[10px] text-gray-500 font-mono">
+              Showing {filteredArchiveOrders.length} matching order records
+            </span>
+          </div>
+
+          {filteredArchiveOrders.length === 0 ? (
+            <div className="text-center py-20 text-gray-500 text-xs font-semibold uppercase tracking-wider leading-relaxed">
+              💤 No historical orders found matching filter criteria.<br/>
+              <span className="text-[10px] text-gray-600 font-normal normal-case">Try selecting another time period or adjusting your search keyword</span>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredArchiveOrders.map((order) => (
+                <div
+                  key={order.id}
+                  className="bg-[#0D0D0C] border border-white/5 rounded-2xl p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:border-brand-gold/30 transition-all shadow-md"
+                >
+                  <div className="space-y-2 min-w-0 flex-1">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="font-mono font-black text-white text-sm">
+                        #{order.id.slice(0, 8)}
+                      </span>
+                      <span className="text-gray-500 text-xs font-mono">
+                        📅 {new Date(order.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                        order.status === 'delivered' ? 'bg-green-500/15 text-green-400 border border-green-500/20' :
+                        order.status === 'cancelled' ? 'bg-red-500/15 text-red-400 border border-red-500/20' : 'bg-brand-gold/15 text-brand-gold border border-brand-gold/20'
+                      }`}>
+                        {order.status}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-gray-300 flex items-center gap-2 flex-wrap">
+                      <span><strong>Customer:</strong> {order.customer.name} ({order.customer.phone})</span>
+                      <span className="text-white/20">•</span>
+                      <span className="capitalize font-bold text-white">
+                        {order.customer.orderType === 'delivery' ? '🛵 Delivery' : `🛍️ Pickup ${order.customer.tableNumber ? `(Table ${order.customer.tableNumber})` : ''}`}
+                      </span>
+                      <span className="text-white/20">•</span>
+                      <span className="uppercase text-[10px] font-bold text-gray-400">{order.paymentMethod}</span>
+                    </div>
+
+                    <div className="text-[11px] text-gray-400 flex flex-wrap gap-1.5 pt-1">
+                      {order.items.map((i) => (
+                        <span key={i.id} className="bg-[#181818] border border-white/5 px-2.5 py-1 rounded-lg text-[10px]">
+                          <strong className="text-brand-red font-bold">{i.quantity}x</strong> {i.menuItem.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex sm:flex-row lg:flex-col items-center lg:items-end justify-between gap-3 shrink-0 border-t lg:border-t-0 border-white/5 pt-3 lg:pt-0">
+                    <span className="font-mono text-brand-gold font-extrabold text-base lg:text-lg">
+                      ₱{order.totalAmount.toFixed(2)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setViewingOrderDetails(order)}
+                      className="px-4 py-2 rounded-xl bg-[#181818] hover:bg-[#222222] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-brand-gold" /> Inspect Details
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderOrders = () => {
     return (
       <div className="space-y-6">
@@ -1363,7 +1625,11 @@ function AdminPanel({
           <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
-              onClick={() => setIsOrderArchiveOpen(true)}
+              onClick={() => {
+                setChefTab('history');
+                if (loginRole === 'admin') navigate('/portal/admin/history');
+                else navigate('/portal/kitchen/history');
+              }}
               className="px-3.5 py-1.5 rounded-xl bg-[#181818] border border-white/10 hover:border-brand-gold text-brand-gold hover:text-white text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
             >
               📜 Order History Archive
@@ -1965,7 +2231,6 @@ function AdminPanel({
   const [viewingOrderDetails, setViewingOrderDetails] = useState<Order | null>(null);
 
   // Order History Archive State
-  const [isOrderArchiveOpen, setIsOrderArchiveOpen] = useState(false);
   const [archivePeriod, setArchivePeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all'>('all');
   const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
   const [archiveStatusFilter, setArchiveStatusFilter] = useState<'all' | 'delivered' | 'cancelled'>('all');
@@ -3322,7 +3587,8 @@ function AdminPanel({
           
           {/* --- RENDERING CORRESPONDING TAB PANELS --- */}
           {chefTab === 'orders' && renderOrders()}
-      {chefTab === 'stock' && (
+          {chefTab === 'history' && renderHistoryScreen()}
+          {chefTab === 'stock' && (
         <div className="space-y-6">
           
           {/* Sub Tab Selection Between Raw Ingredients vs Recipes Availability */}
@@ -9639,207 +9905,7 @@ function AdminPanel({
         </div>
       )}
 
-      {/* Order History & Sales Archive Modal */}
-      {isOrderArchiveOpen && (() => {
-        const filteredArchiveOrders = orders.filter(o => {
-          // 1. Period filter
-          if (archivePeriod !== 'all') {
-            const orderDate = new Date(o.timestamp);
-            const now = new Date();
-            if (archivePeriod === 'today') {
-              if (!isTodayOrder(o.timestamp)) return false;
-            } else if (archivePeriod === 'yesterday') {
-              const yest = new Date(now);
-              yest.setDate(yest.getDate() - 1);
-              if (!isSameDay(o.timestamp, yest)) return false;
-            } else if (archivePeriod === 'week') {
-              const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-              if (orderDate.getTime() < sevenDaysAgo.getTime()) return false;
-            } else if (archivePeriod === 'month') {
-              const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-              if (orderDate.getTime() < thirtyDaysAgo.getTime()) return false;
-            }
-          }
 
-          // 2. Status filter
-          if (archiveStatusFilter !== 'all') {
-            if (o.status !== archiveStatusFilter) return false;
-          }
-
-          // 3. Search query
-          if (archiveSearchQuery.trim()) {
-            const q = archiveSearchQuery.toLowerCase();
-            const matchesId = o.id.toLowerCase().includes(q);
-            const matchesName = o.customer.name.toLowerCase().includes(q);
-            const matchesPhone = o.customer.phone.toLowerCase().includes(q);
-            const matchesDish = o.items.some(i => i.menuItem.name.toLowerCase().includes(q));
-            if (!matchesId && !matchesName && !matchesPhone && !matchesDish) return false;
-          }
-
-          return true;
-        }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-        const archiveTotalSales = filteredArchiveOrders
-          .filter(o => o.status === 'delivered')
-          .reduce((sum, o) => sum + o.totalAmount, 0);
-
-        const archiveDeliveredCount = filteredArchiveOrders.filter(o => o.status === 'delivered').length;
-        const archiveCancelledCount = filteredArchiveOrders.filter(o => o.status === 'cancelled').length;
-
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md font-sans">
-            <div className="bg-[#121211] border-2 border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col max-h-[90vh]">
-              
-              {/* Header */}
-              <div className="p-6 border-b-2 border-white/5 bg-[#0D0D0C] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="bg-brand-gold/10 text-brand-gold font-bold px-2.5 py-0.5 rounded-full uppercase text-[9px] tracking-wider border border-brand-gold/20">
-                      📜 Sales & Order Vault
-                    </span>
-                    <span className="text-gray-400 text-xs font-semibold">Historical Archive & Inspection</span>
-                  </div>
-                  <h3 className="font-display font-black text-white text-xl mt-1">
-                    Order History & Sales Archive
-                  </h3>
-                </div>
-                
-                <button
-                  type="button"
-                  onClick={() => setIsOrderArchiveOpen(false)}
-                  className="p-2 rounded-xl bg-[#181818] border border-white/10 text-gray-400 hover:text-white hover:border-brand-gold transition-all self-end sm:self-center cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Filter Bar */}
-              <div className="p-5 bg-[#181818]/60 border-b border-white/5 space-y-4">
-                <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-                  {/* Period selection */}
-                  <div className="flex items-center gap-1 bg-[#0D0D0C] p-1 rounded-xl border border-white/10 w-full md:w-auto overflow-x-auto">
-                    {(['all', 'today', 'yesterday', 'week', 'month'] as const).map(p => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setArchivePeriod(p)}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-                          archivePeriod === p
-                            ? 'bg-brand-gold text-black shadow-md'
-                            : 'text-gray-400 hover:text-white'
-                        }`}
-                      >
-                        {p === 'all' ? 'All Time' : p === 'today' ? 'Today' : p === 'yesterday' ? 'Yesterday' : p === 'week' ? 'Last 7 Days' : 'This Month'}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Status & Search */}
-                  <div className="flex items-center gap-2.5 w-full md:w-auto flex-1 max-w-md">
-                    <div className="relative flex-1">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                      <input
-                        type="text"
-                        placeholder="Search Order #, Customer, Phone, or Dish..."
-                        value={archiveSearchQuery}
-                        onChange={(e) => setArchiveSearchQuery(e.target.value)}
-                        className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
-                      />
-                    </div>
-
-                    <select
-                      value={archiveStatusFilter}
-                      onChange={(e) => setArchiveStatusFilter(e.target.value as any)}
-                      className="bg-[#0D0D0C] border border-white/10 text-brand-gold font-bold text-xs rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">All Statuses</option>
-                      <option value="delivered">Completed Only</option>
-                      <option value="cancelled">Cancelled Only</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Metrics bar */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-[#0D0D0C] border border-white/5 rounded-xl p-3 flex items-center justify-between">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase">Archived Sales</span>
-                    <span className="font-mono text-green-400 font-black text-sm">₱{archiveTotalSales.toFixed(2)}</span>
-                  </div>
-                  <div className="bg-[#0D0D0C] border border-white/5 rounded-xl p-3 flex items-center justify-between">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase">Delivered Orders</span>
-                    <span className="font-mono text-brand-gold font-black text-sm">{archiveDeliveredCount}</span>
-                  </div>
-                  <div className="bg-[#0D0D0C] border border-white/5 rounded-xl p-3 flex items-center justify-between">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase">Cancelled Orders</span>
-                    <span className="font-mono text-brand-red font-black text-sm">{archiveCancelledCount}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Orders List */}
-              <div className="p-6 overflow-y-auto space-y-3 flex-1">
-                {filteredArchiveOrders.length === 0 ? (
-                  <div className="text-center py-20 text-gray-500 text-xs font-semibold uppercase tracking-wider">
-                    💤 No historical orders found matching filter criteria.
-                  </div>
-                ) : (
-                  filteredArchiveOrders.map(order => (
-                    <div key={order.id} className="bg-[#0D0D0C] border border-white/5 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-white/10 transition-all">
-                      <div className="space-y-1 min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-bold text-white text-xs">#{order.id.slice(0, 8)}</span>
-                          <span className="text-gray-500 text-[10px] font-mono">
-                            📅 {new Date(order.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
-                            order.status === 'delivered' ? 'bg-green-500/15 text-green-400 border border-green-500/20' :
-                            order.status === 'cancelled' ? 'bg-red-500/15 text-red-400 border border-red-500/20' : 'bg-brand-gold/15 text-brand-gold border border-brand-gold/20'
-                          }`}>
-                            {order.status}
-                          </span>
-                        </div>
-
-                        <div className="text-xs text-gray-300">
-                          <strong>Customer:</strong> {order.customer.name} ({order.customer.phone}) • <span className="capitalize font-bold text-white">{order.customer.orderType}</span>
-                        </div>
-
-                        <div className="text-[11px] text-gray-400 flex flex-wrap gap-1.5 pt-1">
-                          {order.items.map(i => (
-                            <span key={i.id} className="bg-[#181818] border border-white/5 px-2 py-0.5 rounded text-[10px]">
-                              <strong className="text-brand-red">{i.quantity}x</strong> {i.menuItem.name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0 border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0">
-                        <span className="font-mono text-brand-gold font-extrabold text-sm">₱{order.totalAmount.toFixed(2)}</span>
-                        <button
-                          type="button"
-                          onClick={() => setViewingOrderDetails(order)}
-                          className="px-3 py-1.5 rounded-xl bg-[#181818] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1"
-                        >
-                          <Eye className="w-3.5 h-3.5" /> Inspect Details
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="p-4 bg-[#0D0D0C] border-t border-white/5 text-right">
-                <button
-                  type="button"
-                  onClick={() => setIsOrderArchiveOpen(false)}
-                  className="px-6 py-2.5 rounded-xl bg-brand-gold hover:opacity-90 text-black text-xs font-black uppercase tracking-wider cursor-pointer shadow-md"
-                >
-                  Close Archive
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Custom Confirmation Modal for Data Reset */}
       {showClearConfirm && (
