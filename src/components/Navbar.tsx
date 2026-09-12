@@ -1,6 +1,6 @@
 import React from 'react';
 import Logo from './Logo';
-import { ShoppingBag, ClipboardList, Utensils, History, MapPin, ChefHat, Users, User, LogOut } from 'lucide-react';
+import { ShoppingBag, ClipboardList, Utensils, History, MapPin, Users, User, LogOut } from 'lucide-react';
 import { CustomerInfo } from '../types';
 
 interface NavbarProps {
@@ -104,18 +104,7 @@ export default function Navbar({
         {/* Right Controls - Action, Staff Portal, and Chef Hat */}
         <div className="flex items-center gap-3">
           
-          {/* Staff / Kitchen Portal Direct Link (Hidden when customer is logged in) */}
-          {!loggedInCustomer && (
-            <button
-              id="navbar-staff-portal-btn"
-              onClick={() => setActiveTab('chef')}
-              title="Workplace Console (Kitchen & Admin Portal)"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#181818] text-brand-gold border border-brand-gold/30 hover:bg-brand-gold/10 hover:border-brand-gold transition-all focus:outline-none cursor-pointer"
-            >
-              <ChefHat className="w-4 h-4 text-brand-gold" />
-              <span className="hidden lg:inline font-black text-[11px]">Staff Portal</span>
-            </button>
-          )}
+
 
           {/* Customer Login / Register Button */}
           {loggedInCustomer ? (
@@ -219,17 +208,7 @@ export default function Navbar({
           <History className="w-4 h-4" />
           <span className="text-[10px] font-bold uppercase tracking-wider">Orders</span>
         </button>
-        {!loggedInCustomer && (
-          <button
-            onClick={() => setActiveTab('chef')}
-            className={`flex flex-col items-center gap-0.5 ${
-              activeTab === 'chef' ? 'text-brand-gold font-semibold' : 'text-bento-charcoal/60'
-            }`}
-          >
-            <ChefHat className="w-4 h-4 text-brand-gold" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-gold">Staff</span>
-          </button>
-        )}
+
       </div>
 
     </nav>
