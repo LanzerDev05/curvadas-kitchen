@@ -62,7 +62,7 @@ export interface DatabaseSchema {
   };
 }
 
-// Generate the initial seed database (Starts clean with 0 ingredients/dishes/orders, retaining accounts)
+// Generate the initial seed database (Includes standard default dishes, ingredients & stock levels)
 const generateDefaultDB = (): DatabaseSchema => {
   const seedUsers: UserAccount[] = [
     {
@@ -117,10 +117,34 @@ const generateDefaultDB = (): DatabaseSchema => {
     }
   ];
 
+  const seedIngredients: IngredientStock[] = [
+    { id: 'ing-1', name: 'Premium Beef Tapa', quantity: 3000, unit: 'g', lowStockAlert: 500, costPerUnit: 0.40 },
+    { id: 'ing-2', name: 'Sunny-Side-Up Egg', quantity: 200, unit: 'pcs', lowStockAlert: 20, costPerUnit: 7.00 },
+    { id: 'ing-3', name: 'Garlic Fried Rice', quantity: 5000, unit: 'g', lowStockAlert: 1000, costPerUnit: 0.08 },
+    { id: 'ing-4', name: 'Atchara Pickles', quantity: 2000, unit: 'g', lowStockAlert: 300, costPerUnit: 0.15 },
+    { id: 'ing-5', name: 'Crispy Chicken Fillet', quantity: 3000, unit: 'g', lowStockAlert: 500, costPerUnit: 0.35 },
+    { id: 'ing-6', name: 'Panko Breadcrumbs', quantity: 2000, unit: 'g', lowStockAlert: 400, costPerUnit: 0.10 },
+    { id: 'ing-7', name: 'Japanese Mayo', quantity: 1500, unit: 'g', lowStockAlert: 300, costPerUnit: 0.20 },
+    { id: 'ing-8', name: 'Shredded Cabbage', quantity: 2000, unit: 'g', lowStockAlert: 400, costPerUnit: 0.05 },
+    { id: 'ing-9', name: 'Steamed Rice', quantity: 5000, unit: 'g', lowStockAlert: 1000, costPerUnit: 0.04 },
+    { id: 'ing-10', name: 'Black Tea Leaves', quantity: 1000, unit: 'g', lowStockAlert: 200, costPerUnit: 0.30 },
+    { id: 'ing-11', name: 'Sugar Cane Syrup', quantity: 2000, unit: 'g', lowStockAlert: 400, costPerUnit: 0.08 },
+    { id: 'ing-12', name: 'Purified Filtered Water', quantity: 10000, unit: 'g', lowStockAlert: 2000, costPerUnit: 0.01 },
+    { id: 'ing-13', name: 'Crushed Ice', quantity: 5000, unit: 'g', lowStockAlert: 1000, costPerUnit: 0.02 },
+    { id: 'ing-14', name: 'Paper Bowl', quantity: 500, unit: 'pcs', lowStockAlert: 50, costPerUnit: 2.50 },
+    { id: 'ing-15', name: 'Utensils (Spoon & Fork)', quantity: 500, unit: 'pcs', lowStockAlert: 50, costPerUnit: 1.50 }
+  ];
+
+  const seedStockLevels: Record<string, number> = {
+    'silog-tapsilog': 25,
+    'bento-chicken-katsu': 20,
+    'drink-red-tea': 50
+  };
+
   return {
-    menuItems: [],
-    ingredientsInventory: [],
-    stockLevels: {},
+    menuItems: MENU_ITEMS,
+    ingredientsInventory: seedIngredients,
+    stockLevels: seedStockLevels,
     manualStockOverrides: [],
     hiddenCategories: [],
     orders: [],
@@ -131,22 +155,22 @@ const generateDefaultDB = (): DatabaseSchema => {
     staffShifts: [],
     zReadAudits: [],
     settings: {
-      salesPace: 0,
-      electricityBaseRate: 0,
-      electricityVariableRate: 0,
-      waterBaseRate: 0,
-      rentBaseRate: 0,
-      laborBaseRate: 0,
-      gasBaseRate: 0,
-      otherBaseRate: 0,
-      targetSalesDay: 0,
-      targetSalesWeek: 0,
-      targetSalesMonth: 0,
-      targetSalesYear: 0,
-      targetProfitDay: 0,
-      targetProfitWeek: 0,
-      targetProfitMonth: 0,
-      targetProfitYear: 0,
+      salesPace: 18,
+      electricityBaseRate: 150,
+      electricityVariableRate: 3.5,
+      waterBaseRate: 40,
+      rentBaseRate: 300,
+      laborBaseRate: 450,
+      gasBaseRate: 80,
+      otherBaseRate: 50,
+      targetSalesDay: 3500,
+      targetSalesWeek: 24500,
+      targetSalesMonth: 105000,
+      targetSalesYear: 1260000,
+      targetProfitDay: 1200,
+      targetProfitWeek: 8400,
+      targetProfitMonth: 36000,
+      targetProfitYear: 432000,
       financesPeriod: 'day',
       expenseInputMode: 'monthly'
     }
@@ -154,6 +178,8 @@ const generateDefaultDB = (): DatabaseSchema => {
 };
 
 export const readDB = async (): Promise<DatabaseSchema> => {
+  const defaultDB = generateDefaultDB();
+
   if (REDIS_URL && REDIS_TOKEN) {
     try {
       const res = await fetch(REDIS_URL, {
@@ -168,19 +194,19 @@ export const readDB = async (): Promise<DatabaseSchema> => {
         const json = (await res.json()) as any;
         if (json && json.result) {
           const parsed = JSON.parse(json.result) as DatabaseSchema;
-          if (!parsed.users || !Array.isArray(parsed.users)) {
-            parsed.users = generateDefaultDB().users;
-          }
-          if (!parsed.promoVouchers) parsed.promoVouchers = generateDefaultDB().promoVouchers;
+          if (!parsed.menuItems || parsed.menuItems.length === 0) parsed.menuItems = defaultDB.menuItems;
+          if (!parsed.ingredientsInventory || parsed.ingredientsInventory.length === 0) parsed.ingredientsInventory = defaultDB.ingredientsInventory;
+          if (!parsed.stockLevels || Object.keys(parsed.stockLevels).length === 0) parsed.stockLevels = defaultDB.stockLevels;
+          if (!parsed.users || !Array.isArray(parsed.users)) parsed.users = defaultDB.users;
+          if (!parsed.promoVouchers) parsed.promoVouchers = defaultDB.promoVouchers;
           if (!parsed.spoilageLogs) parsed.spoilageLogs = [];
           if (!parsed.staffShifts) parsed.staffShifts = [];
           if (!parsed.zReadAudits) parsed.zReadAudits = [];
           localCache = parsed;
           return parsed;
         }
-        const defaultData = generateDefaultDB();
-        await writeDB(defaultData);
-        return defaultData;
+        await writeDB(defaultDB);
+        return defaultDB;
       }
     } catch (err) {
       console.error('Failed to read database from Upstash Redis, using cache/file.', err);
@@ -191,17 +217,17 @@ export const readDB = async (): Promise<DatabaseSchema> => {
   try {
     ensureDbDir();
     if (!fs.existsSync(DB_FILE)) {
-      const defaultData = generateDefaultDB();
-      fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2), 'utf-8');
-      localCache = defaultData;
-      return defaultData;
+      fs.writeFileSync(DB_FILE, JSON.stringify(defaultDB, null, 2), 'utf-8');
+      localCache = defaultDB;
+      return defaultDB;
     }
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as DatabaseSchema;
-    if (!parsed.users || !Array.isArray(parsed.users)) {
-      parsed.users = generateDefaultDB().users;
-    }
-    if (!parsed.promoVouchers) parsed.promoVouchers = generateDefaultDB().promoVouchers;
+    if (!parsed.menuItems || parsed.menuItems.length === 0) parsed.menuItems = defaultDB.menuItems;
+    if (!parsed.ingredientsInventory || parsed.ingredientsInventory.length === 0) parsed.ingredientsInventory = defaultDB.ingredientsInventory;
+    if (!parsed.stockLevels || Object.keys(parsed.stockLevels).length === 0) parsed.stockLevels = defaultDB.stockLevels;
+    if (!parsed.users || !Array.isArray(parsed.users)) parsed.users = defaultDB.users;
+    if (!parsed.promoVouchers) parsed.promoVouchers = defaultDB.promoVouchers;
     if (!parsed.spoilageLogs) parsed.spoilageLogs = [];
     if (!parsed.staffShifts) parsed.staffShifts = [];
     if (!parsed.zReadAudits) parsed.zReadAudits = [];
