@@ -305,6 +305,16 @@ function AdminPanel({
   const [loginError, setLoginError] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Live Date & Time clock state
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Navigation sub-tabs inside Chef Dashboard
   const [chefTab, setChefTab] = useState<'orders' | 'history' | 'stock' | 'builder' | 'finances' | 'qr' | 'vouchers' | 'po' | 'spoilage' | 'shifts' | 'zread'>('orders');
   const [ordersViewMode, setOrdersViewMode] = useState<'kanban' | 'list'>('kanban');
@@ -1163,18 +1173,39 @@ function AdminPanel({
   };
 
   const renderHeader = () => {
+    const formattedDate = currentTime.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+    const formattedTime = currentTime.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+
     return (
       <header className="bg-[#121211] border-b-2 border-white/5 py-4 px-4 md:px-8 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3.5 flex-wrap">
           <button
             onClick={() => setIsSidebarOpen(true)}
             className="xl:hidden p-2 rounded-xl bg-[#181818] border border-white/5 text-gray-400 hover:text-white"
           >
             <Menu className="w-4 h-4" />
           </button>
-          <h1 className="font-display font-black text-base uppercase tracking-tight text-white flex items-center gap-2">
-            👨‍🍳 curvada workspace console
-          </h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="font-display font-black text-base uppercase tracking-tight text-white flex items-center gap-2">
+              👨‍🍳 curvada workspace console
+            </h1>
+            <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-[#0D0D0C] border border-white/10 text-xs font-mono font-bold shadow-inner">
+              <Clock className="w-3.5 h-3.5 text-brand-gold animate-pulse" />
+              <span className="text-gray-300">{formattedDate}</span>
+              <span className="text-gray-600">•</span>
+              <span className="text-brand-gold font-black">{formattedTime}</span>
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
