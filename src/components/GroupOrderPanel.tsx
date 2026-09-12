@@ -126,6 +126,8 @@ export default function GroupOrderPanel({
 
   const isCurrentUserHost = session && session.hostId === currentUserId;
   const isCurrentUserReady = session && session.members.find(m => m.id === currentUserId)?.isReady;
+  const unreadyMembers = session ? session.members.filter(m => !m.isReady) : [];
+  const allMembersReady = session ? unreadyMembers.length === 0 : false;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -385,10 +387,10 @@ export default function GroupOrderPanel({
 
                         <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
                           member.isReady
-                            ? 'bg-green-500/15 text-green-400'
-                            : 'bg-[#181818] text-gray-500'
+                            ? 'bg-green-500/15 text-green-400 font-extrabold'
+                            : 'bg-amber-500/15 text-amber-400 font-bold'
                         }`}>
-                          {member.isReady ? 'Ready' : 'Choosing'}
+                          {member.isReady ? '✓ Ready' : '⏳ Choosing'}
                         </span>
                       </div>
                     );
@@ -502,8 +504,40 @@ export default function GroupOrderPanel({
 
         {/* Footer with checkout action for group orders */}
         {session && session.items.length > 0 && (
-          <div className="p-5 bg-[#0D0D0C] border-t-2 border-white/5 space-y-4 flex-shrink-0">
-            <div className="flex justify-between items-center">
+          <div className="p-5 bg-[#0D0D0C] border-t-2 border-white/5 space-y-3 flex-shrink-0">
+            
+            {/* Readiness Summary Banner for Host */}
+            {isCurrentUserHost && (
+              <div className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-all ${
+                allMembersReady
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-400 font-medium'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">{allMembersReady ? '🟢' : '⏳'}</span>
+                  <div>
+                    <span className="font-bold block">
+                      {allMembersReady 
+                        ? 'All Members Are Ready!' 
+                        : `Waiting for ${unreadyMembers.map(m => m.name).join(', ')}`}
+                    </span>
+                    <span className="text-[10px] opacity-80 block font-normal">
+                      {allMembersReady 
+                        ? 'All members finished dish selection. You can now checkout.' 
+                        : `${session.members.length - unreadyMembers.length} of ${session.members.length} members marked ready`}
+                    </span>
+                  </div>
+                </div>
+
+                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded shrink-0 ${
+                  allMembersReady ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+                }`}>
+                  {session.members.length - unreadyMembers.length}/{session.members.length} Ready
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-1">
               <div className="flex flex-col">
                 <span className="text-gray-500 text-[10px] uppercase tracking-wider font-bold">Consolidated total</span>
                 <span className="text-brand-gold font-display font-black text-xl leading-none">
@@ -513,14 +547,24 @@ export default function GroupOrderPanel({
 
               {!isCurrentUserHost ? (
                 <div className="text-right text-[10px] text-gray-400 leading-tight max-w-[200px] font-medium">
-                  Waiting for Host <strong className="text-white">{session.hostName}</strong> to checkout the group order.
+                  👑 Waiting for Host <strong className="text-white">{session.hostName}</strong> to checkout the group order.
                 </div>
               ) : (
                 <button
-                  onClick={onCheckout}
-                  className="px-5 py-3 rounded-xl bg-brand-red hover:bg-brand-red-hover text-white font-bold uppercase tracking-wider text-xs flex items-center justify-center gap-1.5 shadow-md hover:shadow-brand-red/20 transition-all"
+                  onClick={() => {
+                    if (!allMembersReady) {
+                      alert(`⚠️ Cannot proceed to checkout yet!\n\nThe following member(s) are still choosing dishes:\n• ${unreadyMembers.map(m => m.name).join('\n• ')}\n\nPlease wait for all group members to click 'Mark as Ready'.`);
+                      return;
+                    }
+                    onCheckout();
+                  }}
+                  className={`px-5 py-3 rounded-xl font-bold uppercase tracking-wider text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer ${
+                    allMembersReady
+                      ? 'bg-brand-red hover:bg-brand-red-hover text-white hover:shadow-brand-red/20'
+                      : 'bg-amber-600/20 border border-amber-500/40 text-amber-300 hover:bg-amber-600/30'
+                  }`}
                 >
-                  Checkout Together
+                  {allMembersReady ? 'Checkout Together' : '⏳ Waiting for Members'}
                   <ArrowRight className="w-4 h-4" />
                 </button>
               )}

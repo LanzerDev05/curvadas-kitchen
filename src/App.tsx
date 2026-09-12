@@ -357,6 +357,15 @@ function AppContent() {
     }
   }, [groupSessions]);
 
+  // Periodic polling for active group session updates across devices (multi-browser / mobile sync)
+  useEffect(() => {
+    if (!groupSession) return;
+    const interval = setInterval(() => {
+      fetchDb();
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [groupSession?.id]);
+
   // Host starting a session
   const handleStartGroupSession = async (hostNickname: string) => {
     const code = `GR-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
@@ -1185,6 +1194,16 @@ function AppContent() {
     let updatedIngredients = [...ingredientsInventory];
 
     if (isCheckoutForGroup && groupSession) {
+      if (groupSession.hostId !== userId) {
+        alert("Only the session Host can place the final group order.");
+        return;
+      }
+      const unready = groupSession.members.filter(m => !m.isReady);
+      if (unready.length > 0) {
+        alert(`⚠️ Cannot place order yet!\n\nThe following member(s) are not ready:\n• ${unready.map(m => m.name).join('\n• ')}\n\nPlease wait for all members to click 'Mark as Ready'.`);
+        return;
+      }
+
       // Create order with group tags
       const newOrderId = `ord-group-${groupSession.id}-${Math.random().toString(36).substr(2, 5)}`;
       const totalAmount = mappedGroupCartItems.reduce((sum, item) => sum + item.totalUnitPrice * item.quantity, 0);
@@ -2107,6 +2126,16 @@ function AppContent() {
         onUpdateItemQuantity={handleUpdateGroupItemQuantity}
         onRemoveItem={handleRemoveGroupItem}
         onCheckout={() => {
+          if (!groupSession) return;
+          if (groupSession.hostId !== userId) {
+            alert('Only the group session creator (Host) can checkout the order.');
+            return;
+          }
+          const unready = groupSession.members.filter(m => !m.isReady);
+          if (unready.length > 0) {
+            alert(`⚠️ Cannot proceed to checkout yet!\n\nThe following member(s) are still choosing dishes:\n• ${unready.map(m => m.name).join('\n• ')}\n\nPlease wait for all group members to click 'Mark as Ready'.`);
+            return;
+          }
           setIsGroupPanelOpen(false);
           setIsCheckoutForGroup(true);
           setIsCheckoutOpen(true);
