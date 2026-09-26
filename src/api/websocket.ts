@@ -57,7 +57,18 @@ class RealtimeOrderService {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host || 'localhost:3000';
-    const wsUrl = `${protocol}//${host}/ws`;
+    let wsUrl = `${protocol}//${host}/ws`;
+
+    const backendUrl = ((import.meta as any).env?.VITE_BACKEND_URL || '').trim();
+    if (backendUrl && backendUrl.startsWith('http') && !backendUrl.includes('YOUR_DEPLOYED_URL')) {
+      try {
+        const parsed = new URL(backendUrl);
+        const wsProtocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${wsProtocol}//${parsed.host}/ws`;
+      } catch (e) {
+        console.error('Invalid VITE_BACKEND_URL for WebSocket', e);
+      }
+    }
 
     try {
       this.ws = new WebSocket(wsUrl);

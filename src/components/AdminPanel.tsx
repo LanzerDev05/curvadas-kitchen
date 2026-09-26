@@ -50,7 +50,9 @@ import {
   Crop,
   Flame,
   Award,
-  Undo
+  Undo,
+  Scale,
+  Calculator
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -2607,6 +2609,56 @@ function AdminPanel({
   const [formWaterOverhead, setFormWaterOverhead] = useState<number>(1.00);
   const [formPkgOverhead, setFormPkgOverhead] = useState<number>(0.00);
 
+  // Batch Yield & Portion Costing state in Add/Edit modal
+  const [formBatchYieldGrams, setFormBatchYieldGrams] = useState<number>(2000); // 2000g (2kg) default
+  const [formServingSizeGrams, setFormServingSizeGrams] = useState<number>(90); // 90g default
+  const [formBatchTotalCost, setFormBatchTotalCost] = useState<number>(3000); // ₱3,000 default
+  const [batchYieldInputMode, setBatchYieldInputMode] = useState<'quick' | 'ingredients'>('quick');
+  const [batchIngredientsList, setBatchIngredientsList] = useState<Array<{ name: string; amount: number; unit: string; cost: number }>>([
+    { name: 'Pork Belly / Meat Cuts', amount: 1600, unit: 'g', cost: 2400 },
+    { name: 'Special Soy Sauce Marinade', amount: 200, unit: 'ml', cost: 250 },
+    { name: 'Garlic & Onion Spices', amount: 100, unit: 'g', cost: 150 },
+    { name: 'Cooking Oil & Seasoning', amount: 50, unit: 'ml', cost: 100 },
+    { name: 'Atchara Pickles Garnish', amount: 50, unit: 'g', cost: 100 }
+  ]);
+
+  // Standalone Batch Yield & Portion Calculator Modal state
+  const [isBatchCalcModalOpen, setIsBatchCalcModalOpen] = useState(false);
+  const [standaloneBatchWeight, setStandaloneBatchWeight] = useState<number>(2000); // 2000g / 2kg default
+  const [standaloneServingGrams, setStandaloneServingGrams] = useState<number>(90); // 90g default
+  const [standaloneTotalBatchCost, setStandaloneTotalBatchCost] = useState<number>(3000); // ₱3,000 default
+  const [standaloneTargetMargin, setStandaloneTargetMargin] = useState<number>(50);
+  const [standaloneRecipeName, setStandaloneRecipeName] = useState<string>('Garlic Pork Tapa Bento');
+  const [standaloneIngredients, setStandaloneIngredients] = useState<Array<{ name: string; batchAmount: number; unit: string; cost: number }>>([
+    { name: 'Pork Belly / Meat Cuts', batchAmount: 1600, unit: 'g', cost: 2400 },
+    { name: 'Special Soy Sauce Marinade', batchAmount: 200, unit: 'ml', cost: 250 },
+    { name: 'Garlic & Onion Spices', batchAmount: 100, unit: 'g', cost: 150 },
+    { name: 'Cooking Oil & Seasoning', batchAmount: 50, unit: 'ml', cost: 100 },
+    { name: 'Atchara Pickles Garnish', batchAmount: 50, unit: 'g', cost: 100 }
+  ]);
+  const [batchCalcCopied, setBatchCalcCopied] = useState(false);
+
+  // Helper to compute inventory item cost for a given amount and unit
+  const computeInventoryIngredientCost = (name: string, amount: number, unit: string) => {
+    const inv = ingredientsInventory.find(i => i.name.toLowerCase() === name.toLowerCase());
+    const actualUnit = inv?.unit || unit;
+    let unitPrice = 0.05;
+    if (inv && inv.costPerUnit !== undefined && inv.costPerUnit !== null) {
+      unitPrice = inv.costPerUnit;
+    } else {
+      switch (actualUnit.toLowerCase()) {
+        case 'g': unitPrice = 0.05; break;
+        case 'kg': unitPrice = 150.00; break;
+        case 'pcs': unitPrice = 15.00; break;
+        case 'ml': unitPrice = 0.08; break;
+        case 'cans': unitPrice = 45.00; break;
+        default: unitPrice = 5.00; break;
+      }
+    }
+    const factor = actualUnit === 'kg' ? amount / 1000 : amount;
+    return Number((factor * unitPrice).toFixed(2));
+  };
+
   // Image Zoom, Pan & Crop Editor state
   const [isCropperOpen, setIsCropperOpen] = useState(false);
   const [cropperSrc, setCropperSrc] = useState('');
@@ -3314,6 +3366,10 @@ function AdminPanel({
     setFormGasOverhead(2.50);
     setFormWaterOverhead(1.00);
     setFormPkgOverhead(0.00);
+    setFormBatchYieldGrams(2000);
+    setFormServingSizeGrams(90);
+    setFormBatchTotalCost(3000);
+    setBatchYieldInputMode('quick');
     setFormCustomOptions([
       {
         id: 'opt-' + Math.random().toString(36).substr(2, 4),
@@ -3346,6 +3402,10 @@ function AdminPanel({
     setFormGasOverhead(item.utilityOverhead?.gas !== undefined ? item.utilityOverhead.gas : 2.50);
     setFormWaterOverhead(item.utilityOverhead?.water !== undefined ? item.utilityOverhead.water : 1.00);
     setFormPkgOverhead(item.utilityOverhead?.packaging !== undefined ? item.utilityOverhead.packaging : 0.00);
+    setFormBatchYieldGrams(item.batchYieldGrams !== undefined ? item.batchYieldGrams : 2000);
+    setFormServingSizeGrams(item.servingSizeGrams !== undefined ? item.servingSizeGrams : 90);
+    setFormBatchTotalCost(item.totalBatchCost !== undefined ? item.totalBatchCost : 3000);
+    setBatchYieldInputMode('quick');
     setFormCustomOptions(item.customizableOptions ? item.customizableOptions.map(co => ({
       id: 'opt-' + Math.random().toString(36).substr(2, 4),
       title: co.title,
@@ -3474,6 +3534,9 @@ function AdminPanel({
         popular: formPopular,
         targetMarginPercent: formTargetMargin,
         utilityOverhead: utilityOverheadData,
+        batchYieldGrams: formBatchYieldGrams,
+        servingSizeGrams: formServingSizeGrams,
+        totalBatchCost: formBatchTotalCost,
         ingredients: parsedIngredients.length > 0 ? parsedIngredients : undefined,
         recipeRequirements: formRecipeRequirements.length > 0 ? formRecipeRequirements : undefined,
         customizableOptions: finalCustomOptions
@@ -3494,6 +3557,9 @@ function AdminPanel({
         isAvailable: true,
         targetMarginPercent: formTargetMargin,
         utilityOverhead: utilityOverheadData,
+        batchYieldGrams: formBatchYieldGrams,
+        servingSizeGrams: formServingSizeGrams,
+        totalBatchCost: formBatchTotalCost,
         ingredients: parsedIngredients.length > 0 ? parsedIngredients : undefined,
         recipeRequirements: formRecipeRequirements.length > 0 ? formRecipeRequirements : undefined,
         customizableOptions: finalCustomOptions
@@ -5778,8 +5844,18 @@ function AdminPanel({
 
                 <button
                   type="button"
+                  onClick={() => setIsBatchCalcModalOpen(true)}
+                  className="px-3.5 py-1.5 bg-[#0D0D0C] hover:bg-brand-gold/15 text-brand-gold border border-brand-gold/30 hover:border-brand-gold text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                  title="Batch Yield (1kg / 2kg) & Grams Portion Costing Calculator"
+                >
+                  <Scale className="w-4 h-4 text-brand-gold" />
+                  <span>Batch Calculator</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleOpenAddForm}
-                  className="px-4 py-1.5 bg-brand-red hover:bg-brand-red-hover text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md hover:shadow-brand-red/20 flex items-center gap-1.5"
+                  className="px-4 py-1.5 bg-brand-red hover:bg-brand-red-hover text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md hover:shadow-brand-red/20 flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" /> Add New Recipe
                 </button>
@@ -6004,6 +6080,22 @@ function AdminPanel({
                           ) : (
                             <div className="text-[8.5px] text-gray-600 italic bg-[#121211]/50 p-2 rounded-xl text-center border border-dashed border-white/5">
                               No stock materials linked (Manually managed)
+                            </div>
+                          )}
+
+                          {/* Batch Yield & Portion Sizing Info */}
+                          {item.servingSizeGrams && (
+                            <div className="bg-[#121211] p-2 rounded-xl border border-brand-gold/15 flex items-center justify-between text-[9px] font-mono text-left">
+                              <div className="flex items-center gap-1.5 text-gray-300">
+                                <Scale className="w-3 h-3 text-brand-gold" />
+                                <span className="text-gray-400">Portion:</span>
+                                <strong className="text-brand-gold">{item.servingSizeGrams}g / plate</strong>
+                              </div>
+                              {item.batchYieldGrams && (
+                                <span className="text-gray-400 text-[8.5px]">
+                                  Yield: <strong className="text-white">{(item.batchYieldGrams / 1000).toFixed(1)}kg</strong> ({(item.batchYieldGrams / item.servingSizeGrams).toFixed(1)} svgs)
+                                </span>
+                              )}
                             </div>
                           )}
 
@@ -8342,6 +8434,519 @@ function AdminPanel({
                 )}
               </div>
 
+              {/* --- BATCH YIELD & GRAMS PORTION COSTING CALCULATOR --- */}
+              <div className="bg-[#0D0D0C]/70 p-4 sm:p-5 rounded-2xl border-2 border-brand-gold/30 space-y-4 text-left shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-3">
+                  <div>
+                    <label className="text-xs text-brand-gold uppercase tracking-wider font-black flex items-center gap-1.5">
+                      <Scale className="w-4 h-4 text-brand-gold" />
+                      <span>⚖️ Batch Yield & Grams Portion Costing Tool</span>
+                    </label>
+                    <span className="text-[10px] text-gray-400 block mt-0.5">
+                      Produce a 1kg or 2kg cooked batch, set grams per serving (e.g. 80g or 90g), and auto-compute total servings, portion cost, and raw materials scaling.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setBatchYieldInputMode('quick')}
+                      className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all ${
+                        batchYieldInputMode === 'quick'
+                          ? 'bg-brand-gold text-black font-black'
+                          : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                      }`}
+                    >
+                      Quick Overall Cost
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBatchYieldInputMode('ingredients')}
+                      className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all ${
+                        batchYieldInputMode === 'ingredients'
+                          ? 'bg-brand-gold text-black font-black'
+                          : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                      }`}
+                    >
+                      Batch Raw Materials
+                    </button>
+                  </div>
+                </div>
+
+                {/* Batch Yield & Serving Portion Inputs */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Batch Yield Weight */}
+                  <div className="space-y-2 bg-[#121211] p-3 rounded-xl border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">
+                        1. Total Batch Yield Weight
+                      </span>
+                      <span className="text-xs font-mono font-black text-brand-gold">
+                        {(formBatchYieldGrams / 1000).toFixed(2)} kg ({formBatchYieldGrams}g)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="100"
+                        step="50"
+                        value={formBatchYieldGrams}
+                        onChange={(e) => setFormBatchYieldGrams(Math.max(10, Number(e.target.value) || 10))}
+                        className="flex-1 bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold focus:outline-none focus:border-brand-gold text-right"
+                      />
+                      <span className="text-[10px] text-gray-500 font-bold uppercase">grams (g)</span>
+                    </div>
+
+                    <div className="flex items-center gap-1 pt-1 flex-wrap">
+                      <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wider">Presets:</span>
+                      {[
+                        { label: '1 Kilo (1,000g)', val: 1000 },
+                        { label: '2 Kilo (2,000g)', val: 2000 },
+                        { label: '3 Kilo (3,000g)', val: 3000 },
+                        { label: '5 Kilo (5,000g)', val: 5000 }
+                      ].map((item) => (
+                        <button
+                          key={item.val}
+                          type="button"
+                          onClick={() => setFormBatchYieldGrams(item.val)}
+                          className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                            formBatchYieldGrams === item.val
+                              ? 'bg-brand-gold text-black font-black'
+                              : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Serving Portion in Grams */}
+                  <div className="space-y-2 bg-[#121211] p-3 rounded-xl border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">
+                        2. Serving Size per Menu Item
+                      </span>
+                      <span className="text-xs font-mono font-black text-brand-gold">
+                        {formServingSizeGrams} grams / serving
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="10"
+                        step="5"
+                        value={formServingSizeGrams}
+                        onChange={(e) => setFormServingSizeGrams(Math.max(1, Number(e.target.value) || 1))}
+                        className="flex-1 bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold focus:outline-none focus:border-brand-gold text-right"
+                      />
+                      <span className="text-[10px] text-gray-500 font-bold uppercase">grams / plate</span>
+                    </div>
+
+                    <div className="flex items-center gap-1 pt-1 flex-wrap">
+                      <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wider">Presets:</span>
+                      {[
+                        { label: '70g', val: 70 },
+                        { label: '80g (Sample 1)', val: 80 },
+                        { label: '90g (Sample 2)', val: 90 },
+                        { label: '100g', val: 100 },
+                        { label: '120g', val: 120 },
+                        { label: '150g', val: 150 }
+                      ].map((item) => (
+                        <button
+                          key={item.val}
+                          type="button"
+                          onClick={() => setFormServingSizeGrams(item.val)}
+                          className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                            formServingSizeGrams === item.val
+                              ? 'bg-brand-gold text-black font-black'
+                              : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Overall Cost Input vs Batch Ingredients Input */}
+                {batchYieldInputMode === 'quick' ? (
+                  <div className="bg-[#121211] p-3.5 rounded-xl border border-white/5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <span className="text-[9px] text-brand-gold uppercase font-black tracking-wider block">
+                          Overall Costing of Raw Materials (Batch Total)
+                        </span>
+                        <span className="text-[8.5px] text-gray-400 block mt-0.5">
+                          e.g. ₱3,000 overall costing of raw materials to produce a 2 kilo batch.
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400 font-mono text-sm font-bold">₱</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="10"
+                          value={formBatchTotalCost}
+                          onChange={(e) => setFormBatchTotalCost(Math.max(0, Number(e.target.value) || 0))}
+                          placeholder="3000"
+                          className="w-32 bg-[#0D0D0C] border border-brand-gold/40 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Samples Buttons */}
+                    <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-white/5">
+                      <span className="text-[8px] text-gray-500 uppercase font-black">Quick Load Examples:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormBatchYieldGrams(2000);
+                          setFormServingSizeGrams(90);
+                          setFormBatchTotalCost(3000);
+                        }}
+                        className="px-2 py-1 rounded bg-[#181818] hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/30 text-[8.5px] font-bold transition-all"
+                      >
+                        💡 Load: ₱3,000 to 2 Kilo @ 90g Serving
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormBatchYieldGrams(1000);
+                          setFormServingSizeGrams(80);
+                          setFormBatchTotalCost(1500);
+                        }}
+                        className="px-2 py-1 rounded bg-[#181818] hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/30 text-[8.5px] font-bold transition-all"
+                      >
+                        💡 Load: ₱1,500 to 1 Kilo @ 80g Serving
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Batch Raw Materials List */
+                  <div className="bg-[#121211] p-3.5 rounded-xl border border-white/5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-[9px] text-brand-gold uppercase font-black tracking-wider block">
+                          Batch Raw Materials List ({batchIngredientsList.length} Ingredients)
+                        </span>
+                        <span className="text-[8.5px] text-gray-400 block mt-0.5">
+                          Input the raw ingredients used for the {formBatchYieldGrams}g batch. Per-serving amounts will be auto-calculated.
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {formRecipeRequirements.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const servingG = Math.max(1, formServingSizeGrams);
+                              const batchG = Math.max(1, formBatchYieldGrams);
+                              const multiplier = batchG / servingG;
+                              const imported = formRecipeRequirements.map((req) => {
+                                const inv = ingredientsInventory.find(i => i.name.toLowerCase() === req.name.toLowerCase());
+                                const unit = inv?.unit || 'g';
+                                const batchAmt = Number((req.amount * multiplier).toFixed(1));
+                                const cost = computeInventoryIngredientCost(req.name, batchAmt, unit);
+                                return {
+                                  name: req.name,
+                                  amount: batchAmt,
+                                  unit,
+                                  cost
+                                };
+                              });
+                              setBatchIngredientsList(imported);
+                            }}
+                            className="px-2.5 py-1 bg-[#181818] border border-white/10 hover:border-brand-gold text-brand-gold text-[9px] font-bold uppercase rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                            title="Import and scale current dish recipe ingredients to this batch size"
+                          >
+                            <RefreshCw className="w-3 h-3 text-brand-gold" />
+                            <span>Import Current Recipe ({formRecipeRequirements.length})</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const firstInv = ingredientsInventory[0];
+                            const defaultName = firstInv ? firstInv.name : 'Ingredient';
+                            const defaultUnit = firstInv ? firstInv.unit : 'g';
+                            const defaultAmt = defaultUnit === 'kg' ? 1 : defaultUnit === 'pcs' ? 1 : 200;
+                            const defaultCost = firstInv ? computeInventoryIngredientCost(defaultName, defaultAmt, defaultUnit) : 50;
+                            setBatchIngredientsList([
+                              ...batchIngredientsList,
+                              { name: defaultName, amount: defaultAmt, unit: defaultUnit, cost: defaultCost }
+                            ]);
+                          }}
+                          className="px-2.5 py-1 bg-brand-gold/15 border border-brand-gold/30 hover:bg-brand-gold/25 text-brand-gold text-[9px] font-black uppercase rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3 text-brand-gold" /> Add from Inventory
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-[9.5px]">
+                        <thead className="bg-white/5 text-gray-400 font-bold uppercase text-[8px]">
+                          <tr>
+                            <th className="p-2 min-w-[200px]">Select Raw Material (Inventory)</th>
+                            <th className="p-2">Batch Qty</th>
+                            <th className="p-2">Batch Cost</th>
+                            <th className="p-2 text-brand-gold">Auto Per Serving ({formServingSizeGrams}g)</th>
+                            <th className="p-2 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 font-mono">
+                          {batchIngredientsList.map((ing, i) => {
+                            const servingsCount = formBatchYieldGrams > 0 ? formBatchYieldGrams / formServingSizeGrams : 1;
+                            const servingAmount = (ing.amount / formBatchYieldGrams) * formServingSizeGrams;
+                            const servingCost = (ing.cost / formBatchYieldGrams) * formServingSizeGrams;
+                            const isExistingInv = ingredientsInventory.some(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
+
+                            return (
+                              <tr key={i} className="hover:bg-white/[0.02]">
+                                <td className="p-2 min-w-[200px]">
+                                  <div className="space-y-1">
+                                    <select
+                                      value={isExistingInv ? ing.name : '__custom__'}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        const updated = [...batchIngredientsList];
+                                        if (val === '__custom__') {
+                                          updated[i].name = '';
+                                        } else {
+                                          const invMatch = ingredientsInventory.find(inv => inv.name === val);
+                                          if (invMatch) {
+                                            updated[i].name = invMatch.name;
+                                            updated[i].unit = invMatch.unit;
+                                            updated[i].cost = computeInventoryIngredientCost(invMatch.name, updated[i].amount, invMatch.unit);
+                                          }
+                                        }
+                                        setBatchIngredientsList(updated);
+                                      }}
+                                      className="w-full bg-[#0D0D0C] border border-white/10 rounded px-2 py-1 text-xs text-white font-sans font-semibold focus:outline-none focus:border-brand-gold cursor-pointer"
+                                    >
+                                      <option value="" disabled>Select from Inventory...</option>
+                                      <optgroup label="📦 Kitchen Inventory Materials">
+                                        {ingredientsInventory.map((item) => (
+                                          <option key={item.id} value={item.name}>
+                                            {item.name} ({item.quantity}{item.unit} stock{item.costPerUnit ? ` • ₱${item.costPerUnit}/${item.unit}` : ''})
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                      <option value="__custom__">✏️ Custom / Manual Name...</option>
+                                    </select>
+
+                                    {(!isExistingInv || ing.name === '') && (
+                                      <input
+                                        type="text"
+                                        placeholder="Type custom ingredient name..."
+                                        value={ing.name}
+                                        onChange={(e) => {
+                                          const updated = [...batchIngredientsList];
+                                          updated[i].name = e.target.value;
+                                          setBatchIngredientsList(updated);
+                                        }}
+                                        className="w-full bg-[#0D0D0C] border border-brand-gold/40 rounded px-2 py-1 text-xs text-brand-gold font-sans placeholder-gray-500 focus:outline-none"
+                                      />
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-2">
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min="0.1"
+                                      step="any"
+                                      value={ing.amount}
+                                      onChange={(e) => {
+                                        const newAmt = Number(e.target.value) || 0;
+                                        const updated = [...batchIngredientsList];
+                                        updated[i].amount = newAmt;
+                                        const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
+                                        if (invMatch) {
+                                          updated[i].cost = computeInventoryIngredientCost(invMatch.name, newAmt, updated[i].unit);
+                                        }
+                                        setBatchIngredientsList(updated);
+                                      }}
+                                      className="w-20 bg-[#0D0D0C] border border-white/10 rounded px-2 py-1 text-xs text-white text-right font-bold"
+                                    />
+                                    <select
+                                      value={ing.unit}
+                                      onChange={(e) => {
+                                        const newUnit = e.target.value;
+                                        const updated = [...batchIngredientsList];
+                                        updated[i].unit = newUnit;
+                                        const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
+                                        if (invMatch) {
+                                          updated[i].cost = computeInventoryIngredientCost(invMatch.name, updated[i].amount, newUnit);
+                                        }
+                                        setBatchIngredientsList(updated);
+                                      }}
+                                      className="bg-[#0D0D0C] border border-white/10 rounded px-1.5 py-1 text-xs text-gray-300"
+                                    >
+                                      <option value="g">g</option>
+                                      <option value="kg">kg</option>
+                                      <option value="ml">ml</option>
+                                      <option value="pcs">pcs</option>
+                                      <option value="cans">cans</option>
+                                    </select>
+                                  </div>
+                                </td>
+                                <td className="p-2">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-gray-400">₱</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      value={ing.cost}
+                                      onChange={(e) => {
+                                        const updated = [...batchIngredientsList];
+                                        updated[i].cost = Number(e.target.value) || 0;
+                                        setBatchIngredientsList(updated);
+                                      }}
+                                      className="w-20 bg-[#0D0D0C] border border-white/10 rounded px-2 py-1 text-xs text-white text-right font-bold text-brand-gold"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="p-2 text-brand-gold font-bold">
+                                  {servingAmount.toFixed(1)}{ing.unit} (₱{servingCost.toFixed(2)})
+                                </td>
+                                <td className="p-2 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setBatchIngredientsList(batchIngredientsList.filter((_, idx) => idx !== i));
+                                    }}
+                                    className="p-1 text-gray-500 hover:text-brand-red transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[10px] font-mono">
+                      <span className="text-gray-400">
+                        Total Batch Raw Materials Cost:{' '}
+                        <strong className="text-brand-gold text-xs">
+                          ₱{batchIngredientsList.reduce((sum, item) => sum + item.cost, 0).toFixed(2)}
+                        </strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Scale batch ingredients to per-serving recipe requirements
+                          const servingsCount = formBatchYieldGrams > 0 ? formBatchYieldGrams / formServingSizeGrams : 1;
+                          const scaledRequirements = batchIngredientsList.map(item => ({
+                            name: item.name.trim(),
+                            amount: Number(((item.amount / formBatchYieldGrams) * formServingSizeGrams).toFixed(1))
+                          }));
+                          setFormRecipeRequirements(scaledRequirements);
+
+                          // Also sync tags
+                          const tags = batchIngredientsList.map(item => item.name.trim()).filter(Boolean);
+                          setFormIngredients(tags.join(', '));
+
+                          // Auto calculate and apply recommended price
+                          const batchCost = batchIngredientsList.reduce((sum, item) => sum + item.cost, 0);
+                          const portionCost = (batchCost / formBatchYieldGrams) * formServingSizeGrams;
+                          if (formTargetMargin > 0 && formTargetMargin < 100) {
+                            const recP = Math.ceil(portionCost / (1 - formTargetMargin / 100));
+                            setFormPrice(recP);
+                          }
+                          alert(`Successfully scaled ${scaledRequirements.length} ingredients to ${formServingSizeGrams}g portion requirements!`);
+                        }}
+                        className="px-3 py-1 bg-brand-gold hover:bg-brand-gold-hover text-black text-[9px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md cursor-pointer"
+                      >
+                        ⚡ Convert & Sync to Recipe Requirements
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Auto-Calculated Real-Time Metrics & Costing Readout */}
+                {(() => {
+                  const batchYieldG = Math.max(1, formBatchYieldGrams);
+                  const servingG = Math.max(1, formServingSizeGrams);
+                  const servingsProduced = batchYieldG / servingG;
+                  const calculatedBatchCost = batchYieldInputMode === 'ingredients'
+                    ? batchIngredientsList.reduce((sum, item) => sum + item.cost, 0)
+                    : formBatchTotalCost;
+                  const costPerGram = calculatedBatchCost / batchYieldG;
+                  const costPerServing = costPerGram * servingG;
+                  const recommendedServingPrice = formTargetMargin > 0 && formTargetMargin < 100
+                    ? Math.ceil(costPerServing / (1 - formTargetMargin / 100))
+                    : Math.ceil(costPerServing * 2);
+                  const profitPerServing = recommendedServingPrice - costPerServing;
+                  const totalBatchRevenue = servingsProduced * recommendedServingPrice;
+                  const totalBatchProfit = totalBatchRevenue - calculatedBatchCost;
+
+                  return (
+                    <div className="bg-[#121211] p-3.5 rounded-xl border border-brand-gold/20 space-y-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono">
+                        <div className="bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5 space-y-0.5">
+                          <span className="text-gray-500 uppercase text-[8px] font-bold block">Servings Produced</span>
+                          <span className="text-sm font-black text-blue-400 block">
+                            {servingsProduced.toFixed(1)} <span className="text-[10px] text-gray-400">plates</span>
+                          </span>
+                          <span className="text-[8px] text-gray-500 block truncate">({batchYieldG}g ÷ {servingG}g)</span>
+                        </div>
+
+                        <div className="bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5 space-y-0.5">
+                          <span className="text-gray-500 uppercase text-[8px] font-bold block">Cost per Serving</span>
+                          <span className="text-sm font-black text-brand-gold block">
+                            ₱{costPerServing.toFixed(2)}
+                          </span>
+                          <span className="text-[8px] text-gray-500 block truncate">(₱{costPerGram.toFixed(3)}/g)</span>
+                        </div>
+
+                        <div className="bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5 space-y-0.5">
+                          <span className="text-gray-500 uppercase text-[8px] font-bold block">Rec. Price ({formTargetMargin}%)</span>
+                          <span className="text-sm font-black text-green-400 block">
+                            ₱{recommendedServingPrice.toFixed(2)}
+                          </span>
+                          <span className="text-[8px] text-gray-500 block truncate">+₱{profitPerServing.toFixed(2)} profit</span>
+                        </div>
+
+                        <div className="bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5 space-y-0.5">
+                          <span className="text-gray-500 uppercase text-[8px] font-bold block">Batch Net Profit</span>
+                          <span className="text-sm font-black text-emerald-400 block">
+                            ₱{totalBatchProfit.toFixed(2)}
+                          </span>
+                          <span className="text-[8px] text-gray-500 block truncate">Rev: ₱{totalBatchRevenue.toFixed(0)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-white/5">
+                        <span className="text-[9px] text-gray-400">
+                          Produce a <strong className="text-white">{(batchYieldG / 1000).toFixed(1)}kg batch</strong> yielding{' '}
+                          <strong className="text-brand-gold">{servingsProduced.toFixed(1)} servings</strong> at{' '}
+                          <strong className="text-brand-gold">{servingG}g each</strong> costing{' '}
+                          <strong className="text-white font-mono">₱{costPerServing.toFixed(2)}/serving</strong>.
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormPrice(recommendedServingPrice);
+                            alert(`Applied recommended selling price of ₱${recommendedServingPrice} (Portion COGS: ₱${costPerServing.toFixed(2)}) based on ${formServingSizeGrams}g serving from ${(formBatchYieldGrams / 1000).toFixed(1)}kg batch!`);
+                          }}
+                          className="px-3.5 py-1.5 bg-brand-gold hover:bg-brand-gold-hover text-black text-[9px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Zap className="w-3 h-3" /> Apply Price (₱{recommendedServingPrice})
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* Target Margin & Profit Calculator Card */}
               <div className="bg-[#0D0D0C]/60 p-4 rounded-2xl border border-brand-gold/20 space-y-3 text-left">
                 {(() => {
@@ -8954,6 +9559,677 @@ function AdminPanel({
               </div>
 
             </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* --- STANDALONE BATCH YIELD & GRAMS PORTION CALCULATOR MODAL --- */}
+      {isBatchCalcModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/90 backdrop-blur-md overflow-y-auto">
+          <div className="bg-[#181818] border-2 border-brand-gold/30 rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden shadow-2xl w-full max-w-4xl lg:max-w-5xl flex flex-col max-h-[92vh] animate-slide-in-up">
+            
+            {/* Header */}
+            <div className="p-5 border-b-2 border-white/5 bg-[#0D0D0C] flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-brand-gold">
+                <div className="p-2 rounded-xl bg-brand-gold/15 border border-brand-gold/30">
+                  <Scale className="w-5 h-5 text-brand-gold" />
+                </div>
+                <div>
+                  <h4 className="font-display font-black text-white text-base uppercase tracking-tight flex items-center gap-2">
+                    Commercial Batch Yield & Grams Portion Costing Calculator
+                  </h4>
+                  <p className="text-gray-400 text-xs mt-0.5">
+                    Plan 1kg or 2kg bulk production, portion in grams (80g, 90g), compute raw material costs per serving, and calculate profit margins.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBatchCalcModalOpen(false)}
+                className="p-2 rounded-lg hover:bg-[#222222] text-gray-500 hover:text-white transition-all focus:outline-none border border-white/5 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm">
+              
+              {/* Quick Sample Presets (Directly addresses user's questions) */}
+              <div className="bg-brand-gold/10 border border-brand-gold/30 p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] text-brand-gold uppercase font-black tracking-wider flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-brand-gold" />
+                    <span>Quick Load User Scenarios</span>
+                  </span>
+                  <span className="text-[9px] text-gray-300 block">
+                    Click to instantly load the exact 1 Kilo (80g) or 2 Kilo (90g / ₱3,000) batch examples:
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStandaloneRecipeName("Special Garlic Beef Tapa (2kg Batch)");
+                      setStandaloneBatchWeight(2000);
+                      setStandaloneServingGrams(90);
+                      setStandaloneTotalBatchCost(3000);
+                      setStandaloneTargetMargin(50);
+                      setStandaloneIngredients([
+                        { name: 'Marinated Beef Tapa Meat', batchAmount: 1600, unit: 'g', cost: 2400 },
+                        { name: 'Special Soy-Garlic Glaze', batchAmount: 200, unit: 'ml', cost: 250 },
+                        { name: 'Fresh Garlic & Onion Aromatics', batchAmount: 100, unit: 'g', cost: 150 },
+                        { name: 'Cooking Oil & Spices', batchAmount: 50, unit: 'ml', cost: 100 },
+                        { name: 'Atchara Garnish Pack', batchAmount: 50, unit: 'g', cost: 100 }
+                      ]);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-brand-gold hover:bg-brand-gold-hover text-black font-black text-[9px] uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center gap-1"
+                  >
+                    💡 2 Kilo Batch @ ₱3,000 / 90g Portion
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStandaloneRecipeName("Crispy Chicken Teriyaki Bento (1kg Batch)");
+                      setStandaloneBatchWeight(1000);
+                      setStandaloneServingGrams(80);
+                      setStandaloneTotalBatchCost(1500);
+                      setStandaloneTargetMargin(50);
+                      setStandaloneIngredients([
+                        { name: 'Boneless Chicken Fillet', batchAmount: 700, unit: 'g', cost: 1100 },
+                        { name: 'Authentic Teriyaki Sauce', batchAmount: 150, unit: 'ml', cost: 180 },
+                        { name: 'Toasted Sesame & Spring Onions', batchAmount: 50, unit: 'g', cost: 70 },
+                        { name: 'Stir-fry Cabbage & Veggies', batchAmount: 70, unit: 'g', cost: 100 },
+                        { name: 'Pure Sesame Cooking Oil', batchAmount: 30, unit: 'ml', cost: 50 }
+                      ]);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-[#121211] hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/40 font-black text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
+                  >
+                    💡 1 Kilo Batch (5 Ingredients) @ 80g Portion
+                  </button>
+                </div>
+              </div>
+
+              {/* Recipe Title & Batch Parameters */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Recipe Name */}
+                <div className="space-y-1.5 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
+                  <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
+                    Recipe / Dish Title
+                  </label>
+                  <input
+                    type="text"
+                    value={standaloneRecipeName}
+                    onChange={(e) => setStandaloneRecipeName(e.target.value)}
+                    placeholder="e.g. Garlic Pork Tapa Bento"
+                    className="w-full bg-[#121211] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-gold"
+                  />
+                  <span className="text-[8.5px] text-gray-500 block">Name of the menu item you are producing.</span>
+                </div>
+
+                {/* Batch Yield Weight */}
+                <div className="space-y-2 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
+                      Total Batch Yield Weight
+                    </label>
+                    <span className="text-xs font-mono font-black text-brand-gold">
+                      {(standaloneBatchWeight / 1000).toFixed(2)} kg
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="50"
+                      step="50"
+                      value={standaloneBatchWeight}
+                      onChange={(e) => setStandaloneBatchWeight(Math.max(10, Number(e.target.value) || 10))}
+                      className="flex-1 bg-[#121211] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
+                    />
+                    <span className="text-[10px] text-gray-500 font-bold uppercase">grams (g)</span>
+                  </div>
+
+                  <div className="flex items-center gap-1 pt-1 flex-wrap">
+                    {[
+                      { label: '1 Kilo (1,000g)', val: 1000 },
+                      { label: '2 Kilo (2,000g)', val: 2000 },
+                      { label: '3 Kilo (3,000g)', val: 3000 },
+                      { label: '5 Kilo (5,000g)', val: 5000 }
+                    ].map((item) => (
+                      <button
+                        key={item.val}
+                        type="button"
+                        onClick={() => setStandaloneBatchWeight(item.val)}
+                        className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                          standaloneBatchWeight === item.val
+                            ? 'bg-brand-gold text-black font-black'
+                            : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Serving Portion in Grams */}
+                <div className="space-y-2 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
+                      Serving Portion per Plate
+                    </label>
+                    <span className="text-xs font-mono font-black text-brand-gold">
+                      {standaloneServingGrams} grams
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="5"
+                      step="5"
+                      value={standaloneServingGrams}
+                      onChange={(e) => setStandaloneServingGrams(Math.max(1, Number(e.target.value) || 1))}
+                      className="flex-1 bg-[#121211] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
+                    />
+                    <span className="text-[10px] text-gray-500 font-bold uppercase">grams / plate</span>
+                  </div>
+
+                  <div className="flex items-center gap-1 pt-1 flex-wrap">
+                    {[
+                      { label: '70g', val: 70 },
+                      { label: '80g (Sample 1)', val: 80 },
+                      { label: '90g (Sample 2)', val: 90 },
+                      { label: '100g', val: 100 },
+                      { label: '120g', val: 120 },
+                      { label: '150g', val: 150 }
+                    ].map((item) => (
+                      <button
+                        key={item.val}
+                        type="button"
+                        onClick={() => setStandaloneServingGrams(item.val)}
+                        className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                          standaloneServingGrams === item.val
+                            ? 'bg-brand-gold text-black font-black'
+                            : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Raw Materials Ingredients Table for the Batch */}
+              <div className="bg-[#0D0D0C] p-4 rounded-2xl border border-white/5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h5 className="font-display font-bold text-white text-xs uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="text-brand-gold">🌾</span>
+                      <span>Raw Materials for the {(standaloneBatchWeight / 1000).toFixed(1)}kg Batch ({standaloneIngredients.length} Ingredients)</span>
+                    </h5>
+                    <p className="text-gray-400 text-[9px] mt-0.5">
+                      Enter the raw materials and costs for the entire batch. Each ingredient's per-serving weight is automatically computed for {standaloneServingGrams}g portion.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const totalFromList = standaloneIngredients.reduce((sum, item) => sum + item.cost, 0);
+                        setStandaloneTotalBatchCost(totalFromList);
+                      }}
+                      className="px-2.5 py-1 bg-[#181818] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[9px] font-bold uppercase rounded-lg transition-all"
+                      title="Sync Total Cost from ingredients table sum"
+                    >
+                      Sync Sum to Batch Cost
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const firstInv = ingredientsInventory[0];
+                        const defaultName = firstInv ? firstInv.name : 'Ingredient';
+                        const defaultUnit = firstInv ? firstInv.unit : 'g';
+                        const defaultAmt = defaultUnit === 'kg' ? 1 : defaultUnit === 'pcs' ? 1 : 200;
+                        const defaultCost = firstInv ? computeInventoryIngredientCost(defaultName, defaultAmt, defaultUnit) : 50;
+                        setStandaloneIngredients([
+                          ...standaloneIngredients,
+                          { name: defaultName, batchAmount: defaultAmt, unit: defaultUnit, cost: defaultCost }
+                        ]);
+                      }}
+                      className="px-2.5 py-1 bg-brand-gold/15 border border-brand-gold/30 hover:bg-brand-gold/25 text-brand-gold text-[9px] font-black uppercase rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3 text-brand-gold" /> Add from Inventory
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-white/5">
+                  <table className="w-full text-left text-[9.5px]">
+                    <thead className="bg-white/5 text-gray-400 font-bold uppercase text-[8px]">
+                      <tr>
+                        <th className="p-2.5 min-w-[220px]">Select Raw Material (Inventory)</th>
+                        <th className="p-2.5">Batch Qty</th>
+                        <th className="p-2.5">Batch Cost (₱)</th>
+                        <th className="p-2.5 text-blue-400">Grams / Amount per Plate</th>
+                        <th className="p-2.5 text-brand-gold">Cost per Plate (₱)</th>
+                        <th className="p-2.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 font-mono">
+                      {standaloneIngredients.map((ing, i) => {
+                        const batchWeightG = Math.max(1, standaloneBatchWeight);
+                        const servingAmount = (ing.batchAmount / batchWeightG) * standaloneServingGrams;
+                        const servingCost = (ing.cost / batchWeightG) * standaloneServingGrams;
+                        const isExistingInv = ingredientsInventory.some(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
+
+                        return (
+                          <tr key={i} className="hover:bg-white/[0.02]">
+                            <td className="p-2.5 font-sans min-w-[220px]">
+                              <div className="space-y-1">
+                                <select
+                                  value={isExistingInv ? ing.name : '__custom__'}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    const updated = [...standaloneIngredients];
+                                    if (val === '__custom__') {
+                                      updated[i].name = '';
+                                    } else {
+                                      const invMatch = ingredientsInventory.find(inv => inv.name === val);
+                                      if (invMatch) {
+                                        updated[i].name = invMatch.name;
+                                        updated[i].unit = invMatch.unit;
+                                        updated[i].cost = computeInventoryIngredientCost(invMatch.name, updated[i].batchAmount, invMatch.unit);
+                                      }
+                                    }
+                                    setStandaloneIngredients(updated);
+                                  }}
+                                  className="w-full bg-[#121211] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white font-semibold focus:outline-none focus:border-brand-gold cursor-pointer"
+                                >
+                                  <option value="" disabled>Select from Inventory...</option>
+                                  <optgroup label="📦 Kitchen Inventory Materials">
+                                    {ingredientsInventory.map((item) => (
+                                      <option key={item.id} value={item.name}>
+                                        {item.name} ({item.quantity}{item.unit} stock{item.costPerUnit ? ` • ₱${item.costPerUnit}/${item.unit}` : ''})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                  <option value="__custom__">✏️ Custom / Manual Name...</option>
+                                </select>
+
+                                {(!isExistingInv || ing.name === '') && (
+                                  <input
+                                    type="text"
+                                    placeholder="Type custom ingredient name..."
+                                    value={ing.name}
+                                    onChange={(e) => {
+                                      const updated = [...standaloneIngredients];
+                                      updated[i].name = e.target.value;
+                                      setStandaloneIngredients(updated);
+                                    }}
+                                    className="w-full bg-[#121211] border border-brand-gold/40 rounded-lg px-2.5 py-1 text-xs text-brand-gold font-sans placeholder-gray-500 focus:outline-none"
+                                  />
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-2.5">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min="0.1"
+                                  step="any"
+                                  value={ing.batchAmount}
+                                  onChange={(e) => {
+                                    const newAmt = Number(e.target.value) || 0;
+                                    const updated = [...standaloneIngredients];
+                                    updated[i].batchAmount = newAmt;
+                                    const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
+                                    if (invMatch) {
+                                      updated[i].cost = computeInventoryIngredientCost(invMatch.name, newAmt, updated[i].unit);
+                                    }
+                                    setStandaloneIngredients(updated);
+                                  }}
+                                  className="w-20 bg-[#121211] border border-white/10 rounded-lg px-2 py-1 text-xs text-white text-right font-bold"
+                                />
+                                <select
+                                  value={ing.unit}
+                                  onChange={(e) => {
+                                    const newUnit = e.target.value;
+                                    const updated = [...standaloneIngredients];
+                                    updated[i].unit = newUnit;
+                                    const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
+                                    if (invMatch) {
+                                      updated[i].cost = computeInventoryIngredientCost(invMatch.name, updated[i].batchAmount, newUnit);
+                                    }
+                                    setStandaloneIngredients(updated);
+                                  }}
+                                  className="bg-[#121211] border border-white/10 rounded-lg px-1.5 py-1 text-xs text-gray-300"
+                                >
+                                  <option value="g">g</option>
+                                  <option value="kg">kg</option>
+                                  <option value="ml">ml</option>
+                                  <option value="pcs">pcs</option>
+                                  <option value="cans">cans</option>
+                                </select>
+                              </div>
+                            </td>
+                            <td className="p-2.5">
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-400">₱</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={ing.cost}
+                                  onChange={(e) => {
+                                    const updated = [...standaloneIngredients];
+                                    updated[i].cost = Number(e.target.value) || 0;
+                                    setStandaloneIngredients(updated);
+                                  }}
+                                  className="w-20 bg-[#121211] border border-white/10 rounded-lg px-2 py-1 text-xs text-white text-right font-bold text-brand-gold"
+                                />
+                              </div>
+                            </td>
+                            <td className="p-2.5 text-blue-300 font-bold">
+                              {servingAmount.toFixed(1)}{ing.unit}
+                            </td>
+                            <td className="p-2.5 text-brand-gold font-bold">
+                              ₱{servingCost.toFixed(2)}
+                            </td>
+                            <td className="p-2.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStandaloneIngredients(standaloneIngredients.filter((_, idx) => idx !== i));
+                                }}
+                                className="p-1 text-gray-500 hover:text-brand-red transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Table Summary Footer */}
+                {(() => {
+                  const ingredientsSumCost = standaloneIngredients.reduce((sum, item) => sum + item.cost, 0);
+                  const ingredientsSumWeight = standaloneIngredients.reduce((sum, item) => sum + (item.unit === 'g' || item.unit === 'ml' ? item.batchAmount : 0), 0);
+                  const weightDiff = ingredientsSumWeight - standaloneBatchWeight;
+                  return (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 text-[10px] font-mono">
+                      <div className="flex items-center gap-3">
+                        <span className="text-gray-400">
+                          Sum of Ingredient Weights:{' '}
+                          <strong className="text-white">
+                            {(ingredientsSumWeight / 1000).toFixed(2)}kg ({ingredientsSumWeight}g)
+                          </strong>
+                        </span>
+                        {Math.abs(weightDiff) > 10 && (
+                          <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-bold ${
+                            weightDiff > 0 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                          }`}>
+                            {weightDiff > 0 ? `+${weightDiff}g above target yield` : `${weightDiff}g below target yield`}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400">Sum of Ingredient Costs:</span>
+                        <strong className="text-brand-gold text-xs">₱{ingredientsSumCost.toFixed(2)}</strong>
+                        {ingredientsSumCost !== standaloneTotalBatchCost && (
+                          <button
+                            type="button"
+                            onClick={() => setStandaloneTotalBatchCost(ingredientsSumCost)}
+                            className="px-2 py-0.5 rounded bg-brand-gold/15 text-brand-gold text-[8.5px] font-bold border border-brand-gold/30 hover:bg-brand-gold/25"
+                          >
+                            Update Batch Cost to ₱{ingredientsSumCost.toFixed(0)}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Target Margin Slider & Standalone Calculation Results */}
+              {(() => {
+                const batchWeightG = Math.max(1, standaloneBatchWeight);
+                const servingG = Math.max(1, standaloneServingGrams);
+                const servingsProduced = batchWeightG / servingG;
+                const batchCost = standaloneTotalBatchCost;
+                const costPerGram = batchCost / batchWeightG;
+                const costPerPlate = costPerGram * servingG;
+                const recSellingPrice = standaloneTargetMargin > 0 && standaloneTargetMargin < 100
+                  ? Math.ceil(costPerPlate / (1 - standaloneTargetMargin / 100))
+                  : Math.ceil(costPerPlate * 2);
+                const profitPerPlate = recSellingPrice - costPerPlate;
+                const totalGrossRevenue = servingsProduced * recSellingPrice;
+                const totalNetProfit = totalGrossRevenue - batchCost;
+
+                return (
+                  <div className="bg-[#0D0D0C] p-4 rounded-2xl border-2 border-brand-gold/30 space-y-4">
+                    {/* Overall Batch Cost Input & Target Margin Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
+                      <div className="flex items-center gap-3">
+                        <label className="text-[10px] text-gray-400 uppercase font-black tracking-wider block">
+                          Overall Batch Cost (₱):
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-2.5 top-1.5 text-xs text-brand-gold font-bold">₱</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="50"
+                            value={standaloneTotalBatchCost}
+                            onChange={(e) => setStandaloneTotalBatchCost(Math.max(0, Number(e.target.value) || 0))}
+                            className="w-32 bg-[#121211] border border-brand-gold/40 rounded-xl pl-6 pr-2.5 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-400 font-bold uppercase">Target Margin:</span>
+                        <span className="font-mono text-xs font-black text-brand-gold bg-brand-gold/10 px-2.5 py-1 rounded-lg border border-brand-gold/30">
+                          {standaloneTargetMargin}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Margin Presets & Slider */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="10"
+                          max="90"
+                          step="1"
+                          value={standaloneTargetMargin}
+                          onChange={(e) => setStandaloneTargetMargin(Number(e.target.value))}
+                          className="flex-1 accent-brand-gold cursor-pointer"
+                        />
+                        <div className="relative w-16 shrink-0">
+                          <input
+                            type="number"
+                            min="5"
+                            max="95"
+                            value={standaloneTargetMargin}
+                            onChange={(e) => setStandaloneTargetMargin(Math.min(95, Math.max(5, Number(e.target.value) || 5)))}
+                            className="w-full bg-[#121211] border border-white/10 rounded-lg pr-4 pl-2 py-1 text-xs text-white text-right font-mono font-bold"
+                          />
+                          <span className="absolute right-1.5 top-1 text-[10px] text-gray-400 font-bold">%</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[8px] text-gray-500 uppercase font-black">Margin Presets:</span>
+                        {[35, 40, 45, 50, 60, 70].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setStandaloneTargetMargin(preset)}
+                            className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                              standaloneTargetMargin === preset
+                                ? 'bg-brand-gold text-black font-black'
+                                : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                            }`}
+                          >
+                            {preset}%
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* High-Impact Result Stat Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[10px] font-mono">
+                      <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-1">
+                        <span className="text-gray-500 uppercase text-[8px] font-bold block">1. Total Servings Yield</span>
+                        <span className="text-base font-black text-blue-400 block">
+                          {servingsProduced.toFixed(1)} <span className="text-[10px] text-gray-400">plates</span>
+                        </span>
+                        <span className="text-[8px] text-gray-400 block truncate">({batchWeightG}g ÷ {servingG}g)</span>
+                      </div>
+
+                      <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-1">
+                        <span className="text-gray-500 uppercase text-[8px] font-bold block">2. COGS per Serving</span>
+                        <span className="text-base font-black text-brand-gold block">
+                          ₱{costPerPlate.toFixed(2)}
+                        </span>
+                        <span className="text-[8px] text-gray-400 block truncate">(₱{costPerGram.toFixed(3)} / gram)</span>
+                      </div>
+
+                      <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-1">
+                        <span className="text-gray-500 uppercase text-[8px] font-bold block">3. Recommended Price</span>
+                        <span className="text-base font-black text-green-400 block">
+                          ₱{recSellingPrice.toFixed(2)}
+                        </span>
+                        <span className="text-[8px] text-green-400 block truncate">+₱{profitPerPlate.toFixed(2)} profit / plate</span>
+                      </div>
+
+                      <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-1">
+                        <span className="text-gray-500 uppercase text-[8px] font-bold block">4. Total Batch Net Profit</span>
+                        <span className="text-base font-black text-emerald-400 block">
+                          ₱{totalNetProfit.toFixed(2)}
+                        </span>
+                        <span className="text-[8px] text-gray-400 block truncate">Gross Rev: ₱{totalGrossRevenue.toFixed(0)}</span>
+                      </div>
+                    </div>
+
+                    {/* Mathematical Proof & Summary Box */}
+                    <div className="p-3 bg-[#121211]/80 rounded-xl border border-white/5 text-[9.5px] text-gray-300 leading-relaxed font-sans space-y-1">
+                      <div className="font-bold text-white flex items-center gap-1.5">
+                        <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+                        <span>Commercial Production Summary:</span>
+                      </div>
+                      <p>
+                        A bulk batch of <strong className="text-brand-gold">{(batchWeightG / 1000).toFixed(2)} kg ({batchWeightG}g)</strong> raw materials costing <strong className="text-brand-gold">₱{batchCost.toLocaleString()}</strong> produces exactly <strong className="text-blue-400">{servingsProduced.toFixed(1)} full portions</strong> at <strong className="text-white">{servingG} grams per plate</strong>.
+                      </p>
+                      <p className="font-mono text-gray-400 text-[8.5px]">
+                        Cost per Gram: ₱{costPerGram.toFixed(4)} • Portion Cost: ₱{costPerPlate.toFixed(2)} • At {standaloneTargetMargin}% margin, selling price is ₱{recSellingPrice} leaving ₱{profitPerPlate.toFixed(2)} profit per plate (₱{totalNetProfit.toFixed(2)} total profit per cooked batch).
+                      </p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-white/5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const sheetText = `CURVADA'S KITCHEN - BATCH PRODUCTION & PORTION SHEET
+Recipe Title: ${standaloneRecipeName}
+Batch Yield: ${(batchWeightG / 1000).toFixed(2)} kg (${batchWeightG} grams)
+Portion Size: ${servingG} grams / plate
+Total Servings Produced: ${servingsProduced.toFixed(1)} plates
+Overall Batch Raw Materials Cost: ₱${batchCost.toFixed(2)}
+Cost per Serving (COGS): ₱${costPerPlate.toFixed(2)}
+Target Margin: ${standaloneTargetMargin}%
+Recommended Selling Price: ₱${recSellingPrice.toFixed(2)}
+Net Profit per Plate: ₱${profitPerPlate.toFixed(2)}
+Total Projected Batch Revenue: ₱${totalGrossRevenue.toFixed(2)}
+Total Projected Batch Net Profit: ₱${totalNetProfit.toFixed(2)}
+
+RAW MATERIALS BREAKDOWN:
+${standaloneIngredients.map((item, idx) => {
+  const servingAmt = ((item.batchAmount / batchWeightG) * servingG).toFixed(1);
+  const sCost = ((item.cost / batchWeightG) * servingG).toFixed(2);
+  return `${idx + 1}. ${item.name}: Batch ${item.batchAmount}${item.unit} (₱${item.cost}) -> Portion ${servingAmt}${item.unit} (₱${sCost})`;
+}).join('\n')}
+`;
+                          navigator.clipboard.writeText(sheetText);
+                          setBatchCalcCopied(true);
+                          setTimeout(() => setBatchCalcCopied(false), 2500);
+                        }}
+                        className="w-full sm:w-auto px-4 py-2 bg-[#121211] hover:bg-white/10 text-white border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        {batchCalcCopied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-gray-400" />}
+                        <span>{batchCalcCopied ? 'Batch Sheet Copied!' : 'Copy Batch Recipe Sheet'}</span>
+                      </button>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => setIsBatchCalcModalOpen(false)}
+                          className="flex-1 sm:flex-initial px-4 py-2 bg-[#181818] border border-white/10 text-gray-400 hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                        >
+                          Close
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Scale ingredients to per-serving requirements
+                            const scaledReqs = standaloneIngredients.map(item => ({
+                              name: item.name.trim(),
+                              amount: Number(((item.batchAmount / batchWeightG) * servingG).toFixed(1))
+                            }));
+
+                            // Pre-fill Add Recipe Form
+                            setEditingItem(null);
+                            setFormName(standaloneRecipeName);
+                            setFormDescription(`Prepared in bulk ${(batchWeightG / 1000).toFixed(1)}kg batch, portioned at ${servingG}g per serving. Served fresh with savory traditional accompaniments.`);
+                            setFormPrice(recSellingPrice);
+                            setFormCategory('bento');
+                            setFormImage(IMAGE_PRESETS[2].url);
+                            setFormOriginalImage(IMAGE_PRESETS[2].url);
+                            setFormSpicy(false);
+                            setFormPopular(false);
+                            setFormTargetMargin(standaloneTargetMargin);
+                            setFormBatchYieldGrams(batchWeightG);
+                            setFormServingSizeGrams(servingG);
+                            setFormBatchTotalCost(batchCost);
+                            setBatchYieldInputMode('ingredients');
+                            setBatchIngredientsList(standaloneIngredients.map(i => ({
+                              name: i.name,
+                              amount: i.batchAmount,
+                              unit: i.unit,
+                              cost: i.cost
+                            })));
+                            setFormRecipeRequirements(scaledReqs);
+                            setFormIngredients(standaloneIngredients.map(i => i.name).join(', '));
+                            
+                            // Close standalone calc and open Recipe form
+                            setIsBatchCalcModalOpen(false);
+                            setIsFormOpen(true);
+                          }}
+                          className="flex-1 sm:flex-initial px-5 py-2 bg-brand-red hover:bg-brand-red-hover text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg hover:shadow-brand-red/25 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Create Recipe from this Batch →</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
 
           </div>
         </div>

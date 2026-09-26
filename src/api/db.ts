@@ -1,10 +1,28 @@
 import fs from 'fs';
 import path from 'path';
+import dotenv from 'dotenv';
 import { MENU_ITEMS } from '../data/menu';
 import { MenuItem, IngredientStock, Order, GroupOrderSession, UserAccount, PromoVoucher, SpoilageRecord, StaffShift, ZReadAudit } from '../types';
 
-const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+// Ensure environment variables from .env.local and .env are loaded
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
+const getRedisConfig = () => {
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (
+    url &&
+    token &&
+    !url.includes('YOUR_UPSTASH') &&
+    !token.includes('YOUR_UPSTASH') &&
+    url.startsWith('http')
+  ) {
+    return { url, token };
+  }
+  return null;
+};
+
 const DB_DIR = path.resolve(process.cwd(), '.data');
 const DB_FILE = path.resolve(DB_DIR, 'db.json');
 
@@ -179,13 +197,14 @@ const generateDefaultDB = (): DatabaseSchema => {
 
 export const readDB = async (): Promise<DatabaseSchema> => {
   const defaultDB = generateDefaultDB();
+  const redis = getRedisConfig();
 
-  if (REDIS_URL && REDIS_TOKEN) {
+  if (redis) {
     try {
-      const res = await fetch(REDIS_URL, {
+      const res = await fetch(redis.url, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${REDIS_TOKEN}`,
+          Authorization: `Bearer ${redis.token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(['GET', 'curvada_db']),
@@ -244,13 +263,14 @@ export const readDB = async (): Promise<DatabaseSchema> => {
 
 export const writeDB = async (data: DatabaseSchema): Promise<void> => {
   localCache = data;
+  const redis = getRedisConfig();
 
-  if (REDIS_URL && REDIS_TOKEN) {
+  if (redis) {
     try {
-      const res = await fetch(REDIS_URL, {
+      const res = await fetch(redis.url, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${REDIS_TOKEN}`,
+          Authorization: `Bearer ${redis.token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(['SET', 'curvada_db', JSON.stringify(data)]),

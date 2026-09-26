@@ -18,6 +18,54 @@ apiRouter.get('/db', async (req: Request, res: Response) => {
   }
 });
 
+// 1b. Import full database snapshot
+apiRouter.post('/db/import', async (req: Request, res: Response) => {
+  try {
+    const importedData = req.body;
+    if (!importedData || typeof importedData !== 'object') {
+      res.status(400).json({ error: 'Invalid database payload' });
+      return;
+    }
+    const currentDB = await readDB();
+    const mergedDB: DatabaseSchema = {
+      ...currentDB,
+      ...importedData,
+      menuItems: importedData.menuItems || currentDB.menuItems,
+      ingredientsInventory: importedData.ingredientsInventory || currentDB.ingredientsInventory,
+      stockLevels: importedData.stockLevels || currentDB.stockLevels,
+      orders: importedData.orders || currentDB.orders,
+      users: importedData.users || currentDB.users,
+      settings: { ...currentDB.settings, ...(importedData.settings || {}) },
+    };
+    await writeDB(mergedDB);
+    res.json({ success: true, message: 'Database successfully imported and synced', db: mergedDB });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1c. Sync directly from a remote deployed URL (pulls remote /api/db and saves locally)
+apiRouter.post('/db/sync-from-remote', async (req: Request, res: Response) => {
+  try {
+    const { remoteUrl } = req.body;
+    if (!remoteUrl || !remoteUrl.startsWith('http')) {
+      res.status(400).json({ error: 'Valid remoteUrl required' });
+      return;
+    }
+    const cleanUrl = remoteUrl.replace(/\/+$/, '');
+    const remoteRes = await fetch(`${cleanUrl}/api/db`);
+    if (!remoteRes.ok) {
+      res.status(502).json({ error: `Failed to fetch from remote URL (${remoteRes.status} ${remoteRes.statusText})` });
+      return;
+    }
+    const remoteData = await remoteRes.json();
+    await writeDB(remoteData);
+    res.json({ success: true, message: `Successfully synced database from ${cleanUrl}`, db: remoteData });
+  } catch (err: any) {
+    res.status(500).json({ error: `Sync failed: ${err.message}` });
+  }
+});
+
 // 2. Place Order
 apiRouter.post('/orders/place', async (req: Request, res: Response) => {
   try {

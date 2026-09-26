@@ -1,17 +1,27 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import dotenv from 'dotenv';
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  // Load environment variables from .env.local and .env
+  dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+  dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
+  const env = loadEnv(mode, process.cwd(), '');
+  const rawTarget = env.VITE_BACKEND_URL || env.DEPLOYED_BACKEND_URL || process.env.VITE_BACKEND_URL || process.env.DEPLOYED_BACKEND_URL;
+  const backendTarget = rawTarget && rawTarget.trim().startsWith('http') && !rawTarget.includes('YOUR_DEPLOYED_URL') ? rawTarget.trim() : null;
+
   return {
     plugins: [
       react(),
       tailwindcss(),
-      {
+      // Only mount the local Express API middleware if NOT proxying to a deployed backend
+      ...(!backendTarget ? [{
         name: 'api-server',
-        configureServer(server) {
-          server.middlewares.use(async (req, res, next) => {
+        configureServer(server: any) {
+          server.middlewares.use(async (req: any, res: any, next: any) => {
             if (req.url && req.url.startsWith('/api')) {
               try {
                 const express = await import('express');
@@ -30,7 +40,7 @@ export default defineConfig(() => {
             }
           });
         }
-      }
+      }] : [])
     ],
     resolve: {
       alias: {
@@ -44,6 +54,21 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {
         ignored: ['**/db.json', '**/.data/**', '**/dist/**']
       },
+      // When a live deployed backend URL is configured, proxy all /api and /ws requests directly
+      ...(backendTarget ? {
+        proxy: {
+          '/api': {
+            target: backendTarget,
+            changeOrigin: true,
+            secure: false,
+          },
+          '/ws': {
+            target: backendTarget,
+            ws: true,
+            changeOrigin: true,
+          }
+        }
+      } : {})
     },
   };
 });

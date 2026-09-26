@@ -246,6 +246,14 @@ export default function MenuSection({
                       {item.description}
                     </p>
 
+                    {/* Serving portion badge if configured */}
+                    {item.servingSizeGrams && (
+                      <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-brand-gold/10 border border-brand-gold/25 text-brand-gold text-[9px] font-bold">
+                        <span>⚖️</span>
+                        <span>{item.servingSizeGrams}g Portion</span>
+                      </div>
+                    )}
+
                     {/* Ingredients list display */}
                     {item.ingredients && item.ingredients.length > 0 && (
                       <div className="mt-3 space-y-1">

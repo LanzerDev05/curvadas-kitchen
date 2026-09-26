@@ -44,6 +44,9 @@ export interface MenuItem {
     water?: number;       // Water cost per serving (e.g. ₱1.00)
     packaging?: number;   // Packaging/misc cost per serving (e.g. ₱2.00)
   };
+  batchYieldGrams?: number;   // Total batch yield weight in grams (e.g. 1000g for 1kg, 2000g for 2kg)
+  servingSizeGrams?: number;  // Portion/serving weight in grams (e.g. 80g or 90g)
+  totalBatchCost?: number;    // Overall raw materials batch cost (e.g. ₱3,000)
 }
 
 export interface SelectedOption {
