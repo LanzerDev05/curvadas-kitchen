@@ -254,22 +254,7 @@ export default function MenuSection({
                       </div>
                     )}
 
-                    {/* Ingredients list display */}
-                    {item.ingredients && item.ingredients.length > 0 && (
-                      <div className="mt-3 space-y-1">
-                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Ingredients:</span>
-                        <div className="flex flex-wrap gap-1">
-                          {item.ingredients.map((ing, i) => (
-                            <span 
-                              key={i} 
-                              className="text-[8px] bg-white/5 border border-white/5 text-gray-300 font-medium px-2 py-0.5 rounded-md"
-                            >
-                              {ing}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+
                   </div>
 
                   {/* Price & Action button */}

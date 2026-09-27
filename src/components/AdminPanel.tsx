@@ -52,7 +52,11 @@ import {
   Award,
   Undo,
   Scale,
-  Calculator
+  Calculator,
+  BookOpen,
+  Download,
+  Save,
+  Bookmark
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -644,13 +648,40 @@ function AdminPanel({
               const canToggle = order.status === 'preparing';
 
               return (
-                <div key={item.id} className="text-xs font-medium flex items-center justify-between gap-2 p-1.5 rounded-lg bg-black/10 border border-white/[0.02]">
-                  <span className={`truncate ${isCooked ? 'line-through text-gray-500' : isStarted ? 'text-brand-gold font-semibold' : 'text-gray-300'}`}>
-                    <strong className="text-brand-red mr-1 font-bold">{item.quantity}x</strong> 
-                    {item.menuItem.name}
-                  </span>
+                <div key={item.id} className="text-xs font-medium flex items-start justify-between gap-2 p-2 rounded-lg bg-black/20 border border-white/[0.04]">
+                  <div className="min-w-0 flex-1">
+                    <div className={`truncate ${isCooked ? 'line-through text-gray-500' : isStarted ? 'text-brand-gold font-semibold' : 'text-gray-200 font-bold'}`}>
+                      <strong className="text-brand-red mr-1 font-extrabold">{item.quantity}x</strong> 
+                      {item.menuItem.name}
+                    </div>
+
+                    {/* Selected Options / Add-ons / Rice display */}
+                    {item.selectedOptions && item.selectedOptions.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {item.selectedOptions.map((opt, optIdx) => (
+                          <span
+                            key={optIdx}
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-bold border leading-none ${
+                              opt.choice.price > 0
+                                ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                                : 'bg-white/5 border-white/10 text-gray-300'
+                            }`}
+                          >
+                            + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Special Instructions */}
+                    {item.specialInstructions && (
+                      <div className="text-[9px] text-amber-400/90 italic mt-1 font-medium bg-amber-500/5 px-1.5 py-0.5 rounded border border-amber-500/10">
+                        📝 "{item.specialInstructions}"
+                      </div>
+                    )}
+                  </div>
                   
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="flex items-center gap-1.5 flex-shrink-0 pt-0.5">
                     {canToggle && !isCooked && !isStarted && onStartItemCooking && (
                       <button
                         type="button"
@@ -1608,9 +1639,20 @@ function AdminPanel({
 
                     <div className="text-[11px] text-gray-400 flex flex-wrap gap-1.5 pt-1">
                       {order.items.map((i) => (
-                        <span key={i.id} className="bg-[#181818] border border-white/5 px-2.5 py-1 rounded-lg text-[10px]">
-                          <strong className="text-brand-red font-bold">{i.quantity}x</strong> {i.menuItem.name}
-                        </span>
+                        <div key={i.id} className="bg-[#181818] border border-white/5 px-2.5 py-1 rounded-lg text-[10px]">
+                          <div>
+                            <strong className="text-brand-red font-bold">{i.quantity}x</strong> {i.menuItem.name}
+                          </div>
+                          {i.selectedOptions && i.selectedOptions.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {i.selectedOptions.map((opt, optIdx) => (
+                                <span key={optIdx} className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${opt.choice.price > 0 ? 'text-amber-300' : 'text-gray-400'}`}>
+                                  + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1952,9 +1994,20 @@ function AdminPanel({
                                         ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
                                         : 'bg-[#181818] border-white/5 text-white'
                                     }`}>
-                                      <span className={isCooked ? 'line-through text-gray-400' : ''}>
-                                        <strong className="text-brand-red mr-1">{item.quantity}x</strong> {item.menuItem.name}
-                                      </span>
+                                      <div>
+                                        <span className={isCooked ? 'line-through text-gray-400' : ''}>
+                                          <strong className="text-brand-red mr-1">{item.quantity}x</strong> {item.menuItem.name}
+                                        </span>
+                                        {item.selectedOptions && item.selectedOptions.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-0.5">
+                                            {item.selectedOptions.map((opt, optIdx) => (
+                                              <span key={optIdx} className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${opt.choice.price > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-white/10 text-gray-300'}`}>
+                                                + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
                                       
                                       {canToggle && !isCooked && !isStarted && onStartItemCooking && (
                                         <button
@@ -2305,10 +2358,10 @@ function AdminPanel({
   };
   const [isAddIngredientOpen, setIsAddIngredientOpen] = useState(false);
   const [newIngredientName, setNewIngredientName] = useState('');
-  const [newIngredientQuantity, setNewIngredientQuantity] = useState(100);
+  const [newIngredientQuantity, setNewIngredientQuantity] = useState<number | ''>(100);
   const [newIngredientUnit, setNewIngredientUnit] = useState('g');
-  const [newIngredientLowStock, setNewIngredientLowStock] = useState(20);
-  const [newIngredientCostPerUnit, setNewIngredientCostPerUnit] = useState<number>(0.05);
+  const [newIngredientLowStock, setNewIngredientLowStock] = useState<number | ''>(20);
+  const [newIngredientCostPerUnit, setNewIngredientCostPerUnit] = useState<number | ''>(0.05);
 
   const [newIngredientPackSize, setNewIngredientPackSize] = useState<string>('');
   const [newIngredientPackCost, setNewIngredientPackCost] = useState<string>('');
@@ -2555,10 +2608,10 @@ function AdminPanel({
   // Ingredient Edit state
   const [editingIngredientId, setEditingIngredientId] = useState<string | null>(null);
   const [editIngredientName, setEditIngredientName] = useState('');
-  const [editIngredientQuantity, setEditIngredientQuantity] = useState(0);
+  const [editIngredientQuantity, setEditIngredientQuantity] = useState<number | ''>(0);
   const [editIngredientUnit, setEditIngredientUnit] = useState('g');
-  const [editIngredientLowStock, setEditIngredientLowStock] = useState(0);
-  const [editIngredientCostPerUnit, setEditIngredientCostPerUnit] = useState<number>(0);
+  const [editIngredientLowStock, setEditIngredientLowStock] = useState<number | ''>(0);
+  const [editIngredientCostPerUnit, setEditIngredientCostPerUnit] = useState<number | ''>(0);
 
   const [editIngredientPackSize, setEditIngredientPackSize] = useState<string>('');
   const [editIngredientPackCost, setEditIngredientPackCost] = useState<string>('');
@@ -2589,7 +2642,7 @@ function AdminPanel({
   // Add/Edit menu item form states
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formPrice, setFormPrice] = useState(130);
+  const [formPrice, setFormPrice] = useState<number | ''>(130);
   const [formCategory, setFormCategory] = useState<Category>('bento');
   const [formImage, setFormImage] = useState('');
   const [formOriginalImage, setFormOriginalImage] = useState('');
@@ -2601,45 +2654,163 @@ function AdminPanel({
     title: string;
     choices: { id: string; name: string; price: number }[];
   }[]>([]);
-  const [formRecipeRequirements, setFormRecipeRequirements] = useState<{ name: string; amount: number }[]>([]);
-  const [formTargetMargin, setFormTargetMargin] = useState<number>(50);
-  const [batchServingsTarget, setBatchServingsTarget] = useState<number>(20);
-  const [formElecOverhead, setFormElecOverhead] = useState<number>(3.00);
-  const [formGasOverhead, setFormGasOverhead] = useState<number>(2.50);
-  const [formWaterOverhead, setFormWaterOverhead] = useState<number>(1.00);
-  const [formPkgOverhead, setFormPkgOverhead] = useState<number>(0.00);
+  const [formRecipeRequirements, setFormRecipeRequirements] = useState<{ name: string; amount: number | '' }[]>([]);
+  const [recipeAllowDecimals, setRecipeAllowDecimals] = useState<boolean>(false);
+  const [formTargetMargin, setFormTargetMargin] = useState<number | ''>(50);
+  const [batchServingsTarget, setBatchServingsTarget] = useState<number | ''>(20);
+  const [formElecOverhead, setFormElecOverhead] = useState<number | ''>(3.00);
+  const [formGasOverhead, setFormGasOverhead] = useState<number | ''>(2.50);
+  const [formWaterOverhead, setFormWaterOverhead] = useState<number | ''>(1.00);
+  const [formPkgOverhead, setFormPkgOverhead] = useState<number | ''>(0.00);
 
-  // Batch Yield & Portion Costing state in Add/Edit modal
-  const [formBatchYieldGrams, setFormBatchYieldGrams] = useState<number>(2000); // 2000g (2kg) default
-  const [formServingSizeGrams, setFormServingSizeGrams] = useState<number>(90); // 90g default
-  const [formBatchTotalCost, setFormBatchTotalCost] = useState<number>(3000); // ₱3,000 default
+  // Batch Yield & Portion Costing state in Add/Edit modal (Viand / Meat Batch)
+  const [formBatchYieldGrams, setFormBatchYieldGrams] = useState<number | ''>(2000); // 2000g (2kg) default
+  const [formServingSizeGrams, setFormServingSizeGrams] = useState<number | ''>(90); // 90g default
+  const [formBatchTotalCost, setFormBatchTotalCost] = useState<number | ''>(3000); // ₱3,000 default
   const [batchYieldInputMode, setBatchYieldInputMode] = useState<'quick' | 'ingredients'>('quick');
-  const [batchIngredientsList, setBatchIngredientsList] = useState<Array<{ name: string; amount: number; unit: string; cost: number }>>([
+  const [batchIngredientsList, setBatchIngredientsList] = useState<Array<{ name: string; amount: number | ''; unit: string; cost: number | '' }>>([
     { name: 'Pork Belly / Meat Cuts', amount: 1600, unit: 'g', cost: 2400 },
     { name: 'Special Soy Sauce Marinade', amount: 200, unit: 'ml', cost: 250 },
     { name: 'Garlic & Onion Spices', amount: 100, unit: 'g', cost: 150 },
     { name: 'Cooking Oil & Seasoning', amount: 50, unit: 'ml', cost: 100 },
     { name: 'Atchara Pickles Garnish', amount: 50, unit: 'g', cost: 100 }
   ]);
+  // Steamed Rice Costing for Add/Edit Modal (Cooked Separately)
+  const [formIncludeRice, setFormIncludeRice] = useState<boolean>(true);
+  const [formRicePortionGrams, setFormRicePortionGrams] = useState<number | ''>(150); // 150g standard cup
+  const [formRiceCostMode, setFormRiceCostMode] = useState<'simple' | 'cooker'>('simple');
+  const [formRiceCostPerGram, setFormRiceCostPerGram] = useState<number | ''>(0.04); // ₱0.04/g (₱6.00 / 150g cup)
+  const [formRawRiceKg, setFormRawRiceKg] = useState<number | ''>(2);
+  const [formRawRiceCostKg, setFormRawRiceCostKg] = useState<number | ''>(50);
+  const [formRiceExpansionRatio, setFormRiceExpansionRatio] = useState<number | ''>(2.3);
+  const [formRiceOverhead, setFormRiceOverhead] = useState<number | ''>(10);
+  const [formSelectedRiceIngredient, setFormSelectedRiceIngredient] = useState<string>('');
 
   // Standalone Batch Yield & Portion Calculator Modal state
   const [isBatchCalcModalOpen, setIsBatchCalcModalOpen] = useState(false);
-  const [standaloneBatchWeight, setStandaloneBatchWeight] = useState<number>(2000); // 2000g / 2kg default
-  const [standaloneServingGrams, setStandaloneServingGrams] = useState<number>(90); // 90g default
-  const [standaloneTotalBatchCost, setStandaloneTotalBatchCost] = useState<number>(3000); // ₱3,000 default
-  const [standaloneTargetMargin, setStandaloneTargetMargin] = useState<number>(50);
-  const [standaloneRecipeName, setStandaloneRecipeName] = useState<string>('Garlic Pork Tapa Bento');
-  const [standaloneIngredients, setStandaloneIngredients] = useState<Array<{ name: string; batchAmount: number; unit: string; cost: number }>>([
-    { name: 'Pork Belly / Meat Cuts', batchAmount: 1600, unit: 'g', cost: 2400 },
-    { name: 'Special Soy Sauce Marinade', batchAmount: 200, unit: 'ml', cost: 250 },
-    { name: 'Garlic & Onion Spices', batchAmount: 100, unit: 'g', cost: 150 },
-    { name: 'Cooking Oil & Seasoning', batchAmount: 50, unit: 'ml', cost: 100 },
-    { name: 'Atchara Pickles Garnish', batchAmount: 50, unit: 'g', cost: 100 }
-  ]);
+  const [standaloneBatchWeight, setStandaloneBatchWeight] = useState<number | ''>(2000); // 2000g / 2kg default
+  const [standaloneServingGrams, setStandaloneServingGrams] = useState<number | ''>(90); // 90g default
+  const [standaloneTotalBatchCost, setStandaloneTotalBatchCost] = useState<number | ''>(3000); // ₱3,000 default
+  const [standaloneTargetMargin, setStandaloneTargetMargin] = useState<number | ''>(50);
+  const [standaloneRecipeName, setStandaloneRecipeName] = useState<string>('');
+  const [standaloneIngredients, setStandaloneIngredients] = useState<Array<{ name: string; batchAmount: number | ''; unit: string; cost: number | '' }>>([]);
   const [batchCalcCopied, setBatchCalcCopied] = useState(false);
+  // Steamed Rice Costing for Standalone Modal (Cooked Separately)
+  const [standaloneIncludeRice, setStandaloneIncludeRice] = useState<boolean>(true);
+  const [standaloneRicePortionGrams, setStandaloneRicePortionGrams] = useState<number | ''>(150); // 150g standard cup
+  const [standaloneRiceCostMode, setStandaloneRiceCostMode] = useState<'simple' | 'cooker'>('simple');
+  const [standaloneRiceCostPerGram, setStandaloneRiceCostPerGram] = useState<number | ''>(0.04); // ₱0.04/g (₱6.00 / 150g cup)
+  const [standaloneRawRiceKg, setStandaloneRawRiceKg] = useState<number | ''>(2);
+  const [standaloneRawRiceCostKg, setStandaloneRawRiceCostKg] = useState<number | ''>(50);
+  const [standaloneRiceExpansionRatio, setStandaloneRiceExpansionRatio] = useState<number | ''>(2.3);
+  const [standaloneRiceOverhead, setStandaloneRiceOverhead] = useState<number | ''>(10);
+  const [standaloneSelectedRiceIngredient, setStandaloneSelectedRiceIngredient] = useState<string>('');
+  // Packaging & Disposables Costing for Standalone Modal (Selected directly from Inventory Stock)
+  const [standaloneIncludePackaging, setStandaloneIncludePackaging] = useState<boolean>(true);
+  const [standaloneSelectedPackaging, setStandaloneSelectedPackaging] = useState<Array<{
+    name: string;
+    unit?: string;
+    amount: number;
+    costPerUnit: number;
+    selected: boolean;
+  }>>([
+    { name: 'Paper Bowl', unit: 'pcs', amount: 1, costPerUnit: 2.50, selected: true },
+    { name: 'Utensils (Spoon & Fork)', unit: 'pcs', amount: 1, costPerUnit: 1.50, selected: true }
+  ]);
+
+  const standalonePackagingCost = useMemo(() => {
+    if (!standaloneIncludePackaging) return 0;
+    return standaloneSelectedPackaging
+      .filter(p => p.selected)
+      .reduce((sum, p) => {
+        const invMatch = (ingredientsInventory || []).find(i => i.name.toLowerCase() === p.name.toLowerCase());
+        const cost = (invMatch?.costPerUnit && invMatch.costPerUnit > 0) ? invMatch.costPerUnit : (Number(p.costPerUnit) || 0);
+        return sum + cost * (Number(p.amount) || 1);
+      }, 0);
+  }, [standaloneIncludePackaging, standaloneSelectedPackaging, ingredientsInventory]);
+
+  const handleOpenFreshBatchCalculator = () => {
+    setStandaloneRecipeName('');
+    setStandaloneIngredients([]);
+    setStandaloneTotalBatchCost(0);
+    setStandaloneBatchWeight(2000);
+    setStandaloneServingGrams(90);
+    setStandaloneTargetMargin(50);
+    setStandaloneIncludeRice(true);
+    setStandaloneRicePortionGrams(150);
+    setStandaloneRiceCostPerGram(0.04);
+    setStandaloneSelectedRiceIngredient('');
+    setStandaloneIncludePackaging(true);
+    setSelectedRecipeToLoad('');
+    setIsBatchCalcModalOpen(true);
+  };
+
+  // Filter rice items from inventory for quick selection
+  const riceInventoryItems = useMemo(() => {
+    return (ingredientsInventory || []).filter(i => {
+      const n = (i.name || '').toLowerCase();
+      return n.includes('rice') || n.includes('kanin') || n.includes('bigas') || n.includes('sinandomeng') || n.includes('jasmine') || n.includes('dinorado') || n.includes('japanese') || n.includes('malagkit');
+    });
+  }, [ingredientsInventory]);
+
+  const nonRiceInventoryItems = useMemo(() => {
+    return (ingredientsInventory || []).filter(i => !riceInventoryItems.some(r => r.id === i.id));
+  }, [ingredientsInventory, riceInventoryItems]);
+
+  const applyRiceIngredientCost = (ingredientName: string, isStandalone: boolean) => {
+    if (isStandalone) {
+      setStandaloneSelectedRiceIngredient(ingredientName);
+    } else {
+      setFormSelectedRiceIngredient(ingredientName);
+    }
+
+    if (!ingredientName) return;
+
+    const invItem = ingredientsInventory.find(i => i.name.toLowerCase() === ingredientName.toLowerCase());
+    if (!invItem) return;
+
+    const unit = (invItem.unit || 'kg').toLowerCase();
+    const unitCost = Number(invItem.costPerUnit) || 0;
+
+    if (unit === 'kg') {
+      if (isStandalone) {
+        setStandaloneRawRiceCostKg(unitCost);
+        const expRatio = Number(standaloneRiceExpansionRatio) || 2.3;
+        const overhead = Number(standaloneRiceOverhead) || 10;
+        const rawKg = Number(standaloneRawRiceKg) || 2;
+        const totalCookedGrams = rawKg * expRatio * 1000;
+        const computedRate = ((rawKg * unitCost) + overhead) / Math.max(1, totalCookedGrams);
+        setStandaloneRiceCostPerGram(Number(computedRate.toFixed(4)));
+      } else {
+        setFormRawRiceCostKg(unitCost);
+        const expRatio = Number(formRiceExpansionRatio) || 2.3;
+        const overhead = Number(formRiceOverhead) || 10;
+        const rawKg = Number(formRawRiceKg) || 2;
+        const totalCookedGrams = rawKg * expRatio * 1000;
+        const computedRate = ((rawKg * unitCost) + overhead) / Math.max(1, totalCookedGrams);
+        setFormRiceCostPerGram(Number(computedRate.toFixed(4)));
+      }
+    } else if (unit === 'g') {
+      if (isStandalone) {
+        setStandaloneRiceCostPerGram(unitCost);
+        setStandaloneRawRiceCostKg(Number((unitCost * 1000).toFixed(2)));
+      } else {
+        setFormRiceCostPerGram(unitCost);
+        setFormRawRiceCostKg(Number((unitCost * 1000).toFixed(2)));
+      }
+    }
+  };
+
+  const handleCreateQuickRiceIngredient = (riceName: string = 'Sinandomeng Rice (Raw)', pricePerKg: number = 45) => {
+    onAddIngredient(riceName, 50, 'kg', 10, pricePerKg);
+    setTimeout(() => {
+      applyRiceIngredientCost(riceName, true);
+      applyRiceIngredientCost(riceName, false);
+    }, 150);
+  };
 
   // Helper to compute inventory item cost for a given amount and unit
-  const computeInventoryIngredientCost = (name: string, amount: number, unit: string) => {
+  const computeInventoryIngredientCost = (name: string, amount: number | '', unit: string) => {
     const inv = ingredientsInventory.find(i => i.name.toLowerCase() === name.toLowerCase());
     const actualUnit = inv?.unit || unit;
     let unitPrice = 0.05;
@@ -2655,8 +2826,459 @@ function AdminPanel({
         default: unitPrice = 5.00; break;
       }
     }
-    const factor = actualUnit === 'kg' ? amount / 1000 : amount;
+    const numAmt = Number(amount) || 0;
+    const factor = actualUnit === 'kg' ? numAmt / 1000 : numAmt;
     return Number((factor * unitPrice).toFixed(2));
+  };
+
+  // Helpers to distinguish and normalize recipe requirement components
+  const getItemName = (item: any): string => {
+    if (!item) return '';
+    if (typeof item === 'string') return item;
+    if (typeof item === 'object' && item !== null && 'name' in item) {
+      return String(item.name || '');
+    }
+    return '';
+  };
+
+  const isRiceRequirement = (item: any) => {
+    const n = getItemName(item).toLowerCase();
+    return n.includes('rice') || n.includes('kanin') || n.includes('bigas') || n.includes('sinandomeng') || n.includes('jasmine') || n.includes('dinorado') || n.includes('japanese') || n.includes('malagkit');
+  };
+
+  const isPackagingRequirement = (item: any) => {
+    const n = getItemName(item).toLowerCase();
+    return n.includes('bowl') || n.includes('utensil') || n.includes('box') || n.includes('container') || n.includes('packaging') || n.includes('spoon') || n.includes('fork') || (n.includes('cup') && !n.includes('rice') && !n.includes('measuring'));
+  };
+
+  const isViandRequirement = (item: any) => {
+    return !isRiceRequirement(item) && !isPackagingRequirement(item);
+  };
+
+  const deduplicateAndNormalizeRequirements = (reqs: Array<{ name: string; amount: number }>) => {
+    const map = new Map<string, { name: string; amount: number }>();
+    for (const r of reqs) {
+      if (!r || !r.name) continue;
+      const key = r.name.trim().toLowerCase();
+      let amt = Number(r.amount) || 0;
+      if (isPackagingRequirement(r.name)) {
+        amt = Math.max(1, Math.round(amt) || 1);
+      }
+      if (map.has(key)) {
+        const existing = map.get(key)!;
+        if (isPackagingRequirement(r.name)) {
+          existing.amount = 1;
+        } else {
+          existing.amount = Number((existing.amount + amt).toFixed(1));
+        }
+      } else {
+        map.set(key, { name: r.name.trim(), amount: amt });
+      }
+    }
+    return Array.from(map.values()).map(item => {
+      if (isPackagingRequirement(item.name)) return { name: item.name, amount: 1 };
+      if (item.name.toLowerCase().includes('/pc') || item.name.toLowerCase().includes('egg') || item.name.toLowerCase().includes('laurel')) {
+        return { name: item.name, amount: Math.max(1, Math.round(item.amount)) };
+      }
+      if (item.amount > 0 && item.amount < 1) {
+        return {
+          name: item.name,
+          amount: recipeAllowDecimals ? Math.max(0.1, Number(item.amount.toFixed(1))) : 1
+        };
+      }
+      return item;
+    });
+  };
+
+  const formViandReqs = useMemo(() => formRecipeRequirements.filter(r => isViandRequirement(r.name)), [formRecipeRequirements]);
+  const formRiceReqs = useMemo(() => formRecipeRequirements.filter(r => isRiceRequirement(r.name)), [formRecipeRequirements]);
+  const formPkgReqs = useMemo(() => formRecipeRequirements.filter(r => isPackagingRequirement(r.name)), [formRecipeRequirements]);
+
+  // --- Saved Recipe Templates & Batch Calculator Integration ---
+  interface SavedRecipeTemplate {
+    id: string;
+    name: string;
+    category?: Category;
+    description?: string;
+    servingSizeGrams: number;
+    batchYieldGrams: number;
+    targetMargin: number;
+    includeRice: boolean;
+    ricePortionGrams: number;
+    riceCostPerGram: number;
+    ingredients: Array<{
+      name: string;
+      batchAmount: number;
+      unit: string;
+      cost?: number;
+    }>;
+  }
+
+  const DEFAULT_RECIPE_TEMPLATES: SavedRecipeTemplate[] = [
+    {
+      id: 'template-sisig-special',
+      name: 'Sizzling Pork Sisig Recipe',
+      category: 'silog',
+      description: 'Authentic Pampanga-style crispy pork belly & jowl with chicken liver, onions, siling haba, and calamansi seasoning.',
+      servingSizeGrams: 90,
+      batchYieldGrams: 2000,
+      targetMargin: 55,
+      includeRice: true,
+      ricePortionGrams: 150,
+      riceCostPerGram: 0.04,
+      ingredients: [
+        { name: 'Crispy Pork Belly / Mask', batchAmount: 1550, unit: 'g' },
+        { name: 'Minced Chicken Liver', batchAmount: 220, unit: 'g' },
+        { name: 'White & Red Onions', batchAmount: 180, unit: 'g' },
+        { name: 'Green & Red Chili (Siling Haba)', batchAmount: 60, unit: 'g' },
+        { name: 'Calamansi Juice Seasoning', batchAmount: 60, unit: 'ml' },
+        { name: 'Soy Sauce & Liquid Seasoning', batchAmount: 60, unit: 'ml' },
+        { name: 'Japanese Mayonnaise', batchAmount: 60, unit: 'g' }
+      ]
+    },
+    {
+      id: 'template-beef-tapa',
+      name: 'Special Garlic Beef Tapa Bento',
+      category: 'bento',
+      description: 'Special garlic soy cured beef tapa with aromatics.',
+      servingSizeGrams: 90,
+      batchYieldGrams: 2000,
+      targetMargin: 50,
+      includeRice: true,
+      ricePortionGrams: 150,
+      riceCostPerGram: 0.04,
+      ingredients: [
+        { name: 'Marinated Beef Tapa Meat', batchAmount: 1600, unit: 'g' },
+        { name: 'Special Soy-Garlic Glaze', batchAmount: 200, unit: 'ml' },
+        { name: 'Fresh Garlic & Onion Aromatics', batchAmount: 100, unit: 'g' },
+        { name: 'Cooking Oil & Spices', batchAmount: 50, unit: 'ml' },
+        { name: 'Atchara Garnish Pack', batchAmount: 50, unit: 'g' }
+      ]
+    },
+    {
+      id: 'template-chicken-teriyaki',
+      name: 'Crispy Chicken Teriyaki Bento',
+      category: 'bento',
+      description: 'Tender chicken fillet with sweet teriyaki glaze.',
+      servingSizeGrams: 80,
+      batchYieldGrams: 1000,
+      targetMargin: 50,
+      includeRice: true,
+      ricePortionGrams: 150,
+      riceCostPerGram: 0.04,
+      ingredients: [
+        { name: 'Boneless Chicken Fillet', batchAmount: 700, unit: 'g' },
+        { name: 'Authentic Teriyaki Sauce', batchAmount: 150, unit: 'ml' },
+        { name: 'Toasted Sesame & Spring Onions', batchAmount: 50, unit: 'g' },
+        { name: 'Stir-fry Cabbage & Veggies', batchAmount: 70, unit: 'g' },
+        { name: 'Pure Sesame Cooking Oil', batchAmount: 30, unit: 'ml' }
+      ]
+    }
+  ];
+
+  const [savedRecipeTemplates, setSavedRecipeTemplates] = useState<SavedRecipeTemplate[]>(() => {
+    try {
+      const stored = localStorage.getItem('curvada_saved_recipe_templates');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to load saved templates', e);
+    }
+    return DEFAULT_RECIPE_TEMPLATES;
+  });
+
+  const [selectedRecipeToLoad, setSelectedRecipeToLoad] = useState<string>('');
+  const [isSavingTemplatePrompt, setIsSavingTemplatePrompt] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
+
+  const saveRecipeTemplates = (newTemplates: SavedRecipeTemplate[]) => {
+    setSavedRecipeTemplates(newTemplates);
+    try {
+      localStorage.setItem('curvada_saved_recipe_templates', JSON.stringify(newTemplates));
+    } catch (e) {
+      console.error('Failed to save templates to storage', e);
+    }
+  };
+
+  const handleSaveCurrentBatchAsTemplate = (nameToSave?: string) => {
+    const finalName = (nameToSave || newTemplateName || standaloneRecipeName || 'Custom Recipe').trim();
+    if (!finalName) {
+      alert('Please enter a recipe name to save.');
+      return;
+    }
+
+    const newTemplate: SavedRecipeTemplate = {
+      id: 'template-' + Date.now(),
+      name: finalName,
+      servingSizeGrams: Number(standaloneServingGrams) || 90,
+      batchYieldGrams: Number(standaloneBatchWeight) || 2000,
+      targetMargin: Number(standaloneTargetMargin) || 50,
+      includeRice: standaloneIncludeRice,
+      ricePortionGrams: Number(standaloneRicePortionGrams) || 150,
+      riceCostPerGram: Number(standaloneRiceCostPerGram) || 0.04,
+      ingredients: standaloneIngredients.map(item => ({
+        name: item.name,
+        batchAmount: Number(item.batchAmount) || 0,
+        unit: item.unit,
+        cost: Number(item.cost) || 0
+      }))
+    };
+
+    const updated = [newTemplate, ...savedRecipeTemplates.filter(t => t.name.toLowerCase() !== finalName.toLowerCase())];
+    saveRecipeTemplates(updated);
+    setSelectedRecipeToLoad(`template:${newTemplate.id}`);
+    setIsSavingTemplatePrompt(false);
+    setNewTemplateName('');
+    alert(`🎉 Successfully saved "${finalName}" with ${newTemplate.ingredients.length} ingredients! You can now load it into the Batch Calculator anytime.`);
+  };
+
+  const handleLoadRecipeIntoBatch = (recipeKey: string) => {
+    if (!recipeKey || recipeKey === '__fresh__') {
+      handleOpenFreshBatchCalculator();
+      return;
+    }
+
+    if (recipeKey.startsWith('template:')) {
+      const templateId = recipeKey.replace('template:', '');
+      const t = savedRecipeTemplates.find(item => item.id === templateId);
+      if (!t) return;
+
+      setStandaloneRecipeName(t.name);
+      setStandaloneServingGrams(t.servingSizeGrams || 90);
+      setStandaloneBatchWeight(t.batchYieldGrams || 2000);
+      setStandaloneTargetMargin(t.targetMargin || 50);
+      setStandaloneIncludeRice(t.includeRice ?? true);
+      setStandaloneRicePortionGrams(t.ricePortionGrams || 150);
+      setStandaloneRiceCostPerGram(t.riceCostPerGram || 0.04);
+
+      const mapped = t.ingredients.map(ing => {
+        const cost = computeInventoryIngredientCost(ing.name, ing.batchAmount, ing.unit);
+        return {
+          name: ing.name,
+          batchAmount: ing.batchAmount,
+          unit: ing.unit,
+          cost: cost > 0 ? cost : (Number(ing.cost) || 0)
+        };
+      });
+
+      setStandaloneIngredients(mapped);
+      const totalCost = mapped.reduce((sum, i) => sum + (Number(i.cost) || 0), 0);
+      setStandaloneTotalBatchCost(totalCost);
+      return;
+    }
+
+    if (recipeKey.startsWith('dish:')) {
+      const dishId = recipeKey.replace('dish:', '');
+      const dish = menuItems.find(item => item.id === dishId);
+      if (!dish) return;
+      handleOpenBatchCalculatorForRecipe(dish);
+    }
+  };
+
+  const handleOpenBatchCalculatorForRecipe = (item: MenuItem) => {
+    setStandaloneRecipeName(item.name);
+    const servingG = item.servingSizeGrams || 90;
+    const batchG = item.batchYieldGrams || 2000;
+    setStandaloneServingGrams(servingG);
+    setStandaloneBatchWeight(batchG);
+    setStandaloneTargetMargin(item.targetMarginPercent || 50);
+    setStandaloneIncludeRice(item.includeRice ?? true);
+    if (item.ricePortionGrams) setStandaloneRicePortionGrams(item.ricePortionGrams);
+    if (item.riceCostPerGram) setStandaloneRiceCostPerGram(item.riceCostPerGram);
+
+    const bWeight = Math.max(1, batchG);
+    const sGrams = Math.max(1, servingG);
+    const multiplier = bWeight / sGrams;
+
+    if (item.recipeRequirements && item.recipeRequirements.length > 0) {
+      // 1. Separate rice requirement to standalone rice section
+      const riceReq = item.recipeRequirements.find(r => isRiceRequirement(r.name));
+      if (riceReq) {
+        setStandaloneIncludeRice(true);
+        if (Number(riceReq.amount) > 0) {
+          setStandaloneRicePortionGrams(Number(riceReq.amount));
+        }
+        setStandaloneSelectedRiceIngredient(riceReq.name);
+      } else {
+        setStandaloneIncludeRice(false);
+        setStandaloneSelectedRiceIngredient('');
+      }
+
+      // 2. Separate packaging requirements to standalone packaging section
+      const pkgReqs = item.recipeRequirements.filter(r => isPackagingRequirement(r.name));
+      if (pkgReqs.length > 0) {
+        setStandaloneIncludePackaging(true);
+        const mappedPkgs = pkgReqs.map(p => {
+          const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === p.name.toLowerCase());
+          return {
+            name: p.name,
+            amount: Number(p.amount) || 1,
+            costPerUnit: Number(invMatch?.costPerUnit) || (p.name.toLowerCase().includes('bowl') ? 2.50 : 1.50),
+            unit: invMatch?.unit || 'pcs',
+            selected: true
+          };
+        });
+        setStandaloneSelectedPackaging(mappedPkgs);
+      } else {
+        setStandaloneIncludePackaging(false);
+      }
+
+      // 3. Extract only viand raw materials for the batch
+      const converted = item.recipeRequirements
+        .filter(r => isViandRequirement(r.name))
+        .map(r => {
+          const inv = ingredientsInventory.find(i => i.name.toLowerCase() === r.name.toLowerCase());
+          const unit = inv?.unit || 'g';
+          const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
+          const batchAmount = isCountable 
+            ? Math.max(1, Math.round(Number(r.amount) * multiplier))
+            : Number((Number(r.amount) * multiplier).toFixed(1));
+          const cost = computeInventoryIngredientCost(r.name, batchAmount, unit);
+          return {
+            name: r.name,
+            batchAmount,
+            unit,
+            cost
+          };
+        });
+
+      if (converted.length > 0) {
+        setStandaloneIngredients(converted);
+        const totalCost = converted.reduce((sum, ing) => sum + (Number(ing.cost) || 0), 0);
+        setStandaloneTotalBatchCost(totalCost);
+      } else {
+        setStandaloneIngredients([]);
+        setStandaloneTotalBatchCost(0);
+      }
+    } else if (item.ingredients && item.ingredients.length > 0) {
+      const converted = item.ingredients
+        .filter(name => isViandRequirement(name))
+        .map(name => {
+          const inv = ingredientsInventory.find(i => i.name.toLowerCase() === name.toLowerCase());
+          const unit = inv?.unit || 'g';
+          const defaultBatchAmt = unit === 'kg' ? 1.5 : unit === 'pcs' ? 15 : 200;
+          const cost = computeInventoryIngredientCost(name, defaultBatchAmt, unit);
+          return {
+            name,
+            batchAmount: defaultBatchAmt,
+            unit,
+            cost
+          };
+        });
+      if (converted.length > 0) {
+        setStandaloneIngredients(converted);
+        const totalCost = converted.reduce((sum, ing) => sum + (Number(ing.cost) || 0), 0);
+        setStandaloneTotalBatchCost(totalCost);
+      } else {
+        setStandaloneIngredients([]);
+        setStandaloneTotalBatchCost(0);
+      }
+    } else {
+      setStandaloneIngredients([]);
+      setStandaloneTotalBatchCost(0);
+    }
+
+    setIsBatchCalcModalOpen(true);
+  };
+  const handleQuickLoadSisigInRecipeForm = () => {
+    const sisigReqs = [
+      { name: 'Crispy Pork Belly / Mask', amount: 70 },
+      { name: 'Minced Chicken Liver', amount: 10 },
+      { name: 'White & Red Onions', amount: 8 },
+      { name: 'Green & Red Chili (Siling Haba)', amount: 3 },
+      { name: 'Calamansi Juice Seasoning', amount: 3 },
+      { name: 'Soy Sauce & Liquid Seasoning', amount: 3 },
+      { name: 'Japanese Mayonnaise', amount: 3 }
+    ];
+
+    setFormRecipeRequirements(sisigReqs);
+    if (!formName || formName === 'New Dish Recipe') {
+      setFormName('Sizzling Pork Sisig Plate');
+    }
+    setFormServingSizeGrams(90);
+    setFormBatchYieldGrams(2000);
+    setFormIncludeRice(true);
+    setFormRicePortionGrams(150);
+    setFormRiceCostPerGram(0.04);
+    setFormTargetMargin(55);
+    setFormCategory('silog');
+    setFormDescription('Authentic Pampanga-style crispy pork belly & jowl tossed with chicken liver, white onions, siling haba, and calamansi seasoning. Served with hot steamed rice.');
+    setFormIngredients(sisigReqs.map(r => r.name).concat('Steamed Rice').join(', '));
+  };
+
+  const handleSendRecipeFormToBatchCalc = () => {
+    const dishName = formName || 'Custom Recipe';
+    setStandaloneRecipeName(dishName);
+    const servingG = Number(formServingSizeGrams) || 90;
+    const batchG = Number(formBatchYieldGrams) || 2000;
+    setStandaloneServingGrams(servingG);
+    setStandaloneBatchWeight(batchG);
+    setStandaloneTargetMargin(Number(formTargetMargin) || 50);
+    setStandaloneIncludeRice(formIncludeRice);
+    setStandaloneRicePortionGrams(Number(formRicePortionGrams) || 150);
+    setStandaloneRiceCostPerGram(Number(formRiceCostPerGram) || 0.04);
+    setStandaloneSelectedRiceIngredient(formSelectedRiceIngredient);
+
+    const multiplier = batchG / Math.max(1, servingG);
+    if (formRecipeRequirements.length > 0) {
+      // 1. Deduplicate & normalize requirements
+      const normalizedReqs = deduplicateAndNormalizeRequirements(formRecipeRequirements);
+      setFormRecipeRequirements(normalizedReqs);
+
+      // 2. Separate rice requirement to standalone rice section
+      const riceReq = normalizedReqs.find(r => isRiceRequirement(r.name));
+      if (riceReq) {
+        setStandaloneIncludeRice(true);
+        if (Number(riceReq.amount) > 0) setStandaloneRicePortionGrams(Number(riceReq.amount));
+        setStandaloneSelectedRiceIngredient(riceReq.name);
+      }
+
+      // 3. Separate packaging requirements to standalone packaging section
+      const pkgReqs = normalizedReqs.filter(r => isPackagingRequirement(r.name));
+      if (pkgReqs.length > 0) {
+        setStandaloneIncludePackaging(true);
+        const mappedPkgs = pkgReqs.map(p => {
+          const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === p.name.toLowerCase());
+          return {
+            name: p.name,
+            amount: Number(p.amount) || 1,
+            costPerUnit: Number(invMatch?.costPerUnit) || (p.name.toLowerCase().includes('bowl') ? 2.50 : 1.50),
+            unit: invMatch?.unit || 'pcs',
+            selected: true
+          };
+        });
+        setStandaloneSelectedPackaging(mappedPkgs);
+      } else {
+        setStandaloneIncludePackaging(false);
+      }
+      // 4. Extract only viand raw materials for the batch
+      const converted = normalizedReqs
+        .filter(r => isViandRequirement(r.name))
+        .map(r => {
+          const inv = ingredientsInventory.find(i => i.name.toLowerCase() === r.name.toLowerCase());
+          const unit = inv?.unit || 'g';
+          const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
+          const batchAmount = isCountable 
+            ? Math.max(1, Math.round(Number(r.amount) * multiplier))
+            : Number((Number(r.amount) * multiplier).toFixed(1));
+          const cost = computeInventoryIngredientCost(r.name, batchAmount, unit);
+          return {
+            name: r.name,
+            batchAmount,
+            unit,
+            cost
+          };
+        });
+
+      if (converted.length > 0) {
+        setStandaloneIngredients(converted);
+        const totalCost = converted.reduce((sum, ing) => sum + (Number(ing.cost) || 0), 0);
+        setStandaloneTotalBatchCost(totalCost);
+      }
+    }
+    setIsBatchCalcModalOpen(true);
   };
 
   // Image Zoom, Pan & Crop Editor state
@@ -2772,10 +3394,10 @@ function AdminPanel({
   // New inline ingredient form states (for adding from menu item form)
   const [showInlineNewIngredient, setShowInlineNewIngredient] = useState(false);
   const [inlineIngName, setInlineIngName] = useState('');
-  const [inlineIngQty, setInlineIngQty] = useState(1000);
+  const [inlineIngQty, setInlineIngQty] = useState<number | ''>(1000);
   const [inlineIngUnit, setInlineIngUnit] = useState('g');
-  const [inlineIngLowStock, setInlineIngLowStock] = useState(200);
-  const [inlineIngCost, setInlineIngCost] = useState<number>(0.05);
+  const [inlineIngLowStock, setInlineIngLowStock] = useState<number | ''>(200);
+  const [inlineIngCost, setInlineIngCost] = useState<number | ''>(0.05);
 
   const handleInlineUnitChange = (unit: string) => {
     setInlineIngUnit(unit);
@@ -2818,10 +3440,10 @@ function AdminPanel({
     // Call the prop callback to add it to inventory
     onAddIngredient(
       inlineIngName.trim(),
-      inlineIngQty,
+      Number(inlineIngQty) || 0,
       inlineIngUnit,
-      inlineIngLowStock,
-      inlineIngCost
+      Number(inlineIngLowStock) || 0,
+      Number(inlineIngCost) || 0
     );
 
     // Link it to this recipe automatically
@@ -3370,13 +3992,23 @@ function AdminPanel({
     setFormServingSizeGrams(90);
     setFormBatchTotalCost(3000);
     setBatchYieldInputMode('quick');
+    setFormIncludeRice(true);
+    setFormRicePortionGrams(150);
+    setFormRiceCostMode('simple');
+    setFormRiceCostPerGram(0.04);
+    setFormRawRiceKg(2);
+    setFormRawRiceCostKg(50);
+    setFormRiceExpansionRatio(2.3);
+    setFormRiceOverhead(10);
     setFormCustomOptions([
       {
         id: 'opt-' + Math.random().toString(36).substr(2, 4),
-        title: 'Rice Upgrade',
+        title: 'Rice',
         choices: [
-          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Fried Rice', price: 0 },
-          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Steamed Rice', price: -5 }
+          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
+          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 },
+          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20 },
+          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Extra Rice', price: 15 }
         ]
       }
     ]);
@@ -3394,8 +4026,9 @@ function AdminPanel({
     setFormOriginalImage(item.image);
     setFormSpicy(item.spicy || false);
     setFormPopular(item.popular || false);
-    setFormIngredients(item.ingredients ? item.ingredients.join(', ') : '');
-    setFormRecipeRequirements(item.recipeRequirements || []);
+    const normalizedReqs = deduplicateAndNormalizeRequirements(item.recipeRequirements || []);
+    setFormIngredients(item.ingredients ? item.ingredients.join(', ') : normalizedReqs.map(r => r.name).join(', '));
+    setFormRecipeRequirements(normalizedReqs);
     setFormTargetMargin(item.targetMarginPercent !== undefined ? item.targetMarginPercent : 50);
     setBatchServingsTarget(20);
     setFormElecOverhead(item.utilityOverhead?.electricity !== undefined ? item.utilityOverhead.electricity : 3.00);
@@ -3406,15 +4039,110 @@ function AdminPanel({
     setFormServingSizeGrams(item.servingSizeGrams !== undefined ? item.servingSizeGrams : 90);
     setFormBatchTotalCost(item.totalBatchCost !== undefined ? item.totalBatchCost : 3000);
     setBatchYieldInputMode('quick');
-    setFormCustomOptions(item.customizableOptions ? item.customizableOptions.map(co => ({
+
+    const riceReq = normalizedReqs.find(r => isRiceRequirement(r.name));
+    setFormIncludeRice(item.includeRice !== undefined ? item.includeRice : (item.category !== 'drinks' && (riceReq !== undefined || item.category === 'bento' || item.category === 'silog' || item.category === 'rice-bowl')));
+    setFormRicePortionGrams(item.ricePortionGrams || (riceReq ? riceReq.amount : 150));
+    setFormRiceCostPerGram(item.riceCostPerGram || 0.04);
+    setFormSelectedRiceIngredient(riceReq ? riceReq.name : '');
+    setFormRiceCostMode('simple');
+    setFormRawRiceKg(2);
+    setFormRawRiceCostKg(50);
+    setFormRiceExpansionRatio(2.3);
+    setFormRiceOverhead(10);
+    setFormCustomOptions(item.customizableOptions && item.customizableOptions.length > 0 ? item.customizableOptions.map(co => ({
       id: 'opt-' + Math.random().toString(36).substr(2, 4),
       title: co.title,
-      choices: co.choices.map(c => ({
-        id: c.id || 'ch-' + Math.random().toString(36).substr(2, 4),
-        name: c.name,
-        price: c.price
-      }))
-    })) : []);
+      choices: co.choices.map(c => {
+        const isRiceGroup = co.title.toLowerCase().includes('rice');
+        const isPlain = isRiceGroup && c.name.toLowerCase().includes('plain');
+        const isGarlic = isRiceGroup && c.name.toLowerCase().includes('garlic') && !c.name.toLowerCase().includes('double');
+        return {
+          id: c.id || 'ch-' + Math.random().toString(36).substr(2, 4),
+          name: isPlain ? 'Plain Rice' : isGarlic ? 'Garlic Rice' : c.name,
+          price: (isPlain || isGarlic) && c.price < 0 ? 0 : c.price
+        };
+      })
+    })) : (
+      item.includeRice !== false && item.category !== 'drinks'
+        ? [
+            {
+              id: 'opt-' + Math.random().toString(36).substr(2, 4),
+              title: 'Rice',
+              choices: [
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20 },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Extra Rice', price: 15 }
+              ]
+            }
+          ]
+        : []
+    ));
+
+    // Synchronize Batch Calculator state with this recipe
+    const batchG = item.batchYieldGrams !== undefined ? item.batchYieldGrams : 2000;
+    const servingG = item.servingSizeGrams !== undefined ? item.servingSizeGrams : 90;
+    const multiplier = batchG / Math.max(1, servingG);
+
+    setStandaloneRecipeName(item.name);
+    setStandaloneBatchWeight(batchG);
+    setStandaloneServingGrams(servingG);
+    setStandaloneTargetMargin(item.targetMarginPercent !== undefined ? item.targetMarginPercent : 50);
+    setStandaloneIncludeRice(item.includeRice !== undefined ? item.includeRice : true);
+    if (riceReq) {
+      setStandaloneIncludeRice(true);
+      setStandaloneRicePortionGrams(Number(riceReq.amount) || 150);
+      setStandaloneSelectedRiceIngredient(riceReq.name);
+    } else {
+      setStandaloneIncludeRice(false);
+      setStandaloneSelectedRiceIngredient('');
+    }
+
+    const pkgReqs = normalizedReqs.filter(r => isPackagingRequirement(r.name));
+    if (pkgReqs.length > 0) {
+      setStandaloneIncludePackaging(true);
+      const mappedPkgs = pkgReqs.map(p => {
+        const invMatch = (ingredientsInventory || []).find(inv => inv.name.toLowerCase() === p.name.toLowerCase());
+        return {
+          name: p.name,
+          amount: Number(p.amount) || 1,
+          costPerUnit: Number(invMatch?.costPerUnit) || (p.name.toLowerCase().includes('bowl') ? 2.50 : 1.50),
+          unit: invMatch?.unit || 'pcs',
+          selected: true
+        };
+      });
+      setStandaloneSelectedPackaging(mappedPkgs);
+    } else {
+      setStandaloneIncludePackaging(false);
+    }
+
+    if (normalizedReqs.length > 0) {
+      const converted = normalizedReqs
+        .filter(r => isViandRequirement(r.name))
+        .map(r => {
+          const inv = ingredientsInventory.find(i => i.name.toLowerCase() === r.name.toLowerCase());
+          const unit = inv?.unit || 'g';
+          const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
+          const batchAmount = isCountable 
+            ? Math.max(1, Math.round(Number(r.amount) * multiplier))
+            : Number((Number(r.amount) * multiplier).toFixed(1));
+          const cost = computeInventoryIngredientCost(r.name, batchAmount, unit);
+          return {
+            name: r.name,
+            batchAmount,
+            unit,
+            cost
+          };
+        });
+
+      if (converted.length > 0) {
+        setStandaloneIngredients(converted);
+        const totalCost = converted.reduce((sum, ing) => sum + (Number(ing.cost) || 0), 0);
+        setStandaloneTotalBatchCost(totalCost);
+      }
+    }
+
     setIsFormOpen(true);
   };
 
@@ -3431,11 +4159,12 @@ function AdminPanel({
     if (formCategory === 'silog') {
       customizableOptions = [
         {
-          title: 'Rice Upgrade',
+          title: 'Rice',
           choices: [
-            { id: 'rice-garlic', name: 'Garlic Fried Rice', price: 0 },
-            { id: 'rice-double-garlic', name: 'Double Garlic Rice', price: 20 },
-            { id: 'rice-plain', name: 'Plain Steamed Rice', price: -5 }
+            { id: 'rice-plain', name: 'Plain Rice', price: 0 },
+            { id: 'rice-garlic', name: 'Garlic Rice', price: 0 },
+            { id: 'rice-java', name: 'Java Rice', price: 20 },
+            { id: 'rice-extra', name: 'Extra Rice', price: 15 }
           ]
         },
         {
@@ -3449,6 +4178,15 @@ function AdminPanel({
     } else if (formCategory === 'bento') {
       customizableOptions = [
         {
+          title: 'Rice',
+          choices: [
+            { id: 'rice-plain', name: 'Plain Rice', price: 0 },
+            { id: 'rice-garlic', name: 'Garlic Rice', price: 0 },
+            { id: 'rice-java', name: 'Java Rice', price: 20 },
+            { id: 'rice-extra', name: 'Extra Rice', price: 15 }
+          ]
+        },
+        {
           title: 'Sauce Option',
           choices: [
             { id: 'sauce-katsu', name: 'Katsu Sauce & Mayo', price: 0 },
@@ -3458,13 +4196,21 @@ function AdminPanel({
         {
           title: 'Bento Sides Upgrade',
           choices: [
-            { id: 'side-gyoza', name: 'Classic Gyoza (2pcs)', price: 0 },
-            { id: 'side-extra-rice', name: 'Upgrade to Garlic Rice in Bento', price: 15 }
+            { id: 'side-gyoza', name: 'Classic Gyoza (2pcs)', price: 0 }
           ]
         }
       ];
     } else if (formCategory === 'rice-bowl') {
       customizableOptions = [
+        {
+          title: 'Rice',
+          choices: [
+            { id: 'rice-plain', name: 'Plain Rice', price: 0 },
+            { id: 'rice-garlic', name: 'Garlic Rice', price: 0 },
+            { id: 'rice-java', name: 'Java Rice', price: 20 },
+            { id: 'rice-extra', name: 'Extra Rice', price: 15 }
+          ]
+        },
         {
           title: 'Spice Customizer',
           choices: [
@@ -3527,18 +4273,21 @@ function AdminPanel({
         ...editingItem,
         name: formName.trim(),
         description: formDescription.trim(),
-        price: Number(formPrice),
+        price: Number(formPrice) || 0,
         category: formCategory,
         image: formImage.trim(),
         spicy: formSpicy,
         popular: formPopular,
-        targetMarginPercent: formTargetMargin,
+        targetMarginPercent: Number(formTargetMargin) || 50,
         utilityOverhead: utilityOverheadData,
-        batchYieldGrams: formBatchYieldGrams,
-        servingSizeGrams: formServingSizeGrams,
-        totalBatchCost: formBatchTotalCost,
+        batchYieldGrams: Number(formBatchYieldGrams) || 2000,
+        servingSizeGrams: Number(formServingSizeGrams) || 90,
+        totalBatchCost: Number(formBatchTotalCost) || 0,
+        includeRice: formIncludeRice,
+        ricePortionGrams: formIncludeRice ? (Number(formRicePortionGrams) || 150) : undefined,
+        riceCostPerGram: formIncludeRice ? (Number(formRiceCostPerGram) || 0.04) : undefined,
         ingredients: parsedIngredients.length > 0 ? parsedIngredients : undefined,
-        recipeRequirements: formRecipeRequirements.length > 0 ? formRecipeRequirements : undefined,
+        recipeRequirements: formRecipeRequirements.length > 0 ? formRecipeRequirements.map(r => ({ name: r.name, amount: Number(r.amount) || 0 })) : undefined,
         customizableOptions: finalCustomOptions
       };
       onEditMenuItem(updated);
@@ -3549,19 +4298,22 @@ function AdminPanel({
         id: generatedId,
         name: formName.trim(),
         description: formDescription.trim(),
-        price: Number(formPrice),
+        price: Number(formPrice) || 0,
         category: formCategory,
         image: formImage.trim(),
         spicy: formSpicy,
         popular: formPopular,
         isAvailable: true,
-        targetMarginPercent: formTargetMargin,
+        targetMarginPercent: Number(formTargetMargin) || 50,
         utilityOverhead: utilityOverheadData,
-        batchYieldGrams: formBatchYieldGrams,
-        servingSizeGrams: formServingSizeGrams,
-        totalBatchCost: formBatchTotalCost,
+        batchYieldGrams: Number(formBatchYieldGrams) || 2000,
+        servingSizeGrams: Number(formServingSizeGrams) || 90,
+        totalBatchCost: Number(formBatchTotalCost) || 0,
+        includeRice: formIncludeRice,
+        ricePortionGrams: formIncludeRice ? (Number(formRicePortionGrams) || 150) : undefined,
+        riceCostPerGram: formIncludeRice ? (Number(formRiceCostPerGram) || 0.04) : undefined,
         ingredients: parsedIngredients.length > 0 ? parsedIngredients : undefined,
-        recipeRequirements: formRecipeRequirements.length > 0 ? formRecipeRequirements : undefined,
+        recipeRequirements: formRecipeRequirements.length > 0 ? formRecipeRequirements.map(r => ({ name: r.name, amount: Number(r.amount) || 0 })) : undefined,
         customizableOptions: finalCustomOptions
       };
       onAddMenuItem(newItem);
@@ -3573,6 +4325,16 @@ function AdminPanel({
 
   const handleDeleteItem = (itemId: string, itemName: string) => {
     if (confirm(`Are you absolutely sure you want to remove "${itemName}" from the kitchen catalog? This cannot be undone.`)) {
+      if (editingItem && editingItem.id === itemId) {
+        setEditingItem(null);
+        setIsFormOpen(false);
+      }
+      if (stockIngredientRecipeFilter === itemId) {
+        setStockIngredientRecipeFilter('all');
+      }
+      if (selectedRecipeToLoad === `dish:${itemId}`) {
+        setSelectedRecipeToLoad('');
+      }
       onDeleteMenuItem(itemId);
     }
   };
@@ -5069,7 +5831,7 @@ function AdminPanel({
                     min="0"
                     placeholder="3000"
                     value={newIngredientQuantity}
-                    onChange={(e) => setNewIngredientQuantity(Number(e.target.value) || 0)}
+                    onChange={(e) => setNewIngredientQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold"
                   />
                 </div>
@@ -5105,13 +5867,20 @@ function AdminPanel({
                     min="0"
                     placeholder="500"
                     value={newIngredientLowStock}
-                    onChange={(e) => setNewIngredientLowStock(Number(e.target.value) || 0)}
+                    onChange={(e) => setNewIngredientLowStock(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold"
                   />
                 </div>
 
                 <div>
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block mb-1.5">Unit Purchase Cost (₱) *</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Unit Purchase Cost (₱) *</label>
+                    {newIngredientCostPerUnit !== '' && Number(newIngredientCostPerUnit) > 0 && (
+                      <span className="text-[8.5px] font-mono text-brand-gold font-extrabold bg-brand-gold/10 px-1.5 py-0.2 rounded border border-brand-gold/20">
+                        ₱{Number(newIngredientCostPerUnit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })}/{newIngredientUnit}
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
                     required
@@ -5119,14 +5888,19 @@ function AdminPanel({
                     min="0"
                     placeholder="0.05"
                     value={newIngredientCostPerUnit}
-                    onChange={(e) => setNewIngredientCostPerUnit(Number(e.target.value) || 0)}
+                    onChange={(e) => setNewIngredientCostPerUnit(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold"
                   />
                 </div>
 
                 <div className="md:col-span-2 grid grid-cols-2 gap-2 border border-white/5 bg-[#121211] p-3 rounded-2xl">
-                  <div className="col-span-2 text-[9px] text-brand-gold uppercase tracking-wider font-black flex items-center gap-1">
-                    💡 Bulk Pack Calculator (Optional)
+                  <div className="col-span-2 text-[9px] text-brand-gold uppercase tracking-wider font-black flex items-center justify-between">
+                    <span className="flex items-center gap-1">💡 Bulk Pack Calculator (Optional)</span>
+                    {Number(newIngredientPackSize) > 0 && Number(newIngredientPackCost) > 0 && (
+                      <span className="text-brand-gold font-mono text-[9px] font-extrabold bg-brand-gold/10 px-1.5 py-0.5 rounded border border-brand-gold/20">
+                        = ₱{(Number(newIngredientPackCost) / Number(newIngredientPackSize)).toFixed(4)} / {newIngredientUnit}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <label className="text-[9px] text-gray-400 uppercase tracking-wider font-bold block mb-1">Pack Size ({newIngredientUnit})</label>
@@ -5322,7 +6096,7 @@ function AdminPanel({
                                   required
                                   min="0"
                                   value={editIngredientQuantity}
-                                  onChange={(e) => setEditIngredientQuantity(Number(e.target.value) || 0)}
+                                  onChange={(e) => setEditIngredientQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                                   className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold"
                                 />
                               </div>
@@ -5350,27 +6124,39 @@ function AdminPanel({
                                   required
                                   min="0"
                                   value={editIngredientLowStock}
-                                  onChange={(e) => setEditIngredientLowStock(Number(e.target.value) || 0)}
+                                  onChange={(e) => setEditIngredientLowStock(e.target.value === '' ? '' : Number(e.target.value))}
                                   className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold"
                                 />
                               </div>
                               <div>
-                                <label className="text-[9px] text-gray-500 uppercase tracking-wider font-bold block mb-1">Unit Cost (₱)</label>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="text-[9px] text-gray-400 uppercase tracking-wider font-bold block">Unit Purchase Cost (₱) *</label>
+                                  {editIngredientCostPerUnit !== '' && Number(editIngredientCostPerUnit) > 0 && (
+                                    <span className="text-[8.5px] font-mono text-brand-gold font-extrabold bg-brand-gold/10 px-1.5 py-0.2 rounded border border-brand-gold/20">
+                                      ₱{Number(editIngredientCostPerUnit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })}/{editIngredientUnit}
+                                    </span>
+                                  )}
+                                </div>
                                 <input
                                   type="number"
                                   required
                                   step="0.001"
                                   min="0"
                                   value={editIngredientCostPerUnit}
-                                  onChange={(e) => setEditIngredientCostPerUnit(Number(e.target.value) || 0)}
+                                  onChange={(e) => setEditIngredientCostPerUnit(e.target.value === '' ? '' : Number(e.target.value))}
                                   className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold"
                                 />
                               </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-2 border border-white/5 bg-[#121211] p-2.5 rounded-xl">
-                              <div className="col-span-2 text-[8px] text-brand-gold uppercase tracking-wider font-black flex items-center gap-1">
-                                💡 Bulk Pack Calculator (Optional)
+                              <div className="col-span-2 text-[8px] text-brand-gold uppercase tracking-wider font-black flex items-center justify-between">
+                                <span className="flex items-center gap-1">💡 Bulk Pack Calculator (Optional)</span>
+                                {Number(editIngredientPackSize) > 0 && Number(editIngredientPackCost) > 0 && (
+                                  <span className="text-brand-gold font-mono text-[9px] font-extrabold bg-brand-gold/10 px-1.5 py-0.5 rounded border border-brand-gold/20">
+                                    = ₱{(Number(editIngredientPackCost) / Number(editIngredientPackSize)).toFixed(4)} / {editIngredientUnit}
+                                  </span>
+                                )}
                               </div>
                               <div>
                                 <label className="text-[9px] text-gray-400 uppercase tracking-wider font-bold block mb-1">Pack Size ({editIngredientUnit})</label>
@@ -6153,7 +6939,17 @@ function AdminPanel({
                           <span>ID: <code className="font-mono text-gray-400">{item.id}</code></span>
                           
                           {/* Action controllers */}
-                          <div className="flex gap-2">
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenBatchCalculatorForRecipe(item)}
+                              className="p-1.5 rounded-lg bg-brand-gold/10 border border-brand-gold/30 text-brand-gold hover:bg-brand-gold hover:text-black transition-all flex items-center gap-1"
+                              title="Open Batch Yield & Costing Calculator for this Recipe"
+                            >
+                              <Calculator className="w-3.5 h-3.5" />
+                              <span className="text-[9px] font-bold uppercase pr-0.5">Batch</span>
+                            </button>
+
                             <button
                               type="button"
                               onClick={() => handleOpenEditForm(item)}
@@ -8140,689 +8936,115 @@ function AdminPanel({
                 <span className="text-[9px] text-gray-500 font-medium block">Provide ingredients separated by commas to display them as beautiful tags on the customer menu.</span>
               </div>
 
-              {/* Stock Ingredients per Serving Configuration (Linked directly to Raw Inventory) */}
-              <div className="space-y-3 bg-[#0D0D0C]/40 p-4 rounded-2xl border border-white/5">
+              {/* Linked Ingredients & Packaging from Bulk Calculator */}
+              <div className="bg-[#0D0D0C]/60 p-4 rounded-2xl border border-white/10 space-y-3.5 text-left shadow-lg">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div>
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">🌾 Stock Ingredients & Packaging per Serving</label>
-                    <span className="text-[9px] text-gray-500 font-medium block">Link raw inventory materials, paper bowls, and utensils to auto-compute exact cost and available stock.</span>
+                    <div className="flex items-center gap-2">
+                      <label className="text-[10px] text-gray-200 uppercase tracking-wider font-extrabold flex items-center gap-1.5">
+                        <span>🍱 Ingredients & Packaging from Bulk Calculator</span>
+                        <span className="px-2 py-0.5 rounded-full bg-brand-gold/15 text-brand-gold text-[9px] font-black border border-brand-gold/30">
+                          {formRecipeRequirements.length} Linked Items
+                        </span>
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 text-[9px] text-gray-400 font-medium flex-wrap">
+                      <span className="text-gray-500 font-bold uppercase text-[8px] tracking-wider">Batch Setup:</span>
+                      <span className="text-amber-400 font-bold">
+                        🥩 {(Number(formBatchYieldGrams) / 1000).toFixed(1)}kg Batch ({formServingSizeGrams}g/plate)
+                      </span>
+                      <span className="text-gray-600">•</span>
+                      <span className="text-emerald-400 font-bold">
+                        🍚 {formIncludeRice ? `${formRicePortionGrams}g Rice` : 'No Rice'}
+                      </span>
+                      <span className="text-gray-600">•</span>
+                      <span className="text-blue-400 font-bold">
+                        📦 {formPkgReqs.length > 0 ? `${formPkgReqs.length} Packaging Items` : 'Plated / Dine-In'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        let paperBowl = ingredientsInventory.find(i => i.name.toLowerCase().includes('paper bowl'));
-                        let utensils = ingredientsInventory.find(i => i.name.toLowerCase().includes('utensil'));
 
-                        if (!paperBowl) {
-                          onAddIngredient('Paper Bowl', 200, 'pcs', 20, 3.50);
-                          paperBowl = { id: 'temp-pb', name: 'Paper Bowl', quantity: 200, unit: 'pcs', lowStockAlert: 20, costPerUnit: 3.50 };
-                        }
-                        if (!utensils) {
-                          onAddIngredient('Utensils (Spoon & Fork)', 200, 'pcs', 20, 1.50);
-                          utensils = { id: 'temp-ut', name: 'Utensils (Spoon & Fork)', quantity: 200, unit: 'pcs', lowStockAlert: 20, costPerUnit: 1.50 };
-                        }
-
-                        const updatedReqs = [...formRecipeRequirements];
-                        if (!updatedReqs.some(r => r.name.toLowerCase().includes('paper bowl'))) {
-                          updatedReqs.push({ name: paperBowl.name, amount: 1 });
-                        }
-                        if (!updatedReqs.some(r => r.name.toLowerCase().includes('utensil'))) {
-                          updatedReqs.push({ name: utensils.name, amount: 1 });
-                        }
-                        setFormRecipeRequirements(updatedReqs);
-
-                        let tags = formIngredients.split(',').map(t => t.trim()).filter(Boolean);
-                        if (!tags.some(t => t.toLowerCase().includes('paper bowl'))) tags.push(paperBowl.name);
-                        if (!tags.some(t => t.toLowerCase().includes('utensil'))) tags.push(utensils.name);
-                        setFormIngredients(tags.join(', '));
-                      }}
-                      className="px-2.5 py-1 bg-brand-gold/15 border border-brand-gold/30 hover:bg-brand-gold/25 text-brand-gold text-[9px] font-black uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all focus:outline-none shadow-sm"
-                      title="Auto-link Paper Bowl (₱3.50) & Utensils (₱1.50) packaging to this recipe costing"
-                    >
-                      <Plus className="w-2.5 h-2.5 text-brand-gold" /> 🍱 Add Paper Bowl & Utensils
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const firstAvailable = ingredientsInventory[0]?.name || '';
-                        const firstUnit = ingredientsInventory[0]?.unit || 'g';
-                        const defaultAmt = (firstUnit === 'pcs' || firstUnit === 'cans') ? 1 : 100;
-                        setFormRecipeRequirements([
-                          ...formRecipeRequirements,
-                          { name: firstAvailable, amount: defaultAmt }
-                        ]);
-                        
-                        // Auto-append to ingredients tags
-                        if (firstAvailable) {
-                          const tags = formIngredients.split(',').map(t => t.trim()).filter(Boolean);
-                          if (!tags.some(t => t.toLowerCase() === firstAvailable.toLowerCase())) {
-                            tags.push(firstAvailable);
-                            setFormIngredients(tags.join(', '));
-                          }
-                        }
-                      }}
-                      className="px-2 py-1 bg-[#181818] border border-white/10 hover:border-brand-gold text-white text-[9px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all focus:outline-none"
-                      title="Link an existing raw material from inventory"
-                    >
-                      <Plus className="w-2.5 h-2.5 text-brand-gold" /> Link Row
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowInlineNewIngredient(!showInlineNewIngredient);
-                        if (!showInlineNewIngredient) {
-                          setInlineIngName('');
-                          handleInlineUnitChange('g');
-                        }
-                      }}
-                      className={`px-2 py-1 border text-[9px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all focus:outline-none ${
-                        showInlineNewIngredient
-                          ? 'bg-brand-gold/15 border-brand-gold text-brand-gold'
-                          : 'bg-[#181818] border-white/10 hover:border-brand-gold text-white'
-                      }`}
-                      title="Create and register a brand new raw material in inventory"
-                    >
-                      <Plus className="w-2.5 h-2.5 text-brand-gold" /> Create Ingredient
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendRecipeFormToBatchCalc}
+                    className="px-3.5 py-2 bg-brand-gold hover:bg-brand-gold-hover text-black text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer hover:scale-105"
+                    title="Open the Commercial Bulk Calculator to modify raw ingredients, batch yield, rice portions, or packaging containers"
+                  >
+                    <Calculator className="w-3.5 h-3.5" />
+                    <span>🧮 Configure in Bulk Calculator →</span>
+                  </button>
                 </div>
-
-                {/* Inline New Ingredient Creator */}
-                {showInlineNewIngredient && (
-                  <div className="bg-[#121211] p-3.5 rounded-xl border border-brand-gold/20 space-y-3 mt-1 animate-slide-in-up">
-                    <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
-                      <span className="text-[10px] text-brand-gold font-bold uppercase tracking-wider">✨ Create and Link New Stock Ingredient</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowInlineNewIngredient(false)}
-                        className="text-gray-500 hover:text-white text-[9px] uppercase font-bold"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <label className="text-[8px] text-gray-400 uppercase font-black tracking-wider block">Ingredient Name *</label>
-                        <input
-                          type="text"
-                          required
-                          value={inlineIngName}
-                          onChange={(e) => setInlineIngName(e.target.value)}
-                          placeholder="e.g. Premium Beef Tapa"
-                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-semibold"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[8px] text-gray-400 uppercase font-black tracking-wider block">Measurement Unit *</label>
-                        <select
-                          value={inlineIngUnit}
-                          onChange={(e) => handleInlineUnitChange(e.target.value)}
-                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-semibold"
-                        >
-                          <option value="g">Gram (g)</option>
-                          <option value="kg">Kilogram (kg)</option>
-                          <option value="ml">Milliliter (ml)</option>
-                          <option value="pcs">Piece (pcs)</option>
-                          <option value="cans">Can (cans)</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="space-y-1">
-                        <label className="text-[8px] text-gray-400 uppercase font-black tracking-wider block">Initial Stock</label>
-                        <input
-                          type="number"
-                          required
-                          min="0"
-                          step="any"
-                          value={inlineIngQty}
-                          onChange={(e) => setInlineIngQty(Number(e.target.value) || 0)}
-                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[8px] text-gray-400 uppercase font-black tracking-wider block">Low Alert Level</label>
-                        <input
-                          type="number"
-                          required
-                          min="0"
-                          step="any"
-                          value={inlineIngLowStock}
-                          onChange={(e) => setInlineIngLowStock(Number(e.target.value) || 0)}
-                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[8px] text-gray-400 uppercase font-black tracking-wider block">Cost per {inlineIngUnit}</label>
-                        <input
-                          type="number"
-                          required
-                          min="0"
-                          step="any"
-                          value={inlineIngCost}
-                          onChange={(e) => setInlineIngCost(Number(e.target.value) || 0)}
-                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end pt-1">
-                      <button
-                        type="button"
-                        onClick={handleCreateInlineIngredient}
-                        className="px-3 py-1.5 bg-brand-gold hover:bg-brand-gold/80 text-black text-[9px] font-black uppercase tracking-wider rounded-lg transition-all focus:outline-none"
-                      >
-                        Create & Link Ingredient
-                      </button>
-                    </div>
-                  </div>
-                )}
-
 
                 {formRecipeRequirements.length === 0 ? (
-                  <div className="text-center py-4 text-xs text-gray-600 italic">
-                    No raw stock materials linked. This recipe's stock will be manually managed.
+                  <div className="text-center py-6 px-4 bg-[#121211] rounded-xl border border-white/5 space-y-2">
+                    <PackageCheck className="w-8 h-8 text-gray-600 mx-auto" />
+                    <p className="text-xs text-gray-300 font-semibold">No ingredients or packaging linked yet.</p>
+                    <p className="text-[10px] text-gray-500 max-w-md mx-auto">
+                      Click the button above to launch the Bulk Calculator and configure raw materials, batch cooked yield, rice portions, and takeout packaging.
+                    </p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {formRecipeRequirements.map((req, idx) => {
-                      const invItem = ingredientsInventory.find(i => i.name.toLowerCase() === req.name.toLowerCase());
-                      const unit = invItem?.unit || 'g';
-                      
-                      const getUnitPriceLocal = (u, ingId) => {
-                        if (ingId) {
-                          const ing = ingredientsInventory.find(i => i.id === ingId);
-                          if (ing && ing.costPerUnit !== undefined && ing.costPerUnit !== null) {
-                            return ing.costPerUnit;
-                          }
-                        }
-                        switch (u.toLowerCase()) {
-                          case 'g': return 0.05;
-                          case 'kg': return 150.00;
-                          case 'pcs': return 15.00;
-                          case 'ml': return 0.08;
-                          case 'cans': return 45.00;
-                          default: return 5.00;
-                        }
-                      };
-                      const unitPrice = getUnitPriceLocal(unit, invItem?.id);
-                      const factor = unit === 'kg' ? req.amount / 1000 : req.amount;
-                      const rowCost = factor * unitPrice;
-                      return (
-                        <div key={idx} className="flex items-center gap-2 bg-[#121211] p-2 rounded-xl border border-white/5">
-                          {/* Selector */}
-                          <select
-                            value={req.name}
-                            onChange={(e) => {
-                              const newName = e.target.value;
-                              const targetInv = ingredientsInventory.find(i => i.name === newName);
-                              const targetUnit = targetInv?.unit || 'g';
-                              const targetAmt = (targetUnit === 'pcs' || targetUnit === 'cans') ? 1 : 100;
-                              
-                              const oldName = formRecipeRequirements[idx].name;
-                              const newReqs = [...formRecipeRequirements];
-                              newReqs[idx] = { name: newName, amount: targetAmt };
-                              setFormRecipeRequirements(newReqs);
-
-                              // Update ingredients tags: remove old if it exists, add new
-                              let tags = formIngredients.split(',').map(t => t.trim()).filter(Boolean);
-                              tags = tags.filter(t => t.toLowerCase() !== oldName.toLowerCase());
-                              if (!tags.some(t => t.toLowerCase() === newName.toLowerCase())) {
-                                tags.push(newName);
-                              }
-                              setFormIngredients(tags.join(', '));
-                            }}
-                            className="flex-1 bg-[#0D0D0C] border border-white/5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-semibold"
-                          >
-                            <option value="" disabled>Select Raw material...</option>
-                            {ingredientsInventory.map((item) => (
-                              <option key={item.id} value={item.name}>
-                                {item.name}
-                              </option>
-                            ))}
-                          </select>
-
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {/* Requirement Amount */}
-                            <div className="relative w-24">
-                              <input
-                                type="number"
-                                required
-                                min="0.1"
-                                step="any"
-                                value={req.amount}
-                                onChange={(e) => {
-                                  const newReqs = [...formRecipeRequirements];
-                                  newReqs[idx].amount = Number(e.target.value) || 0;
-                                  setFormRecipeRequirements(newReqs);
-                                }}
-                                className="w-full bg-[#0D0D0C] border border-white/5 rounded-lg pl-2 pr-8 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-mono font-bold text-right"
-                              />
-                              <span className="absolute right-2 top-1.5 text-[8.5px] text-gray-500 font-bold uppercase">{unit === 'kg' ? 'g' : unit}</span>
-                            </div>
-
-                            {/* Real-time Calculated Cost */}
-                            <span className="text-[10px] font-mono text-brand-gold font-bold w-14 text-right">
-                              ₱{rowCost.toFixed(2)}
-                            </span>
-                          </div>
-
-                          {/* Trash Button */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const removedName = formRecipeRequirements[idx].name;
-                              const newReqs = formRecipeRequirements.filter((_, i) => i !== idx);
-                              setFormRecipeRequirements(newReqs);
-
-                              let tags = formIngredients.split(',').map(t => t.trim()).filter(Boolean);
-                              tags = tags.filter(t => t.toLowerCase() !== removedName.toLowerCase());
-                              setFormIngredients(tags.join(', '));
-                            }}
-                            className="p-1 text-gray-500 hover:text-brand-red transition-colors shrink-0"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* --- BATCH YIELD & GRAMS PORTION COSTING CALCULATOR --- */}
-              <div className="bg-[#0D0D0C]/70 p-4 sm:p-5 rounded-2xl border-2 border-brand-gold/30 space-y-4 text-left shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-3">
-                  <div>
-                    <label className="text-xs text-brand-gold uppercase tracking-wider font-black flex items-center gap-1.5">
-                      <Scale className="w-4 h-4 text-brand-gold" />
-                      <span>⚖️ Batch Yield & Grams Portion Costing Tool</span>
-                    </label>
-                    <span className="text-[10px] text-gray-400 block mt-0.5">
-                      Produce a 1kg or 2kg cooked batch, set grams per serving (e.g. 80g or 90g), and auto-compute total servings, portion cost, and raw materials scaling.
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 self-start sm:self-auto">
-                    <button
-                      type="button"
-                      onClick={() => setBatchYieldInputMode('quick')}
-                      className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all ${
-                        batchYieldInputMode === 'quick'
-                          ? 'bg-brand-gold text-black font-black'
-                          : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
-                      }`}
-                    >
-                      Quick Overall Cost
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBatchYieldInputMode('ingredients')}
-                      className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all ${
-                        batchYieldInputMode === 'ingredients'
-                          ? 'bg-brand-gold text-black font-black'
-                          : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
-                      }`}
-                    >
-                      Batch Raw Materials
-                    </button>
-                  </div>
-                </div>
-
-                {/* Batch Yield & Serving Portion Inputs */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Batch Yield Weight */}
-                  <div className="space-y-2 bg-[#121211] p-3 rounded-xl border border-white/5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">
-                        1. Total Batch Yield Weight
-                      </span>
-                      <span className="text-xs font-mono font-black text-brand-gold">
-                        {(formBatchYieldGrams / 1000).toFixed(2)} kg ({formBatchYieldGrams}g)
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="100"
-                        step="50"
-                        value={formBatchYieldGrams}
-                        onChange={(e) => setFormBatchYieldGrams(Math.max(10, Number(e.target.value) || 10))}
-                        className="flex-1 bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold focus:outline-none focus:border-brand-gold text-right"
-                      />
-                      <span className="text-[10px] text-gray-500 font-bold uppercase">grams (g)</span>
-                    </div>
-
-                    <div className="flex items-center gap-1 pt-1 flex-wrap">
-                      <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wider">Presets:</span>
-                      {[
-                        { label: '1 Kilo (1,000g)', val: 1000 },
-                        { label: '2 Kilo (2,000g)', val: 2000 },
-                        { label: '3 Kilo (3,000g)', val: 3000 },
-                        { label: '5 Kilo (5,000g)', val: 5000 }
-                      ].map((item) => (
-                        <button
-                          key={item.val}
-                          type="button"
-                          onClick={() => setFormBatchYieldGrams(item.val)}
-                          className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
-                            formBatchYieldGrams === item.val
-                              ? 'bg-brand-gold text-black font-black'
-                              : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Serving Portion in Grams */}
-                  <div className="space-y-2 bg-[#121211] p-3 rounded-xl border border-white/5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">
-                        2. Serving Size per Menu Item
-                      </span>
-                      <span className="text-xs font-mono font-black text-brand-gold">
-                        {formServingSizeGrams} grams / serving
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="10"
-                        step="5"
-                        value={formServingSizeGrams}
-                        onChange={(e) => setFormServingSizeGrams(Math.max(1, Number(e.target.value) || 1))}
-                        className="flex-1 bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold focus:outline-none focus:border-brand-gold text-right"
-                      />
-                      <span className="text-[10px] text-gray-500 font-bold uppercase">grams / plate</span>
-                    </div>
-
-                    <div className="flex items-center gap-1 pt-1 flex-wrap">
-                      <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wider">Presets:</span>
-                      {[
-                        { label: '70g', val: 70 },
-                        { label: '80g (Sample 1)', val: 80 },
-                        { label: '90g (Sample 2)', val: 90 },
-                        { label: '100g', val: 100 },
-                        { label: '120g', val: 120 },
-                        { label: '150g', val: 150 }
-                      ].map((item) => (
-                        <button
-                          key={item.val}
-                          type="button"
-                          onClick={() => setFormServingSizeGrams(item.val)}
-                          className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
-                            formServingSizeGrams === item.val
-                              ? 'bg-brand-gold text-black font-black'
-                              : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quick Overall Cost Input vs Batch Ingredients Input */}
-                {batchYieldInputMode === 'quick' ? (
-                  <div className="bg-[#121211] p-3.5 rounded-xl border border-white/5 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <span className="text-[9px] text-brand-gold uppercase font-black tracking-wider block">
-                          Overall Costing of Raw Materials (Batch Total)
-                        </span>
-                        <span className="text-[8.5px] text-gray-400 block mt-0.5">
-                          e.g. ₱3,000 overall costing of raw materials to produce a 2 kilo batch.
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400 font-mono text-sm font-bold">₱</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="10"
-                          value={formBatchTotalCost}
-                          onChange={(e) => setFormBatchTotalCost(Math.max(0, Number(e.target.value) || 0))}
-                          placeholder="3000"
-                          className="w-32 bg-[#0D0D0C] border border-brand-gold/40 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Quick Samples Buttons */}
-                    <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-white/5">
-                      <span className="text-[8px] text-gray-500 uppercase font-black">Quick Load Examples:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFormBatchYieldGrams(2000);
-                          setFormServingSizeGrams(90);
-                          setFormBatchTotalCost(3000);
-                        }}
-                        className="px-2 py-1 rounded bg-[#181818] hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/30 text-[8.5px] font-bold transition-all"
-                      >
-                        💡 Load: ₱3,000 to 2 Kilo @ 90g Serving
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFormBatchYieldGrams(1000);
-                          setFormServingSizeGrams(80);
-                          setFormBatchTotalCost(1500);
-                        }}
-                        className="px-2 py-1 rounded bg-[#181818] hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/30 text-[8.5px] font-bold transition-all"
-                      >
-                        💡 Load: ₱1,500 to 1 Kilo @ 80g Serving
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* Batch Raw Materials List */
-                  <div className="bg-[#121211] p-3.5 rounded-xl border border-white/5 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-[9px] text-brand-gold uppercase font-black tracking-wider block">
-                          Batch Raw Materials List ({batchIngredientsList.length} Ingredients)
-                        </span>
-                        <span className="text-[8.5px] text-gray-400 block mt-0.5">
-                          Input the raw ingredients used for the {formBatchYieldGrams}g batch. Per-serving amounts will be auto-calculated.
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {formRecipeRequirements.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const servingG = Math.max(1, formServingSizeGrams);
-                              const batchG = Math.max(1, formBatchYieldGrams);
-                              const multiplier = batchG / servingG;
-                              const imported = formRecipeRequirements.map((req) => {
-                                const inv = ingredientsInventory.find(i => i.name.toLowerCase() === req.name.toLowerCase());
-                                const unit = inv?.unit || 'g';
-                                const batchAmt = Number((req.amount * multiplier).toFixed(1));
-                                const cost = computeInventoryIngredientCost(req.name, batchAmt, unit);
-                                return {
-                                  name: req.name,
-                                  amount: batchAmt,
-                                  unit,
-                                  cost
-                                };
-                              });
-                              setBatchIngredientsList(imported);
-                            }}
-                            className="px-2.5 py-1 bg-[#181818] border border-white/10 hover:border-brand-gold text-brand-gold text-[9px] font-bold uppercase rounded-lg flex items-center gap-1 transition-all cursor-pointer"
-                            title="Import and scale current dish recipe ingredients to this batch size"
-                          >
-                            <RefreshCw className="w-3 h-3 text-brand-gold" />
-                            <span>Import Current Recipe ({formRecipeRequirements.length})</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const firstInv = ingredientsInventory[0];
-                            const defaultName = firstInv ? firstInv.name : 'Ingredient';
-                            const defaultUnit = firstInv ? firstInv.unit : 'g';
-                            const defaultAmt = defaultUnit === 'kg' ? 1 : defaultUnit === 'pcs' ? 1 : 200;
-                            const defaultCost = firstInv ? computeInventoryIngredientCost(defaultName, defaultAmt, defaultUnit) : 50;
-                            setBatchIngredientsList([
-                              ...batchIngredientsList,
-                              { name: defaultName, amount: defaultAmt, unit: defaultUnit, cost: defaultCost }
-                            ]);
-                          }}
-                          className="px-2.5 py-1 bg-brand-gold/15 border border-brand-gold/30 hover:bg-brand-gold/25 text-brand-gold text-[9px] font-black uppercase rounded-lg flex items-center gap-1 transition-all cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3 text-brand-gold" /> Add from Inventory
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto">
+                  <div className="space-y-2.5">
+                    <div className="bg-[#121211] rounded-xl border border-white/5 overflow-hidden">
                       <table className="w-full text-left text-[9.5px]">
-                        <thead className="bg-white/5 text-gray-400 font-bold uppercase text-[8px]">
+                        <thead className="bg-white/5 text-gray-400 font-bold uppercase tracking-wider text-[8px]">
                           <tr>
-                            <th className="p-2 min-w-[200px]">Select Raw Material (Inventory)</th>
-                            <th className="p-2">Batch Qty</th>
-                            <th className="p-2">Batch Cost</th>
-                            <th className="p-2 text-brand-gold">Auto Per Serving ({formServingSizeGrams}g)</th>
-                            <th className="p-2 text-right">Action</th>
+                            <th className="p-2.5">Category & Item</th>
+                            <th className="p-2.5">Unit Purchase Cost</th>
+                            <th className="p-2.5">Portion / Serving</th>
+                            <th className="p-2.5">Current Stock</th>
+                            <th className="p-2.5 text-right">Cost / Serving</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5 font-mono">
-                          {batchIngredientsList.map((ing, i) => {
-                            const servingsCount = formBatchYieldGrams > 0 ? formBatchYieldGrams / formServingSizeGrams : 1;
-                            const servingAmount = (ing.amount / formBatchYieldGrams) * formServingSizeGrams;
-                            const servingCost = (ing.cost / formBatchYieldGrams) * formServingSizeGrams;
-                            const isExistingInv = ingredientsInventory.some(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
+                          {formRecipeRequirements.map((req, idx) => {
+                            const reqName = req?.name || '';
+                            const invItem = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === reqName.toLowerCase());
+                            const u = invItem?.unit || 'g';
+                            const reqAmt = Number(req?.amount) || 0;
+                            const costPerUnit = (invItem?.costPerUnit && invItem.costPerUnit > 0)
+                              ? invItem.costPerUnit
+                              : (u === 'g' ? 0.05 : u === 'kg' ? 150 : u === 'pcs' ? 15 : u === 'ml' ? 0.08 : 5);
+                            const factor = u === 'kg' ? reqAmt / 1000 : reqAmt;
+                            const perServingCost = factor > 0 ? Math.max(0.01, factor * costPerUnit) : 0;
+                            const isPkg = isPackagingRequirement(reqName);
+                            const isRice = isRiceRequirement(reqName);
 
                             return (
-                              <tr key={i} className="hover:bg-white/[0.02]">
-                                <td className="p-2 min-w-[200px]">
-                                  <div className="space-y-1">
-                                    <select
-                                      value={isExistingInv ? ing.name : '__custom__'}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        const updated = [...batchIngredientsList];
-                                        if (val === '__custom__') {
-                                          updated[i].name = '';
-                                        } else {
-                                          const invMatch = ingredientsInventory.find(inv => inv.name === val);
-                                          if (invMatch) {
-                                            updated[i].name = invMatch.name;
-                                            updated[i].unit = invMatch.unit;
-                                            updated[i].cost = computeInventoryIngredientCost(invMatch.name, updated[i].amount, invMatch.unit);
-                                          }
-                                        }
-                                        setBatchIngredientsList(updated);
-                                      }}
-                                      className="w-full bg-[#0D0D0C] border border-white/10 rounded px-2 py-1 text-xs text-white font-sans font-semibold focus:outline-none focus:border-brand-gold cursor-pointer"
-                                    >
-                                      <option value="" disabled>Select from Inventory...</option>
-                                      <optgroup label="📦 Kitchen Inventory Materials">
-                                        {ingredientsInventory.map((item) => (
-                                          <option key={item.id} value={item.name}>
-                                            {item.name} ({item.quantity}{item.unit} stock{item.costPerUnit ? ` • ₱${item.costPerUnit}/${item.unit}` : ''})
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                      <option value="__custom__">✏️ Custom / Manual Name...</option>
-                                    </select>
-
-                                    {(!isExistingInv || ing.name === '') && (
-                                      <input
-                                        type="text"
-                                        placeholder="Type custom ingredient name..."
-                                        value={ing.name}
-                                        onChange={(e) => {
-                                          const updated = [...batchIngredientsList];
-                                          updated[i].name = e.target.value;
-                                          setBatchIngredientsList(updated);
-                                        }}
-                                        className="w-full bg-[#0D0D0C] border border-brand-gold/40 rounded px-2 py-1 text-xs text-brand-gold font-sans placeholder-gray-500 focus:outline-none"
-                                      />
-                                    )}
+                              <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                                <td className="p-2.5 font-sans">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                      isPkg ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30' :
+                                      isRice ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
+                                      'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                    }`}>
+                                      {isPkg ? 'Packaging' : isRice ? 'Rice' : 'Viand'}
+                                    </span>
+                                    <span className="text-white font-semibold">{reqName}</span>
                                   </div>
                                 </td>
-                                <td className="p-2">
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="number"
-                                      min="0.1"
-                                      step="any"
-                                      value={ing.amount}
-                                      onChange={(e) => {
-                                        const newAmt = Number(e.target.value) || 0;
-                                        const updated = [...batchIngredientsList];
-                                        updated[i].amount = newAmt;
-                                        const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
-                                        if (invMatch) {
-                                          updated[i].cost = computeInventoryIngredientCost(invMatch.name, newAmt, updated[i].unit);
-                                        }
-                                        setBatchIngredientsList(updated);
-                                      }}
-                                      className="w-20 bg-[#0D0D0C] border border-white/10 rounded px-2 py-1 text-xs text-white text-right font-bold"
-                                    />
-                                    <select
-                                      value={ing.unit}
-                                      onChange={(e) => {
-                                        const newUnit = e.target.value;
-                                        const updated = [...batchIngredientsList];
-                                        updated[i].unit = newUnit;
-                                        const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
-                                        if (invMatch) {
-                                          updated[i].cost = computeInventoryIngredientCost(invMatch.name, updated[i].amount, newUnit);
-                                        }
-                                        setBatchIngredientsList(updated);
-                                      }}
-                                      className="bg-[#0D0D0C] border border-white/10 rounded px-1.5 py-1 text-xs text-gray-300"
-                                    >
-                                      <option value="g">g</option>
-                                      <option value="kg">kg</option>
-                                      <option value="ml">ml</option>
-                                      <option value="pcs">pcs</option>
-                                      <option value="cans">cans</option>
-                                    </select>
-                                  </div>
+                                <td className="p-2.5">
+                                  <span className="text-brand-gold font-mono font-bold bg-brand-gold/10 px-2 py-0.5 rounded text-[8.5px] border border-brand-gold/20 whitespace-nowrap">
+                                    ₱{costPerUnit >= 1 ? costPerUnit.toFixed(2) : costPerUnit.toFixed(3)}/{u}
+                                  </span>
                                 </td>
-                                <td className="p-2">
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-gray-400">₱</span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="any"
-                                      value={ing.cost}
-                                      onChange={(e) => {
-                                        const updated = [...batchIngredientsList];
-                                        updated[i].cost = Number(e.target.value) || 0;
-                                        setBatchIngredientsList(updated);
-                                      }}
-                                      className="w-20 bg-[#0D0D0C] border border-white/10 rounded px-2 py-1 text-xs text-white text-right font-bold text-brand-gold"
-                                    />
-                                  </div>
+                                <td className="p-2.5 text-gray-300 font-mono">
+                                  {u === 'kg' ? `${reqAmt}g` : `${reqAmt} ${u}`}
                                 </td>
-                                <td className="p-2 text-brand-gold font-bold">
-                                  {servingAmount.toFixed(1)}{ing.unit} (₱{servingCost.toFixed(2)})
+                                <td className="p-2.5">
+                                  {invItem ? (
+                                    <span className={`font-mono text-[9px] ${
+                                      invItem.quantity <= (invItem.lowStockAlert || 10) ? 'text-amber-400 font-bold' : 'text-gray-400'
+                                    }`}>
+                                      {invItem.quantity} {invItem.unit}
+                                    </span>
+                                  ) : (
+                                    <span className="text-brand-red text-[8.5px]">Unlinked Stock</span>
+                                  )}
                                 </td>
-                                <td className="p-2 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setBatchIngredientsList(batchIngredientsList.filter((_, idx) => idx !== i));
-                                    }}
-                                    className="p-1 text-gray-500 hover:text-brand-red transition-colors cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                <td className="p-2.5 text-right font-mono font-bold text-brand-gold">
+                                  ₱{perServingCost.toFixed(2)}
                                 </td>
                               </tr>
                             );
@@ -8831,120 +9053,63 @@ function AdminPanel({
                       </table>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[10px] font-mono">
-                      <span className="text-gray-400">
-                        Total Batch Raw Materials Cost:{' '}
-                        <strong className="text-brand-gold text-xs">
-                          ₱{batchIngredientsList.reduce((sum, item) => sum + item.cost, 0).toFixed(2)}
-                        </strong>
-                      </span>
+                    {/* Breakdown Cost Footer */}
+                    {(() => {
+                      const viandCost = formViandReqs.reduce((acc, req) => {
+                        const rName = req?.name || '';
+                        const inv = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === rName.toLowerCase());
+                        const u = inv?.unit || 'g';
+                        const cost = inv?.costPerUnit ?? (u === 'g' ? 0.05 : u === 'kg' ? 150 : 10);
+                        const amt = Number(req?.amount) || 0;
+                        return acc + (u === 'kg' ? amt / 1000 : amt) * cost;
+                      }, 0);
+
+                      const riceCost = formRiceReqs.reduce((acc, req) => {
+                        const rName = req?.name || '';
+                        const inv = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === rName.toLowerCase());
+                        const u = inv?.unit || 'g';
+                        const cost = inv?.costPerUnit ?? (u === 'g' ? 0.05 : u === 'kg' ? 150 : 10);
+                        const amt = Number(req?.amount) || 0;
+                        return acc + (u === 'kg' ? amt / 1000 : amt) * cost;
+                      }, 0);
+
+                      const pkgCost = formPkgReqs.reduce((acc, req) => {
+                        const rName = req?.name || '';
+                        const inv = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === rName.toLowerCase());
+                        const cost = inv?.costPerUnit ?? 3.5;
+                        const amt = Number(req?.amount) || 0;
+                        return acc + amt * cost;
+                      }, 0);
+
+                      const totalCogs = viandCost + riceCost + pkgCost;
+
+                      return (
+                        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-white/[0.03] border border-white/5 text-[9.5px]">
+                          <div className="flex items-center gap-3 text-gray-400 font-mono flex-wrap">
+                            <span>🥩 Viand: <b className="text-white">₱{viandCost.toFixed(2)}</b></span>
+                            <span>🍚 Rice: <b className="text-white">₱{riceCost.toFixed(2)}</b></span>
+                            <span>📦 Packaging: <b className="text-white">₱{pkgCost.toFixed(2)}</b></span>
+                          </div>
+                          <div className="flex items-center gap-1.5 font-bold">
+                            <span className="text-gray-400 uppercase text-[8.5px] tracking-wider">Total COGS / Serving:</span>
+                            <span className="text-brand-gold text-xs font-mono font-black">₱{totalCogs.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    <div className="flex items-center justify-between text-[9px] text-gray-400 px-1 font-medium">
+                      <span>💡 Raw materials, batch yields, rice portions, and packaging items are managed in the Bulk Calculator.</span>
                       <button
                         type="button"
-                        onClick={() => {
-                          // Scale batch ingredients to per-serving recipe requirements
-                          const servingsCount = formBatchYieldGrams > 0 ? formBatchYieldGrams / formServingSizeGrams : 1;
-                          const scaledRequirements = batchIngredientsList.map(item => ({
-                            name: item.name.trim(),
-                            amount: Number(((item.amount / formBatchYieldGrams) * formServingSizeGrams).toFixed(1))
-                          }));
-                          setFormRecipeRequirements(scaledRequirements);
-
-                          // Also sync tags
-                          const tags = batchIngredientsList.map(item => item.name.trim()).filter(Boolean);
-                          setFormIngredients(tags.join(', '));
-
-                          // Auto calculate and apply recommended price
-                          const batchCost = batchIngredientsList.reduce((sum, item) => sum + item.cost, 0);
-                          const portionCost = (batchCost / formBatchYieldGrams) * formServingSizeGrams;
-                          if (formTargetMargin > 0 && formTargetMargin < 100) {
-                            const recP = Math.ceil(portionCost / (1 - formTargetMargin / 100));
-                            setFormPrice(recP);
-                          }
-                          alert(`Successfully scaled ${scaledRequirements.length} ingredients to ${formServingSizeGrams}g portion requirements!`);
-                        }}
-                        className="px-3 py-1 bg-brand-gold hover:bg-brand-gold-hover text-black text-[9px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md cursor-pointer"
+                        onClick={handleSendRecipeFormToBatchCalc}
+                        className="text-brand-gold hover:underline font-bold cursor-pointer"
                       >
-                        ⚡ Convert & Sync to Recipe Requirements
+                        Open Bulk Calculator →
                       </button>
                     </div>
                   </div>
                 )}
-
-                {/* Auto-Calculated Real-Time Metrics & Costing Readout */}
-                {(() => {
-                  const batchYieldG = Math.max(1, formBatchYieldGrams);
-                  const servingG = Math.max(1, formServingSizeGrams);
-                  const servingsProduced = batchYieldG / servingG;
-                  const calculatedBatchCost = batchYieldInputMode === 'ingredients'
-                    ? batchIngredientsList.reduce((sum, item) => sum + item.cost, 0)
-                    : formBatchTotalCost;
-                  const costPerGram = calculatedBatchCost / batchYieldG;
-                  const costPerServing = costPerGram * servingG;
-                  const recommendedServingPrice = formTargetMargin > 0 && formTargetMargin < 100
-                    ? Math.ceil(costPerServing / (1 - formTargetMargin / 100))
-                    : Math.ceil(costPerServing * 2);
-                  const profitPerServing = recommendedServingPrice - costPerServing;
-                  const totalBatchRevenue = servingsProduced * recommendedServingPrice;
-                  const totalBatchProfit = totalBatchRevenue - calculatedBatchCost;
-
-                  return (
-                    <div className="bg-[#121211] p-3.5 rounded-xl border border-brand-gold/20 space-y-3">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono">
-                        <div className="bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5 space-y-0.5">
-                          <span className="text-gray-500 uppercase text-[8px] font-bold block">Servings Produced</span>
-                          <span className="text-sm font-black text-blue-400 block">
-                            {servingsProduced.toFixed(1)} <span className="text-[10px] text-gray-400">plates</span>
-                          </span>
-                          <span className="text-[8px] text-gray-500 block truncate">({batchYieldG}g ÷ {servingG}g)</span>
-                        </div>
-
-                        <div className="bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5 space-y-0.5">
-                          <span className="text-gray-500 uppercase text-[8px] font-bold block">Cost per Serving</span>
-                          <span className="text-sm font-black text-brand-gold block">
-                            ₱{costPerServing.toFixed(2)}
-                          </span>
-                          <span className="text-[8px] text-gray-500 block truncate">(₱{costPerGram.toFixed(3)}/g)</span>
-                        </div>
-
-                        <div className="bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5 space-y-0.5">
-                          <span className="text-gray-500 uppercase text-[8px] font-bold block">Rec. Price ({formTargetMargin}%)</span>
-                          <span className="text-sm font-black text-green-400 block">
-                            ₱{recommendedServingPrice.toFixed(2)}
-                          </span>
-                          <span className="text-[8px] text-gray-500 block truncate">+₱{profitPerServing.toFixed(2)} profit</span>
-                        </div>
-
-                        <div className="bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5 space-y-0.5">
-                          <span className="text-gray-500 uppercase text-[8px] font-bold block">Batch Net Profit</span>
-                          <span className="text-sm font-black text-emerald-400 block">
-                            ₱{totalBatchProfit.toFixed(2)}
-                          </span>
-                          <span className="text-[8px] text-gray-500 block truncate">Rev: ₱{totalBatchRevenue.toFixed(0)}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-white/5">
-                        <span className="text-[9px] text-gray-400">
-                          Produce a <strong className="text-white">{(batchYieldG / 1000).toFixed(1)}kg batch</strong> yielding{' '}
-                          <strong className="text-brand-gold">{servingsProduced.toFixed(1)} servings</strong> at{' '}
-                          <strong className="text-brand-gold">{servingG}g each</strong> costing{' '}
-                          <strong className="text-white font-mono">₱{costPerServing.toFixed(2)}/serving</strong>.
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFormPrice(recommendedServingPrice);
-                            alert(`Applied recommended selling price of ₱${recommendedServingPrice} (Portion COGS: ₱${costPerServing.toFixed(2)}) based on ${formServingSizeGrams}g serving from ${(formBatchYieldGrams / 1000).toFixed(1)}kg batch!`);
-                          }}
-                          className="px-3.5 py-1.5 bg-brand-gold hover:bg-brand-gold-hover text-black text-[9px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Zap className="w-3 h-3" /> Apply Price (₱{recommendedServingPrice})
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
               </div>
 
               {/* Target Margin & Profit Calculator Card */}
@@ -8953,24 +9118,32 @@ function AdminPanel({
                   let modalCogs = 0;
                   if (formRecipeRequirements.length > 0) {
                     formRecipeRequirements.forEach((req) => {
-                      const invItem = ingredientsInventory.find(i => i.name.toLowerCase() === req.name.toLowerCase());
+                      const rName = req?.name || '';
+                      const invItem = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === rName.toLowerCase());
                       const u = invItem?.unit || 'g';
                       const costPerUnit = invItem?.costPerUnit ?? (u === 'g' ? 0.05 : u === 'kg' ? 150 : u === 'pcs' ? 15 : u === 'ml' ? 0.08 : 5);
-                      const factor = u === 'kg' ? req.amount / 1000 : req.amount;
+                      const reqAmt = Number(req?.amount) || 0;
+                      const factor = u === 'kg' ? reqAmt / 1000 : reqAmt;
                       modalCogs += factor * costPerUnit;
                     });
                   } else {
-                    modalCogs = formPrice * 0.35;
+                    modalCogs = (Number(formPrice) || 0) * 0.35;
                   }
 
-                  const recPrice = formTargetMargin < 100 && formTargetMargin > 0
-                    ? modalCogs / (1 - formTargetMargin / 100)
+                  const targetMarginNum = Number(formTargetMargin) || 0;
+                  const recPrice = targetMarginNum < 100 && targetMarginNum > 0
+                    ? modalCogs / (1 - targetMarginNum / 100)
                     : modalCogs * 2;
+                  const actualPrice = Number(formPrice) || 0;
                   const targetProfit = recPrice - modalCogs;
-                  const actualProfit = formPrice - modalCogs;
-                  const actualMargin = formPrice > 0 ? (actualProfit / formPrice) * 100 : 0;
+                  const actualProfit = actualPrice - modalCogs;
+                  const actualMargin = actualPrice > 0 ? (actualProfit / actualPrice) * 100 : 0;
 
-                  const handleMarginChange = (newMargin: number) => {
+                  const handleMarginChange = (newMargin: number | '') => {
+                    if (newMargin === '') {
+                      setFormTargetMargin('');
+                      return;
+                    }
                     const validMargin = Math.min(95, Math.max(5, newMargin));
                     setFormTargetMargin(validMargin);
                     if (modalCogs > 0 && validMargin > 0 && validMargin < 100) {
@@ -8979,7 +9152,11 @@ function AdminPanel({
                     }
                   };
 
-                  const handlePriceChange = (newPrice: number) => {
+                  const handlePriceChange = (newPrice: number | '') => {
+                    if (newPrice === '') {
+                      setFormPrice('');
+                      return;
+                    }
                     setFormPrice(newPrice);
                     if (modalCogs > 0 && newPrice > modalCogs) {
                       const computedMargin = Math.min(95, Math.max(5, Math.round(((newPrice - modalCogs) / newPrice) * 100)));
@@ -8997,7 +9174,7 @@ function AdminPanel({
                           <span className="text-[9px] text-gray-400 block">Set your base price or target margin % to auto-compute all profit and recommended pricing metrics.</span>
                         </div>
                         <span className="font-mono text-xs font-black text-brand-gold bg-brand-gold/10 px-2.5 py-1 rounded-lg border border-brand-gold/30">
-                          Target: {formTargetMargin}%
+                          Target: {Number(formTargetMargin) || 0}%
                         </span>
                       </div>
 
@@ -9009,7 +9186,7 @@ function AdminPanel({
                             min="10"
                             max="90"
                             step="1"
-                            value={formTargetMargin}
+                            value={formTargetMargin === '' ? 50 : formTargetMargin}
                             onChange={(e) => handleMarginChange(Number(e.target.value))}
                             className="flex-1 accent-brand-gold cursor-pointer"
                           />
@@ -9019,7 +9196,13 @@ function AdminPanel({
                               min="5"
                               max="95"
                               value={formTargetMargin}
-                              onChange={(e) => handleMarginChange(Number(e.target.value) || 0)}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                handleMarginChange(v === '' ? '' : Number(v));
+                              }}
+                              onBlur={() => {
+                                if (formTargetMargin === '') setFormTargetMargin(50);
+                              }}
                               className="w-full bg-[#121211] border border-white/10 rounded-lg pr-5 pl-2 py-1 text-xs text-white text-right font-mono font-bold"
                             />
                             <span className="absolute right-2 top-1.5 text-[10px] text-gray-400 font-bold">%</span>
@@ -9072,7 +9255,13 @@ function AdminPanel({
                                 max="9999"
                                 step="any"
                                 value={formPrice}
-                                onChange={(e) => handlePriceChange(Number(e.target.value) || 0)}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  handlePriceChange(v === '' ? '' : Number(v));
+                                }}
+                                onBlur={() => {
+                                  if (formPrice === '') setFormPrice(0);
+                                }}
                                 placeholder="149"
                                 className="w-full bg-[#0D0D0C] border border-brand-gold/40 rounded-lg pl-6 pr-2 py-1 text-xs text-white focus:outline-none focus:border-brand-gold font-mono font-bold text-right"
                               />
@@ -9085,11 +9274,11 @@ function AdminPanel({
 
                         <div className="flex items-center justify-between pt-2 border-t border-white/5">
                           <span className="text-[9px] text-gray-400">
-                            Target <strong className="text-brand-gold">{formTargetMargin}% Margin</strong> Rec. Price: <span className="font-mono text-white font-bold">₱{recPrice.toFixed(2)}</span>
+                            Target <strong className="text-brand-gold">{Number(formTargetMargin) || 0}% Margin</strong> Rec. Price: <span className="font-mono text-white font-bold">₱{recPrice.toFixed(2)}</span>
                           </span>
                           <button
                             type="button"
-                            onClick={() => handleMarginChange(formTargetMargin)}
+                            onClick={() => handleMarginChange(Number(formTargetMargin) || 50)}
                             className="px-3 py-1 bg-brand-gold hover:bg-brand-gold/80 text-black text-[9px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md hover:scale-105"
                           >
                             Apply Rec. Price (₱{Math.ceil(recPrice)})
@@ -9101,131 +9290,82 @@ function AdminPanel({
                 })()}
               </div>
 
-              {/* Auto-Compute Ingredients Servings & Batch Portion Planner Card */}
-              <div className="bg-[#0D0D0C]/60 p-4 rounded-2xl border border-white/10 space-y-3 text-left">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-[10px] text-blue-400 uppercase tracking-wider font-extrabold flex items-center gap-1">
-                      <span>🍲 Auto-Compute Ingredients Servings Planner</span>
-                    </label>
-                    <span className="text-[9px] text-gray-400 block">Calculate total raw ingredients required for batch cooking and verify inventory availability.</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] text-gray-400 font-bold">Target Servings:</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="1000"
-                      value={batchServingsTarget}
-                      onChange={(e) => setBatchServingsTarget(Math.max(1, Number(e.target.value) || 1))}
-                      className="w-16 bg-[#121211] border border-white/15 rounded-lg px-2 py-1 text-xs text-white text-right font-mono font-bold focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Quick Batch Presets */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wider">Batch Size:</span>
-                  {[10, 20, 30, 50, 100].map((num) => (
-                    <button
-                      key={num}
-                      type="button"
-                      onClick={() => setBatchServingsTarget(num)}
-                      className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold transition-all ${
-                        batchServingsTarget === num
-                          ? 'bg-blue-600 text-white font-black'
-                          : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
-                      }`}
-                    >
-                      {num} plates
-                    </button>
-                  ))}
-                </div>
-
-                {/* Batch Calculation Table & Stock Deficit Check */}
-                {formRecipeRequirements.length === 0 ? (
-                  <div className="text-[9px] text-gray-500 italic bg-[#121211] p-3 rounded-xl text-center border border-white/5">
-                    Link raw ingredients to this recipe above to automatically calculate batch servings and stock deficits.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="bg-[#121211] rounded-xl border border-white/5 overflow-hidden">
-                      <table className="w-full text-left text-[9.5px]">
-                        <thead className="bg-white/5 text-gray-400 font-bold uppercase tracking-wider text-[8px]">
-                          <tr>
-                            <th className="p-2">Ingredient</th>
-                            <th className="p-2">Per Serving</th>
-                            <th className="p-2 text-blue-400">Total Batch ({batchServingsTarget} svgs)</th>
-                            <th className="p-2">Current Stock</th>
-                            <th className="p-2 text-right">Status / Deficit</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5 font-mono">
-                          {formRecipeRequirements.map((req, i) => {
-                            const invItem = ingredientsInventory.find(item => item.name.toLowerCase() === req.name.toLowerCase());
-                            const unit = invItem?.unit || 'g';
-                            const reqPerServing = req.amount;
-                            const totalReqBatch = reqPerServing * batchServingsTarget;
-                            
-                            const availableQty = invItem ? invItem.quantity : 0;
-                            const reqQtyInInvUnit = invItem?.unit === 'kg' ? totalReqBatch / 1000 : totalReqBatch;
-                            const hasEnough = invItem ? availableQty >= reqQtyInInvUnit : false;
-                            const deficit = invItem ? Math.max(0, reqQtyInInvUnit - availableQty) : reqQtyInInvUnit;
-
-                            return (
-                              <tr key={i} className="hover:bg-white/[0.02]">
-                                <td className="p-2 text-white font-sans font-semibold">{req.name}</td>
-                                <td className="p-2 text-gray-400">{unit === 'kg' ? `${reqPerServing}g` : `${reqPerServing}${unit}`}</td>
-                                <td className="p-2 text-blue-300 font-bold">
-                                  {unit === 'kg' ? `${(totalReqBatch / 1000).toFixed(2)}kg (${totalReqBatch}g)` : `${totalReqBatch}${unit}`}
-                                </td>
-                                <td className="p-2 text-gray-300">
-                                  {invItem ? `${availableQty}${unit}` : <span className="text-brand-red">Not in stock</span>}
-                                </td>
-                                <td className="p-2 text-right">
-                                  {hasEnough ? (
-                                    <span className="text-green-400 font-bold bg-green-500/10 px-2 py-0.5 rounded">✓ Stock OK</span>
-                                  ) : (
-                                    <span className="text-brand-red font-bold bg-brand-red/10 px-2 py-0.5 rounded">
-                                      ⚠️ Deficit: {unit === 'kg' ? `${deficit.toFixed(2)}kg` : `${deficit}${unit}`}
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-
               {/* Customizable Option Groups & Choice Variations Editor */}
               <div className="space-y-4 bg-[#0D0D0C]/40 p-4 rounded-2xl border border-white/5">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Custom Options & Choices</label>
-                    <span className="text-[9px] text-gray-500 font-medium block">Add custom choices (e.g., Rice Upgrade, Sauce Choice, Size Options) with price additions or subtractions.</span>
+                    <span className="text-[9px] text-gray-500 font-medium block">Default rice is Plain Rice & Garlic Rice with ₱0 cost, with optional extra rice choices.</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormCustomOptions([
-                        ...formCustomOptions,
-                        {
-                          id: 'opt-' + Math.random().toString(36).substr(2, 4),
-                          title: '',
-                          choices: [
-                            { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '', price: 0 }
-                          ]
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const existingRiceIdx = formCustomOptions.findIndex(
+                          opt => opt.title.toLowerCase().includes('rice')
+                        );
+                        if (existingRiceIdx >= 0) {
+                          const newOpts = [...formCustomOptions];
+                          const group = newOpts[existingRiceIdx];
+                          group.title = 'Rice';
+                          
+                          // Ensure Plain Rice (₱0) and Garlic Rice (₱0)
+                          const updatedChoices = group.choices.map(c => {
+                            if (c.name.toLowerCase().includes('plain')) return { ...c, name: 'Plain Rice', price: 0 };
+                            if (c.name.toLowerCase().includes('garlic') && !c.name.toLowerCase().includes('double')) return { ...c, name: 'Garlic Rice', price: 0 };
+                            return c;
+                          });
+
+                          if (!updatedChoices.some(c => c.name.toLowerCase().includes('plain'))) {
+                            updatedChoices.unshift({ id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 });
+                          }
+                          if (!updatedChoices.some(c => c.name.toLowerCase().includes('garlic') && !c.name.toLowerCase().includes('double'))) {
+                            const plainPos = updatedChoices.findIndex(c => c.name === 'Plain Rice');
+                            updatedChoices.splice(plainPos + 1, 0, { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 });
+                          }
+                          group.choices = updatedChoices;
+                          setFormCustomOptions(newOpts);
+                        } else {
+                          setFormCustomOptions([
+                            ...formCustomOptions,
+                            {
+                              id: 'opt-' + Math.random().toString(36).substr(2, 4),
+                              title: 'Rice',
+                              choices: [
+                                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
+                                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 },
+                                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20 },
+                                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Extra Rice', price: 15 }
+                              ]
+                            }
+                          ]);
                         }
-                      ]);
-                    }}
-                    className="px-2.5 py-1 bg-[#181818] border border-white/10 hover:border-brand-gold text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all focus:outline-none"
-                  >
-                    <Plus className="w-3 h-3 text-brand-gold" /> Add Option Group
-                  </button>
+                      }}
+                      className="px-2.5 py-1 bg-brand-gold/10 hover:bg-brand-gold hover:text-black border border-brand-gold/40 text-brand-gold text-[10px] font-black uppercase tracking-wider rounded-lg flex items-center gap-1.5 transition-all focus:outline-none shadow-sm cursor-pointer"
+                      title="Set standard Rice options: Plain Rice (₱0), Garlic Rice (₱0) + Optional Java/Extra Rice"
+                    >
+                      <span>🍚</span> Default Rice (Plain & Garlic ₱0)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormCustomOptions([
+                          ...formCustomOptions,
+                          {
+                            id: 'opt-' + Math.random().toString(36).substr(2, 4),
+                            title: '',
+                            choices: [
+                              { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '', price: 0 }
+                            ]
+                          }
+                        ]);
+                      }}
+                      className="px-2.5 py-1 bg-[#181818] border border-white/10 hover:border-brand-gold text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all focus:outline-none cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3 text-brand-gold" /> Add Option Group
+                    </button>
+                  </div>
                 </div>
 
                 {formCustomOptions.length === 0 ? (
@@ -9254,7 +9394,7 @@ function AdminPanel({
                           <input
                             type="text"
                             required
-                            placeholder="e.g. Rice Upgrade, Egg Style, Drink Size"
+                            placeholder="e.g. Rice, Egg Style, Sauce Choice"
                             value={optGroup.title}
                             onChange={(e) => {
                               const newOpts = [...formCustomOptions];
@@ -9267,8 +9407,48 @@ function AdminPanel({
 
                         {/* Choice items inside the group */}
                         <div className="space-y-2 pl-2 border-l-2 border-white/5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wide">Choices & Variations</span>
+                          <div className="flex flex-wrap items-center justify-between gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wide">Choices & Variations</span>
+                              {optGroup.title.toLowerCase().includes('rice') && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newOpts = [...formCustomOptions];
+                                      if (!newOpts[optIdx].choices.some(c => c.name.toLowerCase().includes('java'))) {
+                                        newOpts[optIdx].choices.push({
+                                          id: 'ch-' + Math.random().toString(36).substr(2, 4),
+                                          name: 'Java Rice',
+                                          price: 20
+                                        });
+                                        setFormCustomOptions(newOpts);
+                                      }
+                                    }}
+                                    className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 hover:bg-brand-gold/20 hover:text-brand-gold text-gray-400 font-bold transition-all cursor-pointer"
+                                  >
+                                    + Java Rice (+₱20)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newOpts = [...formCustomOptions];
+                                      if (!newOpts[optIdx].choices.some(c => c.name.toLowerCase().includes('extra'))) {
+                                        newOpts[optIdx].choices.push({
+                                          id: 'ch-' + Math.random().toString(36).substr(2, 4),
+                                          name: 'Extra Rice',
+                                          price: 15
+                                        });
+                                        setFormCustomOptions(newOpts);
+                                      }
+                                    }}
+                                    className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 hover:bg-brand-gold/20 hover:text-brand-gold text-gray-400 font-bold transition-all cursor-pointer"
+                                  >
+                                    + Extra Rice (+₱15)
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                             <button
                               type="button"
                               onClick={() => {
@@ -9280,7 +9460,7 @@ function AdminPanel({
                                 });
                                 setFormCustomOptions(newOpts);
                               }}
-                              className="text-[8px] text-brand-gold hover:underline font-black uppercase tracking-wider"
+                              className="text-[8px] text-brand-gold hover:underline font-black uppercase tracking-wider cursor-pointer"
                             >
                               + Add Choice
                             </button>
@@ -9315,9 +9495,17 @@ function AdminPanel({
                                       placeholder="0"
                                       value={choice.price}
                                       onChange={(e) => {
+                                        const v = e.target.value;
                                         const newOpts = [...formCustomOptions];
-                                        newOpts[optIdx].choices[choiceIdx].price = Number(e.target.value) || 0;
+                                        newOpts[optIdx].choices[choiceIdx].price = v === '' ? ('' as any) : Number(v);
                                         setFormCustomOptions(newOpts);
+                                      }}
+                                      onBlur={() => {
+                                        if ((choice.price as any) === '') {
+                                          const newOpts = [...formCustomOptions];
+                                          newOpts[optIdx].choices[choiceIdx].price = 0;
+                                          setFormCustomOptions(newOpts);
+                                        }
                                       }}
                                       className="w-full bg-[#0D0D0C] border border-white/5 rounded-lg pl-5 pr-2 py-1 text-[11px] text-white focus:outline-none focus:border-brand-red font-mono font-bold"
                                     />
@@ -9577,10 +9765,10 @@ function AdminPanel({
                 </div>
                 <div>
                   <h4 className="font-display font-black text-white text-base uppercase tracking-tight flex items-center gap-2">
-                    Commercial Batch Yield & Grams Portion Costing Calculator
+                    Commercial Viand Batch & Steamed Rice Plate Costing Calculator
                   </h4>
                   <p className="text-gray-400 text-xs mt-0.5">
-                    Plan 1kg or 2kg bulk production, portion in grams (80g, 90g), compute raw material costs per serving, and calculate profit margins.
+                    Produce bulk cooked viand/meat batches (1kg or 2kg), portion in grams (80g, 90g), cost steamed rice separately, and calculate complete meal plate profitability.
                   </p>
                 </div>
               </div>
@@ -9596,69 +9784,119 @@ function AdminPanel({
             {/* Modal Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm">
               
-              {/* Quick Sample Presets (Directly addresses user's questions) */}
-              <div className="bg-brand-gold/10 border border-brand-gold/30 p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <span className="text-[10px] text-brand-gold uppercase font-black tracking-wider flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-brand-gold" />
-                    <span>Quick Load User Scenarios</span>
-                  </span>
-                  <span className="text-[9px] text-gray-300 block">
-                    Click to instantly load the exact 1 Kilo (80g) or 2 Kilo (90g / ₱3,000) batch examples:
-                  </span>
+              {/* Recipe & Ingredients Loader / Template Manager */}
+              <div className="bg-[#121211] border border-brand-gold/30 p-4 rounded-2xl space-y-3 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2.5 border-b border-white/5">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-brand-gold uppercase font-black tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-brand-gold" />
+                      <span>Saved Recipe & Menu Dish Vault</span>
+                    </span>
+                    <span className="text-[9.5px] text-gray-400 block">
+                      Select any recipe to instantly display its ingredients, portions, and batch costs:
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleOpenFreshBatchCalculator}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 font-bold text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                      title="Clear all fields and start a fresh, blank batch calculation"
+                    >
+                      <Plus className="w-3 h-3 text-brand-gold" />
+                      <span>✨ Start Fresh</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsSavingTemplatePrompt(!isSavingTemplatePrompt)}
+                      className="px-3 py-1.5 rounded-xl bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/40 font-black text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                      title="Save current batch ingredients and proportions as a reusable recipe template"
+                    >
+                      <Save className="w-3.5 h-3.5 text-brand-gold" />
+                      <span>💾 Save Batch as Template</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStandaloneRecipeName("Special Garlic Beef Tapa (2kg Batch)");
-                      setStandaloneBatchWeight(2000);
-                      setStandaloneServingGrams(90);
-                      setStandaloneTotalBatchCost(3000);
-                      setStandaloneTargetMargin(50);
-                      setStandaloneIngredients([
-                        { name: 'Marinated Beef Tapa Meat', batchAmount: 1600, unit: 'g', cost: 2400 },
-                        { name: 'Special Soy-Garlic Glaze', batchAmount: 200, unit: 'ml', cost: 250 },
-                        { name: 'Fresh Garlic & Onion Aromatics', batchAmount: 100, unit: 'g', cost: 150 },
-                        { name: 'Cooking Oil & Spices', batchAmount: 50, unit: 'ml', cost: 100 },
-                        { name: 'Atchara Garnish Pack', batchAmount: 50, unit: 'g', cost: 100 }
-                      ]);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-brand-gold hover:bg-brand-gold-hover text-black font-black text-[9px] uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center gap-1"
-                  >
-                    💡 2 Kilo Batch @ ₱3,000 / 90g Portion
-                  </button>
+                {/* Inline Save Template Prompt */}
+                {isSavingTemplatePrompt && (
+                  <div className="bg-[#181818] p-3 rounded-xl border border-brand-gold/40 flex flex-col sm:flex-row items-center gap-2 animate-fade-in">
+                    <div className="flex-1 w-full">
+                      <label className="text-[8.5px] text-gray-400 uppercase font-black tracking-wider block mb-1">
+                        Recipe Template Name
+                      </label>
+                      <input
+                        type="text"
+                        value={newTemplateName}
+                        onChange={(e) => setNewTemplateName(e.target.value)}
+                        placeholder={`e.g. ${standaloneRecipeName || 'Custom Dish'} (Batch Template)`}
+                        className="w-full bg-[#121211] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-brand-gold"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-4 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveCurrentBatchAsTemplate(newTemplateName)}
+                        className="px-3 py-1.5 rounded-lg bg-brand-gold text-black font-black text-[9px] uppercase tracking-wider hover:bg-brand-gold-hover transition-all cursor-pointer"
+                      >
+                        Confirm Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSavingTemplatePrompt(false);
+                          setNewTemplateName('');
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#222222] text-gray-400 font-bold text-[9px] uppercase hover:text-white transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStandaloneRecipeName("Crispy Chicken Teriyaki Bento (1kg Batch)");
-                      setStandaloneBatchWeight(1000);
-                      setStandaloneServingGrams(80);
-                      setStandaloneTotalBatchCost(1500);
-                      setStandaloneTargetMargin(50);
-                      setStandaloneIngredients([
-                        { name: 'Boneless Chicken Fillet', batchAmount: 700, unit: 'g', cost: 1100 },
-                        { name: 'Authentic Teriyaki Sauce', batchAmount: 150, unit: 'ml', cost: 180 },
-                        { name: 'Toasted Sesame & Spring Onions', batchAmount: 50, unit: 'g', cost: 70 },
-                        { name: 'Stir-fry Cabbage & Veggies', batchAmount: 70, unit: 'g', cost: 100 },
-                        { name: 'Pure Sesame Cooking Oil', batchAmount: 30, unit: 'ml', cost: 50 }
-                      ]);
+                {/* Instant-Load Selector */}
+                <div>
+                  <select
+                    value={selectedRecipeToLoad}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedRecipeToLoad(val);
+                      handleLoadRecipeIntoBatch(val);
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-[#121211] hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/40 font-black text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
+                    className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white font-semibold focus:outline-none focus:border-brand-gold cursor-pointer"
                   >
-                    💡 1 Kilo Batch (5 Ingredients) @ 80g Portion
-                  </button>
+                    <option value="">-- Choose a Saved Recipe or Menu Dish to Display --</option>
+                    <option value="__fresh__">✨ Start Fresh / Blank Recipe</option>
+                    {savedRecipeTemplates.length > 0 && (
+                      <optgroup label="📋 Saved Recipe Templates">
+                        {savedRecipeTemplates.map((tmpl) => (
+                          <option key={tmpl.id} value={`template:${tmpl.id}`}>
+                            {tmpl.name} ({tmpl.batchYieldGrams}g batch / {tmpl.servingSizeGrams}g portion)
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {menuItems.length > 0 && (
+                      <optgroup label="🍱 Active Menu Dishes">
+                        {menuItems.map((dish) => (
+                          <option key={dish.id} value={`dish:${dish.id}`}>
+                            {dish.name} (₱{dish.price})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
                 </div>
               </div>
-
               {/* Recipe Title & Batch Parameters */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Recipe Name */}
                 <div className="space-y-1.5 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
                   <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
-                    Recipe / Dish Title
+                    Viand / Dish Title
                   </label>
                   <input
                     type="text"
@@ -9674,10 +9912,10 @@ function AdminPanel({
                 <div className="space-y-2 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
                   <div className="flex items-center justify-between">
                     <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
-                      Total Batch Yield Weight
+                      1. Viand Batch Yield (Meat Only)
                     </label>
                     <span className="text-xs font-mono font-black text-brand-gold">
-                      {(standaloneBatchWeight / 1000).toFixed(2)} kg
+                      {((Number(standaloneBatchWeight) || 0) / 1000).toFixed(2)} kg
                     </span>
                   </div>
 
@@ -9687,7 +9925,13 @@ function AdminPanel({
                       min="50"
                       step="50"
                       value={standaloneBatchWeight}
-                      onChange={(e) => setStandaloneBatchWeight(Math.max(10, Number(e.target.value) || 10))}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setStandaloneBatchWeight(v === '' ? '' : Number(v));
+                      }}
+                      onBlur={() => {
+                        if (standaloneBatchWeight === '' || Number(standaloneBatchWeight) < 10) setStandaloneBatchWeight(2000);
+                      }}
                       className="flex-1 bg-[#121211] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
                     />
                     <span className="text-[10px] text-gray-500 font-bold uppercase">grams (g)</span>
@@ -9720,10 +9964,10 @@ function AdminPanel({
                 <div className="space-y-2 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
                   <div className="flex items-center justify-between">
                     <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
-                      Serving Portion per Plate
+                      2. Viand Portion per Plate (Meat Only)
                     </label>
                     <span className="text-xs font-mono font-black text-brand-gold">
-                      {standaloneServingGrams} grams
+                      {Number(standaloneServingGrams) || 0} grams
                     </span>
                   </div>
 
@@ -9733,7 +9977,13 @@ function AdminPanel({
                       min="5"
                       step="5"
                       value={standaloneServingGrams}
-                      onChange={(e) => setStandaloneServingGrams(Math.max(1, Number(e.target.value) || 1))}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setStandaloneServingGrams(v === '' ? '' : Number(v));
+                      }}
+                      onBlur={() => {
+                        if (standaloneServingGrams === '' || Number(standaloneServingGrams) < 1) setStandaloneServingGrams(90);
+                      }}
                       className="flex-1 bg-[#121211] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
                     />
                     <span className="text-[10px] text-gray-500 font-bold uppercase">grams / plate</span>
@@ -9770,22 +10020,43 @@ function AdminPanel({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <h5 className="font-display font-bold text-white text-xs uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="text-brand-gold">🌾</span>
-                      <span>Raw Materials for the {(standaloneBatchWeight / 1000).toFixed(1)}kg Batch ({standaloneIngredients.length} Ingredients)</span>
+                      <span className="text-brand-gold">🥩</span>
+                      <span>Viand Raw Materials for the {((Number(standaloneBatchWeight) || 0) / 1000).toFixed(1)}kg Batch ({standaloneIngredients.length} Ingredients)</span>
                     </h5>
-                    <p className="text-gray-400 text-[9px] mt-0.5">
-                      Enter the raw materials and costs for the entire batch. Each ingredient's per-serving weight is automatically computed for {standaloneServingGrams}g portion.
-                    </p>
+                    <div className="flex items-center gap-2 text-[9px] text-gray-400 font-medium mt-0.5 flex-wrap">
+                      <span className="text-gray-500">Plate Recipe Breakdown:</span>
+                      <span className="text-amber-400 font-bold">🥩 {standaloneIngredients.length} Viand Ingredients</span>
+                      <span className="text-gray-600">+</span>
+                      <span className="text-emerald-400 font-bold">🍚 {standaloneIncludeRice ? '1 Steamed Rice' : 'No Rice'}</span>
+                      <span className="text-gray-600">+</span>
+                      <span className="text-blue-400 font-bold">📦 {standaloneIncludePackaging ? '2 Packaging Items' : 'No Packaging'}</span>
+                      <span className="text-gray-600">=</span>
+                      <span className="text-brand-gold font-bold">
+                        {standaloneIngredients.length + (standaloneIncludeRice ? 1 : 0) + (standaloneIncludePackaging ? 2 : 0)} Total Plate Items
+                      </span>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={() => setRecipeAllowDecimals(!recipeAllowDecimals)}
+                      className={`px-2.5 py-1 text-[9px] font-bold uppercase rounded-lg transition-all cursor-pointer ${
+                        recipeAllowDecimals
+                          ? 'bg-blue-500/15 border border-blue-500/40 text-blue-400 font-black'
+                          : 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 font-black'
+                      }`}
+                      title={recipeAllowDecimals ? "Decimals are ENABLED. Click to switch to clean Whole Numbers" : "Whole numbers mode active. Click to allow optional decimals"}
+                    >
+                      {recipeAllowDecimals ? '🔢 Decimals: ON (.0)' : '🔢 Decimals: OFF (Whole)'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
-                        const totalFromList = standaloneIngredients.reduce((sum, item) => sum + item.cost, 0);
+                        const totalFromList = standaloneIngredients.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
                         setStandaloneTotalBatchCost(totalFromList);
                       }}
-                      className="px-2.5 py-1 bg-[#181818] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[9px] font-bold uppercase rounded-lg transition-all"
+                      className="px-2.5 py-1 bg-[#181818] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[9px] font-bold uppercase rounded-lg transition-all cursor-pointer"
                       title="Sync Total Cost from ingredients table sum"
                     >
                       Sync Sum to Batch Cost
@@ -9814,7 +10085,8 @@ function AdminPanel({
                   <table className="w-full text-left text-[9.5px]">
                     <thead className="bg-white/5 text-gray-400 font-bold uppercase text-[8px]">
                       <tr>
-                        <th className="p-2.5 min-w-[220px]">Select Raw Material (Inventory)</th>
+                        <th className="p-2.5 min-w-[200px]">Select Raw Material (Inventory)</th>
+                        <th className="p-2.5">Unit Purchase Cost</th>
                         <th className="p-2.5">Batch Qty</th>
                         <th className="p-2.5">Batch Cost (₱)</th>
                         <th className="p-2.5 text-blue-400">Grams / Amount per Plate</th>
@@ -9824,14 +10096,21 @@ function AdminPanel({
                     </thead>
                     <tbody className="divide-y divide-white/5 font-mono">
                       {standaloneIngredients.map((ing, i) => {
-                        const batchWeightG = Math.max(1, standaloneBatchWeight);
-                        const servingAmount = (ing.batchAmount / batchWeightG) * standaloneServingGrams;
-                        const servingCost = (ing.cost / batchWeightG) * standaloneServingGrams;
+                        const batchWeightG = Math.max(1, Number(standaloneBatchWeight) || 1);
+                        const servingG = Math.max(1, Number(standaloneServingGrams) || 1);
+                        const ingAmt = Number(ing.batchAmount) || 0;
+                        const ingCost = Number(ing.cost) || 0;
+                        const isCountable = ing.unit === 'pcs' || ing.unit === 'cans' || ing.unit === 'pc' || ing.unit === 'pack';
+                        const scaledRaw = (ingAmt / batchWeightG) * servingG;
+                        const servingAmount = isCountable
+                          ? (ingAmt <= 1 ? 1 : Math.max(1, Math.round(scaledRaw)))
+                          : (ingAmt <= 0 ? 0 : (recipeAllowDecimals ? Math.max(0.1, Number(scaledRaw.toFixed(1))) : Math.max(1, Math.round(scaledRaw))));
+                        const servingCost = (ingCost / batchWeightG) * servingG;
                         const isExistingInv = ingredientsInventory.some(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
 
                         return (
                           <tr key={i} className="hover:bg-white/[0.02]">
-                            <td className="p-2.5 font-sans min-w-[220px]">
+                            <td className="p-2.5 font-sans min-w-[200px]">
                               <div className="space-y-1">
                                 <select
                                   value={isExistingInv ? ing.name : '__custom__'}
@@ -9879,14 +10158,28 @@ function AdminPanel({
                               </div>
                             </td>
                             <td className="p-2.5">
+                              {(() => {
+                                const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
+                                const unitCost = (invMatch?.costPerUnit && invMatch.costPerUnit > 0)
+                                  ? invMatch.costPerUnit
+                                  : (ing.unit === 'g' ? 0.05 : ing.unit === 'kg' ? 150 : ing.unit === 'pcs' ? 15 : ing.unit === 'ml' ? 0.08 : ing.unit === 'cans' ? 45 : 0.05);
+                                return (
+                                  <span className="text-brand-gold font-mono font-bold bg-brand-gold/10 px-2 py-0.5 rounded text-[8.5px] border border-brand-gold/20 whitespace-nowrap">
+                                    ₱{unitCost >= 1 ? unitCost.toFixed(2) : unitCost.toFixed(3)}/{ing.unit}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                            <td className="p-2.5">
                               <div className="flex items-center gap-1">
                                 <input
                                   type="number"
-                                  min="0.1"
-                                  step="any"
+                                  min="0"
+                                  step={(isCountable || !recipeAllowDecimals) ? "1" : "any"}
                                   value={ing.batchAmount}
                                   onChange={(e) => {
-                                    const newAmt = Number(e.target.value) || 0;
+                                    const v = e.target.value;
+                                    const newAmt = v === '' ? '' : Number(v);
                                     const updated = [...standaloneIngredients];
                                     updated[i].batchAmount = newAmt;
                                     const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
@@ -9894,6 +10187,13 @@ function AdminPanel({
                                       updated[i].cost = computeInventoryIngredientCost(invMatch.name, newAmt, updated[i].unit);
                                     }
                                     setStandaloneIngredients(updated);
+                                  }}
+                                  onBlur={() => {
+                                    if (ing.batchAmount === '') {
+                                      const updated = [...standaloneIngredients];
+                                      updated[i].batchAmount = 0;
+                                      setStandaloneIngredients(updated);
+                                    }
                                   }}
                                   className="w-20 bg-[#121211] border border-white/10 rounded-lg px-2 py-1 text-xs text-white text-right font-bold"
                                 />
@@ -9928,16 +10228,24 @@ function AdminPanel({
                                   step="any"
                                   value={ing.cost}
                                   onChange={(e) => {
+                                    const v = e.target.value;
                                     const updated = [...standaloneIngredients];
-                                    updated[i].cost = Number(e.target.value) || 0;
+                                    updated[i].cost = v === '' ? '' : Number(v);
                                     setStandaloneIngredients(updated);
+                                  }}
+                                  onBlur={() => {
+                                    if (ing.cost === '') {
+                                      const updated = [...standaloneIngredients];
+                                      updated[i].cost = 0;
+                                      setStandaloneIngredients(updated);
+                                    }
                                   }}
                                   className="w-20 bg-[#121211] border border-white/10 rounded-lg px-2 py-1 text-xs text-white text-right font-bold text-brand-gold"
                                 />
                               </div>
                             </td>
                             <td className="p-2.5 text-blue-300 font-bold">
-                              {servingAmount.toFixed(1)}{ing.unit}
+                              {isCountable ? servingAmount : (recipeAllowDecimals ? Number(servingAmount).toFixed(1) : Math.round(Number(servingAmount)))}{ing.unit}
                             </td>
                             <td className="p-2.5 text-brand-gold font-bold">
                               ₱{servingCost.toFixed(2)}
@@ -9962,9 +10270,9 @@ function AdminPanel({
 
                 {/* Table Summary Footer */}
                 {(() => {
-                  const ingredientsSumCost = standaloneIngredients.reduce((sum, item) => sum + item.cost, 0);
-                  const ingredientsSumWeight = standaloneIngredients.reduce((sum, item) => sum + (item.unit === 'g' || item.unit === 'ml' ? item.batchAmount : 0), 0);
-                  const weightDiff = ingredientsSumWeight - standaloneBatchWeight;
+                  const ingredientsSumCost = standaloneIngredients.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
+                  const ingredientsSumWeight = standaloneIngredients.reduce((sum, item) => sum + (item.unit === 'g' || item.unit === 'ml' ? (Number(item.batchAmount) || 0) : 0), 0);
+                  const weightDiff = ingredientsSumWeight - (Number(standaloneBatchWeight) || 0);
                   return (
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 text-[10px] font-mono">
                       <div className="flex items-center gap-3">
@@ -10001,20 +10309,640 @@ function AdminPanel({
                 })()}
               </div>
 
-              {/* Target Margin Slider & Standalone Calculation Results */}
+              {/* --- STEAMED RICE COSTING SECTION (COOKED SEPARATELY IN BULK) --- */}
+              <div className="bg-[#0D0D0C] p-4 rounded-2xl border-2 border-amber-500/30 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-500/30">
+                      <span className="text-base">🍚</span>
+                    </div>
+                    <div>
+                      <h5 className="font-display font-black text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                        Steamed Rice Costing (Cooked Separately in Bulk)
+                      </h5>
+                      <p className="text-gray-400 text-[9px] mt-0.5">
+                        Commercial kitchen standard: Rice is prepared separately in rice cookers. Calculate per-cup costing and combine with your viand batch.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Toggle Include Rice */}
+                  <div className="flex items-center gap-2 self-start sm:self-auto bg-[#121211] p-1.5 rounded-xl border border-white/10">
+                    <span className="text-[9.5px] font-bold text-gray-300 pl-1">Include Steamed Rice:</span>
+                    <button
+                      type="button"
+                      onClick={() => setStandaloneIncludeRice(!standaloneIncludeRice)}
+                      className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 ${
+                        standaloneIncludeRice
+                          ? 'bg-amber-500 text-black shadow-md'
+                          : 'bg-[#181818] text-gray-400 border border-white/10'
+                      }`}
+                    >
+                      {standaloneIncludeRice ? '✓ Included (Meal Plate)' : '✕ Excluded (Viand Only)'}
+                    </button>
+                  </div>
+                </div>
+
+                {standaloneIncludeRice ? (
+                  <div className="space-y-4">
+                    {/* Select Rice from Inventory */}
+                    <div className="bg-[#121211] p-3.5 rounded-xl border border-amber-500/25 space-y-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[9.5px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles className="w-3 h-3 text-amber-400" />
+                            <span>🌾 Select Rice Ingredient from Inventory:</span>
+                          </span>
+                          {(() => {
+                            const selected = (ingredientsInventory || []).find(i => i.name.toLowerCase() === (standaloneSelectedRiceIngredient || '').toLowerCase());
+                            if (!selected) return null;
+                            return (
+                              <span className="text-[8.5px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono font-bold">
+                                Stock: {selected.quantity} {selected.unit} @ ₱{(selected.costPerUnit || 0).toFixed(2)}/{selected.unit}
+                              </span>
+                            );
+                          })()}
+                        </div>
+
+                        {riceInventoryItems.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleCreateQuickRiceIngredient('Sinandomeng Rice (Raw)', 45)}
+                            className="text-[8.5px] text-amber-400 hover:text-white underline font-bold cursor-pointer"
+                          >
+                            + Quick Add Sinandomeng Rice (₱45/kg)
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={standaloneSelectedRiceIngredient}
+                          onChange={(e) => applyRiceIngredientCost(e.target.value, true)}
+                          className="flex-1 bg-[#0D0D0C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-amber-400"
+                        >
+                          <option value="">-- Choose Rice from Inventory or Use Custom Rate --</option>
+                          {riceInventoryItems.length > 0 && (
+                            <optgroup label="🌾 Rice Materials in Inventory">
+                              {riceInventoryItems.map((item) => (
+                                <option key={item.id} value={item.name}>
+                                  {item.name} (₱{Number(item.costPerUnit || 0).toFixed(2)}/{item.unit}) — Stock: {item.quantity} {item.unit}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          <optgroup label="📦 All Other Inventory Raw Materials">
+                            {nonRiceInventoryItems.map((item) => (
+                              <option key={item.id} value={item.name}>
+                                {item.name} (₱{Number(item.costPerUnit || 0).toFixed(2)}/{item.unit})
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
+
+                        {standaloneSelectedRiceIngredient && (
+                          <button
+                            type="button"
+                            onClick={() => applyRiceIngredientCost(standaloneSelectedRiceIngredient, true)}
+                            className="px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/40 text-[9px] font-bold uppercase transition-all shrink-0 cursor-pointer flex items-center gap-1.5"
+                            title="Re-sync price from selected inventory item"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            <span>Sync Rate</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Mode Tabs: Simple Cup Presets vs Rice Cooker Bulk Yield */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">
+                        Rice Costing Method:
+                      </span>
+                      <div className="flex items-center gap-1 bg-[#121211] p-1 rounded-xl border border-white/5">
+                        <button
+                          type="button"
+                          onClick={() => setStandaloneRiceCostMode('simple')}
+                          className={`px-2.5 py-1 rounded-lg text-[8.5px] font-bold uppercase transition-all ${
+                            standaloneRiceCostMode === 'simple'
+                              ? 'bg-brand-gold text-black font-black'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          🍚 Simple Cup Presets (₱/Cup)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStandaloneRiceCostMode('cooker')}
+                          className={`px-2.5 py-1 rounded-lg text-[8.5px] font-bold uppercase transition-all ${
+                            standaloneRiceCostMode === 'cooker'
+                              ? 'bg-brand-gold text-black font-black'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          ⚡ Rice Cooker Bulk Yield Calculator
+                        </button>
+                      </div>
+                    </div>
+
+                    {standaloneRiceCostMode === 'simple' ? (
+                      /* Simple Cup Presets Mode */
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Cup Portion in Grams */}
+                        <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">
+                              Steamed Rice Portion per Plate
+                            </span>
+                            <span className="text-xs font-mono font-black text-amber-400">
+                              {Number(standaloneRicePortionGrams) || 0}g / cup
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="50"
+                              step="10"
+                              value={standaloneRicePortionGrams}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setStandaloneRicePortionGrams(v === '' ? '' : Number(v));
+                              }}
+                              onBlur={() => {
+                                if (standaloneRicePortionGrams === '' || Number(standaloneRicePortionGrams) < 10) setStandaloneRicePortionGrams(150);
+                              }}
+                              className="flex-1 bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-amber-400"
+                            />
+                            <span className="text-[10px] text-gray-500 font-bold uppercase">grams / plate</span>
+                          </div>
+                          <div className="flex items-center gap-1 pt-1 flex-wrap">
+                            <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wider">Cup Sizes:</span>
+                            {[
+                              { label: '150g (Standard Cup)', val: 150 },
+                              { label: '180g (Regular Bento)', val: 180 },
+                              { label: '200g (Big Silog)', val: 200 },
+                              { label: '250g (Extra Rice)', val: 250 }
+                            ].map((preset) => (
+                              <button
+                                key={preset.val}
+                                type="button"
+                                onClick={() => setStandaloneRicePortionGrams(preset.val)}
+                                className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                                  standaloneRicePortionGrams === preset.val
+                                    ? 'bg-amber-400 text-black font-black'
+                                    : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                                }`}
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Cost per Gram & Cost per Cup Readout */}
+                        <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">
+                              Cooked Steamed Rice Cost Rate
+                            </span>
+                            <span className="text-xs font-mono font-black text-green-400">
+                              ₱{((Number(standaloneRicePortionGrams) || 0) * (Number(standaloneRiceCostPerGram) || 0)).toFixed(2)} / cup
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-400 font-mono text-xs">₱</span>
+                            <input
+                              type="number"
+                              min="0.005"
+                              step="0.005"
+                              value={standaloneRiceCostPerGram}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setStandaloneRiceCostPerGram(v === '' ? '' : Number(v));
+                              }}
+                              onBlur={() => {
+                                if (standaloneRiceCostPerGram === '' || Number(standaloneRiceCostPerGram) <= 0) setStandaloneRiceCostPerGram(0.04);
+                              }}
+                              className="flex-1 bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-amber-400"
+                            />
+                            <span className="text-[10px] text-gray-500 font-bold uppercase">per gram (₱/g)</span>
+                          </div>
+                          <div className="flex items-center gap-1 pt-1 flex-wrap">
+                            <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wider">Standard Rates:</span>
+                            {[
+                              { label: '₱0.035/g (₱35/kg)', val: 0.035 },
+                              { label: '₱0.040/g (Inv Rate ₱40/kg)', val: 0.04 },
+                              { label: '₱0.045/g (₱45/kg)', val: 0.045 },
+                              { label: '₱0.050/g (₱50/kg)', val: 0.05 }
+                            ].map((preset) => (
+                              <button
+                                key={preset.val}
+                                type="button"
+                                onClick={() => setStandaloneRiceCostPerGram(preset.val)}
+                                className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                                  standaloneRiceCostPerGram === preset.val
+                                    ? 'bg-amber-400 text-black font-black'
+                                    : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                                }`}
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Rice Cooker Bulk Yield Calculator Mode */
+                      <div className="space-y-3 bg-[#121211] p-3.5 rounded-xl border border-white/5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9.5px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                            <span>🍚 Rice Cooker Bulk Batch Production Formula</span>
+                          </span>
+                          <span className="text-[8.5px] text-gray-400">
+                            1kg raw rice absorbs water & yields ~2.1x – 2.5x cooked rice.
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          {/* 1. Raw Rice Weight */}
+                          <div className="space-y-1 bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5">
+                            <label className="text-[8px] text-gray-400 uppercase font-bold block">1. Raw Rice Batch (kg)</label>
+                            <input
+                              type="number"
+                              min="0.5"
+                              step="0.5"
+                              value={standaloneRawRiceKg}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setStandaloneRawRiceKg(v === '' ? '' : Number(v));
+                              }}
+                              onBlur={() => {
+                                if (standaloneRawRiceKg === '' || Number(standaloneRawRiceKg) <= 0) setStandaloneRawRiceKg(2);
+                              }}
+                              className="w-full bg-[#181818] border border-white/10 rounded px-2 py-1 text-xs text-white font-mono font-bold text-right"
+                            />
+                            <div className="flex gap-1 pt-0.5 flex-wrap">
+                              {[1, 2, 3, 5].map((k) => (
+                                <button
+                                  key={k}
+                                  type="button"
+                                  onClick={() => setStandaloneRawRiceKg(k)}
+                                  className={`px-1.5 py-0.5 rounded text-[8px] font-mono ${standaloneRawRiceKg === k ? 'bg-amber-500 text-black font-black' : 'bg-white/5 text-gray-400'}`}
+                                >
+                                  {k}kg
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* 2. Raw Rice Cost per kg */}
+                          <div className="space-y-1 bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5">
+                            <label className="text-[8px] text-gray-400 uppercase font-bold block">2. Raw Rice Cost / kg (₱)</label>
+                            <input
+                              type="number"
+                              min="20"
+                              step="1"
+                              value={standaloneRawRiceCostKg}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setStandaloneRawRiceCostKg(v === '' ? '' : Number(v));
+                              }}
+                              onBlur={() => {
+                                if (standaloneRawRiceCostKg === '' || Number(standaloneRawRiceCostKg) <= 0) setStandaloneRawRiceCostKg(50);
+                              }}
+                              className="w-full bg-[#181818] border border-white/10 rounded px-2 py-1 text-xs text-white font-mono font-bold text-right text-amber-400"
+                            />
+                            <div className="flex gap-1 pt-0.5 flex-wrap">
+                              {[45, 50, 55, 60].map((c) => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => setStandaloneRawRiceCostKg(c)}
+                                  className={`px-1.5 py-0.5 rounded text-[8px] font-mono ${standaloneRawRiceCostKg === c ? 'bg-amber-500 text-black font-black' : 'bg-white/5 text-gray-400'}`}
+                                >
+                                  ₱{c}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* 3. Cooked Expansion Factor */}
+                          <div className="space-y-1 bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5">
+                            <label className="text-[8px] text-gray-400 uppercase font-bold block">3. Cooked Yield Factor</label>
+                            <input
+                              type="number"
+                              min="1.5"
+                              max="3.0"
+                              step="0.1"
+                              value={standaloneRiceExpansionRatio}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setStandaloneRiceExpansionRatio(v === '' ? '' : Number(v));
+                              }}
+                              onBlur={() => {
+                                if (standaloneRiceExpansionRatio === '' || Number(standaloneRiceExpansionRatio) <= 0) setStandaloneRiceExpansionRatio(2.3);
+                              }}
+                              className="w-full bg-[#181818] border border-white/10 rounded px-2 py-1 text-xs text-white font-mono font-bold text-right"
+                            />
+                            <div className="flex gap-1 pt-0.5 flex-wrap">
+                              {[2.1, 2.3, 2.5].map((r) => (
+                                <button
+                                  key={r}
+                                  type="button"
+                                  onClick={() => setStandaloneRiceExpansionRatio(r)}
+                                  className={`px-1.5 py-0.5 rounded text-[8px] font-mono ${standaloneRiceExpansionRatio === r ? 'bg-amber-500 text-black font-black' : 'bg-white/5 text-gray-400'}`}
+                                >
+                                  {r}x
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* 4. Cooking Gas/Water Overhead */}
+                          <div className="space-y-1 bg-[#0D0D0C] p-2.5 rounded-lg border border-white/5">
+                            <label className="text-[8px] text-gray-400 uppercase font-bold block">4. Water & Power / Batch (₱)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={standaloneRiceOverhead}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setStandaloneRiceOverhead(v === '' ? '' : Number(v));
+                              }}
+                              onBlur={() => {
+                                if (standaloneRiceOverhead === '') setStandaloneRiceOverhead(10);
+                              }}
+                              className="w-full bg-[#181818] border border-white/10 rounded px-2 py-1 text-xs text-white font-mono font-bold text-right"
+                            />
+                            <div className="flex gap-1 pt-0.5 flex-wrap">
+                              {[5, 10, 15, 20].map((o) => (
+                                <button
+                                  key={o}
+                                  type="button"
+                                  onClick={() => setStandaloneRiceOverhead(o)}
+                                  className={`px-1.5 py-0.5 rounded text-[8px] font-mono ${standaloneRiceOverhead === o ? 'bg-amber-500 text-black font-black' : 'bg-white/5 text-gray-400'}`}
+                                >
+                                  ₱{o}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Real-time Bulk Rice Calculations */}
+                        {(() => {
+                          const rawKg = Number(standaloneRawRiceKg) || 0;
+                          const expRatio = Number(standaloneRiceExpansionRatio) || 1;
+                          const rawCost = Number(standaloneRawRiceCostKg) || 0;
+                          const overhead = Number(standaloneRiceOverhead) || 0;
+                          const cookedKg = rawKg * expRatio;
+                          const cookedGrams = cookedKg * 1000;
+                          const totalCookerCost = (rawKg * rawCost) + overhead;
+                          const computedCostPerCookedGram = totalCookerCost / Math.max(1, cookedGrams);
+                          const portionGrams = Number(standaloneRicePortionGrams) || 0;
+                          const totalCupsYielded = cookedGrams / Math.max(1, portionGrams);
+                          const costPerCup = computedCostPerCookedGram * portionGrams;
+
+                          return (
+                            <div className="bg-[#0D0D0C] p-3 rounded-lg border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[10px] font-mono">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 flex-1">
+                                <div>
+                                  <span className="text-gray-500 text-[8px] uppercase font-bold block">Cooked Yield</span>
+                                  <strong className="text-white text-xs">{cookedKg.toFixed(2)}kg</strong>
+                                  <span className="text-[8px] text-gray-500 block">({cookedGrams.toFixed(0)}g)</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500 text-[8px] uppercase font-bold block">Rice Cups Produced</span>
+                                  <strong className="text-amber-400 text-xs">{totalCupsYielded.toFixed(1)} cups</strong>
+                                  <span className="text-[8px] text-gray-500 block">(@ {portionGrams}g/cup)</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500 text-[8px] uppercase font-bold block">Total Cooker Cost</span>
+                                  <strong className="text-brand-gold text-xs">₱{totalCookerCost.toFixed(2)}</strong>
+                                  <span className="text-[8px] text-gray-500 block">(Raw + Utils)</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500 text-[8px] uppercase font-bold block">Cooked Cost / Cup</span>
+                                  <strong className="text-green-400 text-xs">₱{costPerCup.toFixed(2)}</strong>
+                                  <span className="text-[8px] text-gray-500 block">(₱{computedCostPerCookedGram.toFixed(4)}/g)</span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStandaloneRiceCostPerGram(Number(computedCostPerCookedGram.toFixed(4)));
+                                  alert(`Applied cooker rate of ₱${computedCostPerCookedGram.toFixed(4)}/gram (₱${costPerCup.toFixed(2)} per ${standaloneRicePortionGrams}g cup) to plate costing!`);
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[9px] uppercase tracking-wider transition-all shadow-md self-start sm:self-auto cursor-pointer"
+                              >
+                                Apply ₱{computedCostPerCookedGram.toFixed(3)}/g Rate →
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-[#121211] p-3 rounded-xl border border-white/5 text-[9px] text-gray-400 flex items-center justify-between">
+                    <span>💡 Steamed Rice is turned off. Costing reflects the <strong>Viand / Meat Only</strong> (Ala Carte or Pulutan portion).</span>
+                    <button
+                      type="button"
+                      onClick={() => setStandaloneIncludeRice(true)}
+                      className="px-2.5 py-1 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 text-[8.5px] font-bold uppercase transition-all"
+                    >
+                      Turn On Rice Costing
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Packaging & Disposables Section (Per Serving) */}
+              <div className="bg-[#0D0D0C] p-4 rounded-2xl border border-white/5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-brand-gold text-sm">📦</span>
+                    <div>
+                      <h5 className="font-display font-bold text-white text-xs uppercase tracking-wider">
+                        Takeout Packaging & Disposables from Stock (Per Serving)
+                      </h5>
+                      <p className="text-gray-400 text-[9px] mt-0.5">
+                        Select packaging materials and containers from kitchen inventory stock to include in per-plate costing.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setStandaloneIncludePackaging(!standaloneIncludePackaging)}
+                      className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+                        standaloneIncludePackaging
+                          ? 'bg-blue-500/15 border border-blue-500/40 text-blue-400 font-black'
+                          : 'bg-[#181818] border border-white/10 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {standaloneIncludePackaging ? `✓ Packaging Active (₱${standalonePackagingCost.toFixed(2)})` : '+ Include Packaging'}
+                    </button>
+                  </div>
+                </div>
+
+                {standaloneIncludePackaging ? (
+                  <div className="space-y-3">
+                    {/* List of active packaging items from stock */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                      {standaloneSelectedPackaging.map((pkg, pIdx) => {
+                        const invMatch = (ingredientsInventory || []).find(i => i.name.toLowerCase() === pkg.name.toLowerCase());
+                        const stockQty = invMatch ? invMatch.quantity : 0;
+                        const stockUnit = invMatch?.unit || pkg.unit || 'pcs';
+                        const unitCost = (invMatch?.costPerUnit && invMatch.costPerUnit > 0) ? invMatch.costPerUnit : pkg.costPerUnit;
+                        const isLowStock = invMatch ? stockQty <= (invMatch.lowStockAlert || 20) : false;
+
+                        return (
+                          <div
+                            key={pIdx}
+                            className={`p-3 rounded-xl border transition-all flex flex-col justify-between gap-2 ${
+                              pkg.selected
+                                ? 'bg-[#141413] border-blue-500/40 shadow-sm'
+                                : 'bg-[#101010]/60 border-white/5 opacity-60'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={pkg.selected}
+                                  onChange={() => {
+                                    const updated = [...standaloneSelectedPackaging];
+                                    updated[pIdx].selected = !updated[pIdx].selected;
+                                    setStandaloneSelectedPackaging(updated);
+                                  }}
+                                  className="w-3.5 h-3.5 rounded text-blue-500 bg-[#181818] border-white/20 focus:ring-0 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-white truncate" title={pkg.name}>
+                                  {pkg.name}
+                                </span>
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStandaloneSelectedPackaging(standaloneSelectedPackaging.filter((_, idx) => idx !== pIdx));
+                                }}
+                                className="text-gray-500 hover:text-brand-red p-0.5 rounded transition-colors"
+                                title="Remove packaging item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="flex items-center justify-between text-[9px] pt-1 border-t border-white/5 font-mono">
+                              <span className={invMatch ? (isLowStock ? 'text-amber-400 font-bold' : 'text-gray-400') : 'text-brand-red'}>
+                                {invMatch ? `${stockQty} ${stockUnit} in stock` : 'Not in inventory'}
+                              </span>
+                              <span className="text-blue-400 font-bold">
+                                ₱{unitCost.toFixed(2)} / {stockUnit}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Add Packaging from Stocks Dropdown & Total Cost Bar */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1 text-[9.5px]">
+                      <div className="flex items-center gap-2 w-full sm:w-auto flex-1">
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (!val) return;
+                            const invMatch = (ingredientsInventory || []).find(i => i.name === val);
+                            if (invMatch) {
+                              const alreadyAdded = standaloneSelectedPackaging.some(p => p.name.toLowerCase() === invMatch.name.toLowerCase());
+                              if (alreadyAdded) {
+                                setStandaloneSelectedPackaging(prev => prev.map(p => p.name.toLowerCase() === invMatch.name.toLowerCase() ? { ...p, selected: true } : p));
+                              } else {
+                                setStandaloneSelectedPackaging(prev => [
+                                  ...prev,
+                                  {
+                                    name: invMatch.name,
+                                    amount: 1,
+                                    costPerUnit: invMatch.costPerUnit || 2.50,
+                                    unit: invMatch.unit || 'pcs',
+                                    selected: true
+                                  }
+                                ]);
+                              }
+                            }
+                          }}
+                          className="w-full sm:w-80 bg-[#121211] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-400 cursor-pointer"
+                        >
+                          <option value="">+ Select Packaging Material from Inventory Stock...</option>
+                          <optgroup label="📦 Available Packaging in Inventory">
+                            {(ingredientsInventory || [])
+                              .filter(i => isPackagingRequirement(i.name) || i.unit === 'pcs' || i.unit === 'pack')
+                              .map(i => (
+                                <option key={i.id} value={i.name}>
+                                  {i.name} ({i.quantity} {i.unit} stock • ₱{(i.costPerUnit || 0).toFixed(2)})
+                                </option>
+                              ))}
+                          </optgroup>
+                          <optgroup label="📦 All Other Inventory Items">
+                            {(ingredientsInventory || [])
+                              .filter(i => !isPackagingRequirement(i.name) && i.unit !== 'pcs' && i.unit !== 'pack')
+                              .map(i => (
+                                <option key={i.id} value={i.name}>
+                                  {i.name} ({i.quantity} {i.unit} stock • ₱{(i.costPerUnit || 0).toFixed(2)})
+                                </option>
+                              ))}
+                          </optgroup>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        <span className="text-gray-400 font-medium">Total Packaging Cost:</span>
+                        <span className="text-sm font-mono font-black text-blue-400 bg-blue-500/10 px-2.5 py-0.5 rounded-lg border border-blue-500/20">
+                          ₱{standalonePackagingCost.toFixed(2)} / plate
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-[#121211] p-2.5 rounded-xl border border-white/5 text-[9px] text-gray-400 flex items-center justify-between">
+                    <span>💡 Packaging is turned off. Costing reflects Dine-in or Plated food only without packaging materials.</span>
+                    <button
+                      type="button"
+                      onClick={() => setStandaloneIncludePackaging(true)}
+                      className="px-2.5 py-1 rounded bg-blue-500/15 border border-blue-500/30 text-blue-400 hover:bg-blue-500/25 text-[8.5px] font-bold uppercase transition-all cursor-pointer"
+                    >
+                      Turn On Packaging Cost
+                    </button>
+                  </div>
+                )}
+              </div>
+              {/* Target Margin Slider & Standalone Combined Calculation Results */}
               {(() => {
-                const batchWeightG = Math.max(1, standaloneBatchWeight);
-                const servingG = Math.max(1, standaloneServingGrams);
+                const batchWeightG = Math.max(1, Number(standaloneBatchWeight) || 1);
+                const servingG = Math.max(1, Number(standaloneServingGrams) || 1);
                 const servingsProduced = batchWeightG / servingG;
-                const batchCost = standaloneTotalBatchCost;
+                const batchCost = Number(standaloneTotalBatchCost) || 0;
                 const costPerGram = batchCost / batchWeightG;
-                const costPerPlate = costPerGram * servingG;
-                const recSellingPrice = standaloneTargetMargin > 0 && standaloneTargetMargin < 100
-                  ? Math.ceil(costPerPlate / (1 - standaloneTargetMargin / 100))
-                  : Math.ceil(costPerPlate * 2);
-                const profitPerPlate = recSellingPrice - costPerPlate;
+                const viandCostPerServing = costPerGram * servingG;
+                const riceCostPerServing = standaloneIncludeRice ? ((Number(standaloneRicePortionGrams) || 0) * (Number(standaloneRiceCostPerGram) || 0)) : 0;
+                const packagingCostPerServing = standaloneIncludePackaging ? (Number(standalonePackagingCost) || 0) : 0;
+                const totalPlateCogs = viandCostPerServing + riceCostPerServing + packagingCostPerServing;
+                const targetMarginVal = Number(standaloneTargetMargin) || 0;
+                const recSellingPrice = targetMarginVal > 0 && targetMarginVal < 100
+                  ? Math.ceil(totalPlateCogs / (1 - targetMarginVal / 100))
+                  : Math.ceil(totalPlateCogs * 2);
+                const profitPerPlate = recSellingPrice - totalPlateCogs;
                 const totalGrossRevenue = servingsProduced * recSellingPrice;
-                const totalNetProfit = totalGrossRevenue - batchCost;
+                const totalRiceBatchCostForViand = servingsProduced * riceCostPerServing;
+                const totalPackagingBatchCost = servingsProduced * packagingCostPerServing;
+                const totalNetProfit = totalGrossRevenue - batchCost - (standaloneIncludeRice ? totalRiceBatchCostForViand : 0) - (standaloneIncludePackaging ? totalPackagingBatchCost : 0);
 
                 return (
                   <div className="bg-[#0D0D0C] p-4 rounded-2xl border-2 border-brand-gold/30 space-y-4">
@@ -10022,7 +10950,7 @@ function AdminPanel({
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
                       <div className="flex items-center gap-3">
                         <label className="text-[10px] text-gray-400 uppercase font-black tracking-wider block">
-                          Overall Batch Cost (₱):
+                          Viand Batch Cost (Meat Only ₱):
                         </label>
                         <div className="relative">
                           <span className="absolute left-2.5 top-1.5 text-xs text-brand-gold font-bold">₱</span>
@@ -10031,7 +10959,13 @@ function AdminPanel({
                             min="0"
                             step="50"
                             value={standaloneTotalBatchCost}
-                            onChange={(e) => setStandaloneTotalBatchCost(Math.max(0, Number(e.target.value) || 0))}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setStandaloneTotalBatchCost(v === '' ? '' : Number(v));
+                            }}
+                            onBlur={() => {
+                              if (standaloneTotalBatchCost === '') setStandaloneTotalBatchCost(0);
+                            }}
                             className="w-32 bg-[#121211] border border-brand-gold/40 rounded-xl pl-6 pr-2.5 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
                           />
                         </div>
@@ -10040,7 +10974,7 @@ function AdminPanel({
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] text-gray-400 font-bold uppercase">Target Margin:</span>
                         <span className="font-mono text-xs font-black text-brand-gold bg-brand-gold/10 px-2.5 py-1 rounded-lg border border-brand-gold/30">
-                          {standaloneTargetMargin}%
+                          {Number(standaloneTargetMargin) || 0}%
                         </span>
                       </div>
                     </div>
@@ -10053,7 +10987,7 @@ function AdminPanel({
                           min="10"
                           max="90"
                           step="1"
-                          value={standaloneTargetMargin}
+                          value={standaloneTargetMargin === '' ? 50 : standaloneTargetMargin}
                           onChange={(e) => setStandaloneTargetMargin(Number(e.target.value))}
                           className="flex-1 accent-brand-gold cursor-pointer"
                         />
@@ -10063,7 +10997,13 @@ function AdminPanel({
                             min="5"
                             max="95"
                             value={standaloneTargetMargin}
-                            onChange={(e) => setStandaloneTargetMargin(Math.min(95, Math.max(5, Number(e.target.value) || 5)))}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setStandaloneTargetMargin(v === '' ? '' : Number(v));
+                            }}
+                            onBlur={() => {
+                              if (standaloneTargetMargin === '') setStandaloneTargetMargin(50);
+                            }}
                             className="w-full bg-[#121211] border border-white/10 rounded-lg pr-4 pl-2 py-1 text-xs text-white text-right font-mono font-bold"
                           />
                           <span className="absolute right-1.5 top-1 text-[10px] text-gray-400 font-bold">%</span>
@@ -10089,6 +11029,36 @@ function AdminPanel({
                       </div>
                     </div>
 
+                    {/* Plate Cost Breakdown Strip */}
+                    <div className="p-3 bg-[#121211] rounded-xl border border-white/5 flex flex-wrap items-center justify-between gap-2 text-[10.5px] font-mono">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-gray-400 text-[9px] uppercase font-bold">Plate Breakdown:</span>
+                        <span className="px-2 py-0.5 rounded bg-brand-gold/10 border border-brand-gold/30 text-brand-gold font-bold">
+                          🥩 Viand ({servingG}g): ₱{viandCostPerServing.toFixed(2)} ({((viandCostPerServing / Math.max(0.01, totalPlateCogs)) * 100).toFixed(0)}%)
+                        </span>
+                        <span className="text-gray-500">+</span>
+                        <span className={`px-2 py-0.5 rounded border font-bold ${
+                          standaloneIncludeRice
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                            : 'bg-white/5 border-white/10 text-gray-500'
+                        }`}>
+                          🍚 Rice ({standaloneIncludeRice ? `${Number(standaloneRicePortionGrams) || 0}g` : '0g'}): ₱{riceCostPerServing.toFixed(2)} ({standaloneIncludeRice ? ((riceCostPerServing / Math.max(0.01, totalPlateCogs)) * 100).toFixed(0) : 0}%)
+                        </span>
+                        <span className="text-gray-500">+</span>
+                        <span className={`px-2 py-0.5 rounded border font-bold ${
+                          standaloneIncludePackaging
+                            ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                            : 'bg-white/5 border-white/10 text-gray-500'
+                        }`}>
+                          📦 Packaging: ₱{packagingCostPerServing.toFixed(2)} ({standaloneIncludePackaging ? ((packagingCostPerServing / Math.max(0.01, totalPlateCogs)) * 100).toFixed(0) : 0}%)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-400 text-[9px] uppercase font-bold">Total Plate COGS:</span>
+                        <strong className="text-white text-sm">₱{totalPlateCogs.toFixed(2)}</strong>
+                      </div>
+                    </div>
+
                     {/* High-Impact Result Stat Cards */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[10px] font-mono">
                       <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-1">
@@ -10100,11 +11070,11 @@ function AdminPanel({
                       </div>
 
                       <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-1">
-                        <span className="text-gray-500 uppercase text-[8px] font-bold block">2. COGS per Serving</span>
+                        <span className="text-gray-500 uppercase text-[8px] font-bold block">2. Total Plate COGS</span>
                         <span className="text-base font-black text-brand-gold block">
-                          ₱{costPerPlate.toFixed(2)}
+                          ₱{totalPlateCogs.toFixed(2)}
                         </span>
-                        <span className="text-[8px] text-gray-400 block truncate">(₱{costPerGram.toFixed(3)} / gram)</span>
+                        <span className="text-[8px] text-gray-400 block truncate">(Viand: ₱{viandCostPerServing.toFixed(1)} + Rice: ₱{riceCostPerServing.toFixed(1)})</span>
                       </div>
 
                       <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-1">
@@ -10131,10 +11101,19 @@ function AdminPanel({
                         <span>Commercial Production Summary:</span>
                       </div>
                       <p>
-                        A bulk batch of <strong className="text-brand-gold">{(batchWeightG / 1000).toFixed(2)} kg ({batchWeightG}g)</strong> raw materials costing <strong className="text-brand-gold">₱{batchCost.toLocaleString()}</strong> produces exactly <strong className="text-blue-400">{servingsProduced.toFixed(1)} full portions</strong> at <strong className="text-white">{servingG} grams per plate</strong>.
+                        A bulk viand batch of <strong className="text-brand-gold">{(batchWeightG / 1000).toFixed(2)} kg ({batchWeightG}g)</strong> raw materials costing <strong className="text-brand-gold">₱{batchCost.toLocaleString()}</strong> produces exactly <strong className="text-blue-400">{servingsProduced.toFixed(1)} full portions</strong> at <strong className="text-white">{servingG} grams of meat per plate</strong>.
                       </p>
+                      {standaloneIncludeRice ? (
+                        <p className="text-amber-300">
+                          🍚 <strong>Steamed Rice Requirement:</strong> Serving all {servingsProduced.toFixed(1)} plates with {Number(standaloneRicePortionGrams) || 0}g of rice per plate requires <strong className="text-white">{((servingsProduced * (Number(standaloneRicePortionGrams) || 0)) / 1000).toFixed(2)} kg of cooked rice</strong>, costing <strong className="text-white">₱{totalRiceBatchCostForViand.toFixed(2)}</strong> (₱{riceCostPerServing.toFixed(2)} / plate).
+                        </p>
+                      ) : (
+                        <p className="text-gray-400 italic">
+                          💡 Steamed rice is not included in this plate. Costing reflects viand/meat only.
+                        </p>
+                      )}
                       <p className="font-mono text-gray-400 text-[8.5px]">
-                        Cost per Gram: ₱{costPerGram.toFixed(4)} • Portion Cost: ₱{costPerPlate.toFixed(2)} • At {standaloneTargetMargin}% margin, selling price is ₱{recSellingPrice} leaving ₱{profitPerPlate.toFixed(2)} profit per plate (₱{totalNetProfit.toFixed(2)} total profit per cooked batch).
+                        Viand COGS: ₱{viandCostPerServing.toFixed(2)} • Rice COGS: ₱{riceCostPerServing.toFixed(2)} • Total Plate COGS: ₱{totalPlateCogs.toFixed(2)} • At {Number(standaloneTargetMargin) || 0}% margin, selling price is ₱{recSellingPrice} leaving ₱{profitPerPlate.toFixed(2)} profit per plate (₱{totalNetProfit.toFixed(2)} total profit per batch).
                       </p>
                     </div>
 
@@ -10145,21 +11124,38 @@ function AdminPanel({
                         onClick={() => {
                           const sheetText = `CURVADA'S KITCHEN - BATCH PRODUCTION & PORTION SHEET
 Recipe Title: ${standaloneRecipeName}
-Batch Yield: ${(batchWeightG / 1000).toFixed(2)} kg (${batchWeightG} grams)
-Portion Size: ${servingG} grams / plate
+Viand Batch Yield: ${(batchWeightG / 1000).toFixed(2)} kg (${batchWeightG} grams cooked meat)
+Viand Portion Size: ${servingG} grams / plate
 Total Servings Produced: ${servingsProduced.toFixed(1)} plates
-Overall Batch Raw Materials Cost: ₱${batchCost.toFixed(2)}
-Cost per Serving (COGS): ₱${costPerPlate.toFixed(2)}
+Overall Viand Batch Cost: ₱${batchCost.toFixed(2)}
+Viand COGS per Serving: ₱${viandCostPerServing.toFixed(2)}
+
+STEAMED RICE COSTING:
+Included in Meal: ${standaloneIncludeRice ? 'YES' : 'NO (Viand Only)'}
+${standaloneIncludeRice ? `Rice Portion per Plate: ${standaloneRicePortionGrams} grams
+Rice Cost Rate: ₱${Number(standaloneRiceCostPerGram).toFixed(4)} / gram (₱${((Number(standaloneRicePortionGrams) || 0) * (Number(standaloneRiceCostPerGram) || 0)).toFixed(2)} per plate)
+Total Cooked Rice Needed for Batch: ${((servingsProduced * (Number(standaloneRicePortionGrams) || 0)) / 1000).toFixed(2)} kg
+Total Rice Cost for this Viand Batch: ₱${totalRiceBatchCostForViand.toFixed(2)}` : 'Steamed Rice Cost: ₱0.00'}
+
+COMBINED PLATE METRICS:
+Total Plate COGS (Viand + Rice): ₱${totalPlateCogs.toFixed(2)}
 Target Margin: ${standaloneTargetMargin}%
 Recommended Selling Price: ₱${recSellingPrice.toFixed(2)}
 Net Profit per Plate: ₱${profitPerPlate.toFixed(2)}
 Total Projected Batch Revenue: ₱${totalGrossRevenue.toFixed(2)}
 Total Projected Batch Net Profit: ₱${totalNetProfit.toFixed(2)}
 
-RAW MATERIALS BREAKDOWN:
+VIAND RAW MATERIALS BREAKDOWN:
 ${standaloneIngredients.map((item, idx) => {
-  const servingAmt = ((item.batchAmount / batchWeightG) * servingG).toFixed(1);
-  const sCost = ((item.cost / batchWeightG) * servingG).toFixed(2);
+  const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === item.name.toLowerCase());
+  const u = (item.unit || invMatch?.unit || 'g').toLowerCase();
+  const isCountable = u === 'pcs' || u === 'cans' || u === 'pc' || u === 'pack';
+  const rawAmt = Number(item.batchAmount) || 0;
+  const scaled = (rawAmt / batchWeightG) * servingG;
+  const servingAmt = isCountable 
+    ? (rawAmt <= 1 ? 1 : Math.max(1, Math.round(scaled))) 
+    : (rawAmt <= 0 ? 0 : (recipeAllowDecimals ? Math.max(0.1, Number(scaled.toFixed(1))) : Math.max(1, Math.round(scaled))));
+  const sCost = (((Number(item.cost) || 0) / batchWeightG) * servingG).toFixed(2);
   return `${idx + 1}. ${item.name}: Batch ${item.batchAmount}${item.unit} (₱${item.cost}) -> Portion ${servingAmt}${item.unit} (₱${sCost})`;
 }).join('\n')}
 `;
@@ -10186,43 +11182,84 @@ ${standaloneIngredients.map((item, idx) => {
                           type="button"
                           onClick={() => {
                             // Scale ingredients to per-serving requirements
-                            const scaledReqs = standaloneIngredients.map(item => ({
-                              name: item.name.trim(),
-                              amount: Number(((item.batchAmount / batchWeightG) * servingG).toFixed(1))
-                            }));
+                            const scaledReqs = standaloneIngredients.map(item => {
+                              const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === item.name.toLowerCase());
+                              const unit = (item.unit || invMatch?.unit || 'g').toLowerCase();
+                              const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
+                              const rawAmt = Number(item.batchAmount) || 0;
+                              
+                              let finalAmt: number;
+                              if (rawAmt <= 0) {
+                                finalAmt = 0;
+                              } else if (isCountable) {
+                                // Countable discrete items (e.g. 1 egg, 1 laurel, 1 chili, 1 calamansi)
+                                // If the user inputted 1 in the batch or the scaled value < 1, portion is 1 piece.
+                                const scaled = (rawAmt / batchWeightG) * servingG;
+                                finalAmt = rawAmt <= 1 ? 1 : Math.max(1, Math.round(scaled));
+                              } else {
+                                const scaled = (rawAmt / batchWeightG) * servingG;
+                                finalAmt = recipeAllowDecimals ? Math.max(0.1, Number(scaled.toFixed(1))) : Math.max(1, Math.round(scaled));
+                              }
 
-                            // Pre-fill Add Recipe Form
-                            setEditingItem(null);
-                            setFormName(standaloneRecipeName);
-                            setFormDescription(`Prepared in bulk ${(batchWeightG / 1000).toFixed(1)}kg batch, portioned at ${servingG}g per serving. Served fresh with savory traditional accompaniments.`);
+                              return {
+                                name: item.name.trim(),
+                                amount: finalAmt
+                              };
+                            });
+
+                            if (standaloneIncludeRice) {
+                              const riceName = standaloneSelectedRiceIngredient || 'Steamed Rice';
+                              scaledReqs.push({
+                                name: riceName,
+                                amount: Number(standaloneRicePortionGrams) || 150
+                              });
+                            }
+
+                            if (standaloneIncludePackaging && standaloneSelectedPackaging.length > 0) {
+                              standaloneSelectedPackaging
+                                .filter(p => p.selected)
+                                .forEach(p => {
+                                  scaledReqs.push({
+                                    name: p.name,
+                                    amount: Number(p.amount) || 1
+                                  });
+                                });
+                            }
+                            const finalCombinedReqs = deduplicateAndNormalizeRequirements(scaledReqs);
+
+                            // Pre-fill Add/Edit Recipe Form with Costing & Selling Price WITHOUT wiping out existing dish metadata!
+                            if (!editingItem) {
+                              setFormName(standaloneRecipeName);
+                              setFormDescription(`Prepared in bulk ${(batchWeightG / 1000).toFixed(1)}kg viand batch, portioned at ${servingG}g meat${standaloneIncludeRice ? ` with ${standaloneRicePortionGrams}g steamed rice` : ''}. Served fresh with savory traditional accompaniments.`);
+                              if (!formCategory) setFormCategory('silog');
+                              if (!formImage) setFormImage(IMAGE_PRESETS[2].url);
+                              if (!formOriginalImage) setFormOriginalImage(IMAGE_PRESETS[2].url);
+                            } else {
+                              if (standaloneRecipeName && standaloneRecipeName !== 'New Dish Recipe') {
+                                setFormName(standaloneRecipeName);
+                              }
+                            }
                             setFormPrice(recSellingPrice);
-                            setFormCategory('bento');
-                            setFormImage(IMAGE_PRESETS[2].url);
-                            setFormOriginalImage(IMAGE_PRESETS[2].url);
-                            setFormSpicy(false);
-                            setFormPopular(false);
-                            setFormTargetMargin(standaloneTargetMargin);
+                            setFormTargetMargin(Number(standaloneTargetMargin) || 50);
                             setFormBatchYieldGrams(batchWeightG);
                             setFormServingSizeGrams(servingG);
                             setFormBatchTotalCost(batchCost);
-                            setBatchYieldInputMode('ingredients');
-                            setBatchIngredientsList(standaloneIngredients.map(i => ({
-                              name: i.name,
-                              amount: i.batchAmount,
-                              unit: i.unit,
-                              cost: i.cost
-                            })));
-                            setFormRecipeRequirements(scaledReqs);
-                            setFormIngredients(standaloneIngredients.map(i => i.name).join(', '));
+                            setFormIncludeRice(standaloneIncludeRice);
+                            setFormRicePortionGrams(Number(standaloneRicePortionGrams) || 150);
+                            setFormRiceCostPerGram(Number(standaloneRiceCostPerGram) || 0.04);
+                            setFormSelectedRiceIngredient(standaloneSelectedRiceIngredient);
+                            setFormRecipeRequirements(finalCombinedReqs);
+                            const allIngredientNames = Array.from(new Set(finalCombinedReqs.map(p => p.name)));
+                            setFormIngredients(allIngredientNames.join(', '));
                             
                             // Close standalone calc and open Recipe form
                             setIsBatchCalcModalOpen(false);
                             setIsFormOpen(true);
                           }}
-                          className="flex-1 sm:flex-initial px-5 py-2 bg-brand-red hover:bg-brand-red-hover text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg hover:shadow-brand-red/25 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          className="flex-1 sm:flex-initial px-5 py-2.5 bg-brand-gold hover:bg-brand-gold-hover text-black rounded-xl text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                         >
                           <Plus className="w-4 h-4" />
-                          <span>Create Recipe from this Batch →</span>
+                          <span>🍱 Apply Costing to Menu Builder (Set Price ₱{recSellingPrice}) →</span>
                         </button>
                       </div>
                     </div>
@@ -11169,13 +12206,24 @@ ${standaloneIngredients.map((item, idx) => {
                               <span className="text-[9px] bg-[#181818] border border-white/5 text-gray-500 font-bold px-1.5 py-0.5 rounded uppercase">Awaiting verification</span>
                             )}
                           </div>
-                          {item.selectedOptions.length > 0 && (
-                            <p className="text-[10px] text-brand-red font-bold mt-0.5">
-                              Choice: {item.selectedOptions.map(o => o.choice.name).join(', ')}
-                            </p>
+                          {item.selectedOptions && item.selectedOptions.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {item.selectedOptions.map((opt, optIdx) => (
+                                <span
+                                  key={optIdx}
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-bold border leading-none ${
+                                    opt.choice.price > 0
+                                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                                      : 'bg-white/5 border-white/10 text-gray-300'
+                                  }`}
+                                >
+                                  + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
+                                </span>
+                              ))}
+                            </div>
                           )}
                           {item.selectedAddOns && item.selectedAddOns.length > 0 && (
-                            <p className="text-[10px] text-brand-gold font-bold mt-0.5">
+                            <p className="text-[10px] text-brand-gold font-bold mt-1">
                               Add-ons: {item.selectedAddOns.map(ao => `+${ao.name}`).join(', ')}
                             </p>
                           )}

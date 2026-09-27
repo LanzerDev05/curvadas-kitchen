@@ -63,6 +63,7 @@ function OrderTracker({
 
   const handleToggleItemConfirm = (itemId: string) => {
     if (!activeOrder || !onUpdateConfirmedItems) return;
+    if (activeOrder.status !== 'delivered') return;
     const newConfirmed = confirmedItemIds.includes(itemId)
       ? confirmedItemIds.filter((id) => id !== itemId)
       : [...confirmedItemIds, itemId];
@@ -155,26 +156,8 @@ function OrderTracker({
   const estimatedTimeText = (() => {
     if (status === 'delivered') return 'Delivered 🎉';
     if (status === 'cancelled') return 'Cancelled ❌';
-    
-    if (status === 'preparing' && displayOrder?.cookingStartTime && displayOrder?.estimatedPrepTime) {
-      const startMs = new Date(displayOrder.cookingStartTime).getTime();
-      const durationMs = displayOrder.estimatedPrepTime * 60 * 1000;
-      const elapsedMs = Date.now() - startMs;
-      const remainingMs = durationMs - elapsedMs;
-      const isOverdue = remainingMs <= 0;
-
-      const absDiffSec = Math.ceil(Math.abs(remainingMs) / 1000);
-      const mins = Math.floor(absDiffSec / 60);
-      const secs = absDiffSec % 60;
-      const formatted = `${mins}:${secs.toString().padStart(2, '0')}`;
-      
-      return isOverdue ? `${formatted} overdue ⚠️` : `${formatted} remaining ⏳`;
-    }
-
-    if (status === 'dispatched') {
-      return 'Out for Delivery 🏍️';
-    }
-
+    if (status === 'preparing') return 'Cooking 🔥';
+    if (status === 'dispatched') return 'Out for Delivery 🏍️';
     return 'Pending Accept ⏳';
   })();
 
@@ -203,7 +186,9 @@ function OrderTracker({
             </div>
             
             <div className="text-left sm:text-right">
-              <span className="text-gray-500 text-[10px] uppercase tracking-wider block font-bold">Est. Arrival Time</span>
+              <span className="text-gray-500 text-[10px] uppercase tracking-wider block font-bold">
+                {status === 'preparing' ? 'Current Status' : 'Est. Arrival Time'}
+              </span>
               <span className="text-brand-gold font-display font-black text-sm uppercase tracking-tight">
                 {estimatedTimeText}
               </span>
@@ -429,24 +414,30 @@ function OrderTracker({
           <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
             {items.map((item) => {
               const isChecked = confirmedItemIds.includes(item.id);
+              const isDelivered = status === 'delivered';
               return (
                 <div 
                   key={item.id} 
-                  onClick={() => status !== 'cancelled' && handleToggleItemConfirm(item.id)}
-                  className={`flex gap-2.5 items-start p-2.5 rounded-xl border-2 transition-all cursor-pointer select-none ${
-                    isChecked 
-                      ? 'bg-green-500/[0.03] border-green-500/20 hover:border-green-500/30' 
-                      : 'bg-[#0D0D0C] border-white/5 hover:border-white/10'
+                  onClick={() => isDelivered && handleToggleItemConfirm(item.id)}
+                  title={!isDelivered ? "Checklist unlocks once order is delivered" : undefined}
+                  className={`flex gap-2.5 items-start p-2.5 rounded-xl border-2 transition-all select-none ${
+                    !isDelivered
+                      ? 'bg-[#0D0D0C]/60 border-white/[0.03] opacity-60 cursor-not-allowed'
+                      : isChecked 
+                        ? 'bg-green-500/[0.03] border-green-500/20 hover:border-green-500/30 cursor-pointer' 
+                        : 'bg-[#0D0D0C] border-white/5 hover:border-white/10 cursor-pointer'
                   }`}
                 >
-                  <div className="flex items-center pt-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center pt-0.5 flex-shrink-0" onClick={(e) => !isDelivered && e.stopPropagation()}>
                     <input
                       type="checkbox"
                       id={`chk-${item.id}`}
                       checked={isChecked}
-                      disabled={status === 'cancelled'}
-                      onChange={() => handleToggleItemConfirm(item.id)}
-                      className="h-4 w-4 rounded border-white/10 text-brand-red focus:ring-brand-red bg-[#181818] cursor-pointer"
+                      disabled={!isDelivered}
+                      onChange={() => isDelivered && handleToggleItemConfirm(item.id)}
+                      className={`h-4 w-4 rounded border-white/10 text-brand-red focus:ring-brand-red bg-[#181818] ${
+                        !isDelivered ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                      }`}
                     />
                   </div>
                   
@@ -470,7 +461,7 @@ function OrderTracker({
                       <div className="flex flex-wrap gap-x-1.5 mt-0.5">
                         {item.selectedOptions.map((opt) => (
                           <span key={opt.optionTitle} className="text-[9px] text-brand-red font-bold">
-                            {opt.choice.name}
+                            {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
                           </span>
                         ))}
                       </div>
@@ -494,9 +485,21 @@ function OrderTracker({
 
           {/* Interactive receipt confirmation card depending on checked status */}
           {status !== 'delivered' && status !== 'cancelled' ? (
-            <div className="p-3.5 bg-brand-gold/5 border border-brand-gold/10 rounded-2xl space-y-2.5">
+            <div className="p-3.5 bg-white/5 border border-white/5 rounded-2xl flex items-center gap-3">
+              <span className="text-xl">🔒</span>
+              <div className="space-y-0.5">
+                <span className="text-gray-300 font-bold text-xs block">Checklist Unlocks When Delivered</span>
+                <span className="text-[10px] text-gray-500 leading-normal block">
+                  {status === 'dispatched'
+                    ? 'Rider is on the way! You can check off each dish as you unpack upon arrival.'
+                    : 'Food is currently being prepared in the kitchen. Verification checklist unlocks once delivered.'}
+                </span>
+              </div>
+            </div>
+          ) : status === 'delivered' ? (
+            <div className="p-3.5 bg-brand-gold/5 border border-brand-gold/15 rounded-2xl space-y-2.5">
               <div className="flex justify-between items-center text-[11px]">
-                <span className="text-gray-400 font-bold uppercase tracking-wider">Verification Progress:</span>
+                <span className="text-gray-300 font-bold uppercase tracking-wider">Dishes Received:</span>
                 <span className="text-brand-gold font-mono font-bold">
                   {confirmedItemIds.length === items.length ? '100% Complete' : `${confirmedItemIds.length} of ${items.length} verified`}
                 </span>
@@ -510,26 +513,19 @@ function OrderTracker({
               </div>
 
               {confirmedItemIds.length === items.length ? (
-                <button
-                  type="button"
-                  onClick={handleConfirmReceipt}
-                  className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg hover:shadow-green-600/10 flex items-center justify-center gap-2 animate-pulse-slow"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Confirm & Mark Order Completed
-                </button>
+                <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-center space-y-1">
+                  <span className="text-green-400 font-black text-xs uppercase tracking-wide flex items-center justify-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-green-400" /> All Dishes Verified Received
+                  </span>
+                  <p className="text-[10px] text-gray-400 leading-normal">
+                    Thank you! All items confirmed complete with no missing dishes. Enjoy your meal!
+                  </p>
+                </div>
               ) : (
                 <p className="text-[10px] text-gray-400 italic text-center leading-normal">
-                  Check off all {items.length} items to unlock the "Complete Order" confirmation button to notify the kitchen.
+                  Please check off each dish above as you unpack your delivered meal.
                 </p>
               )}
-            </div>
-          ) : status === 'delivered' ? (
-            <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-2xl text-center space-y-1">
-              <span className="text-2xl block">🎉</span>
-              <h5 className="text-green-400 text-xs font-black uppercase tracking-wider">Order Fully Verified</h5>
-              <p className="text-gray-400 text-[10px] leading-relaxed">
-                Thank you! You've successfully confirmed receipt of all items. The kitchen is notified that this order was completed without any missing items.
-              </p>
             </div>
           ) : null}
 

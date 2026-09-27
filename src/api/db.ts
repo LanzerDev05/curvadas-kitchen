@@ -197,10 +197,38 @@ const generateDefaultDB = (): DatabaseSchema => {
 
 export const readDB = async (): Promise<DatabaseSchema> => {
   const defaultDB = generateDefaultDB();
-  const redis = getRedisConfig();
 
+  // Helper to read local file safely
+  const readLocalFile = (): DatabaseSchema => {
+    try {
+      ensureDbDir();
+      if (!fs.existsSync(DB_FILE)) {
+        fs.writeFileSync(DB_FILE, JSON.stringify(defaultDB, null, 2), 'utf-8');
+        localCache = defaultDB;
+        return defaultDB;
+      }
+      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      const parsed = JSON.parse(raw) as DatabaseSchema;
+      if (!parsed.menuItems || parsed.menuItems.length === 0) parsed.menuItems = defaultDB.menuItems;
+      if (!parsed.ingredientsInventory || parsed.ingredientsInventory.length === 0) parsed.ingredientsInventory = defaultDB.ingredientsInventory;
+      if (!parsed.stockLevels || Object.keys(parsed.stockLevels).length === 0) parsed.stockLevels = defaultDB.stockLevels;
+      if (!parsed.users || !Array.isArray(parsed.users)) parsed.users = defaultDB.users;
+      if (!parsed.promoVouchers) parsed.promoVouchers = defaultDB.promoVouchers;
+      if (!parsed.spoilageLogs) parsed.spoilageLogs = [];
+      if (!parsed.staffShifts) parsed.staffShifts = [];
+      if (!parsed.zReadAudits) parsed.zReadAudits = [];
+      localCache = parsed;
+      return parsed;
+    } catch (e) {
+      return localCache || defaultDB;
+    }
+  };
+
+  const redis = getRedisConfig();
   if (redis) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       const res = await fetch(redis.url, {
         method: 'POST',
         headers: {
@@ -208,7 +236,9 @@ export const readDB = async (): Promise<DatabaseSchema> => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(['GET', 'curvada_db']),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const json = (await res.json()) as any;
         if (json && json.result) {
@@ -222,51 +252,43 @@ export const readDB = async (): Promise<DatabaseSchema> => {
           if (!parsed.staffShifts) parsed.staffShifts = [];
           if (!parsed.zReadAudits) parsed.zReadAudits = [];
           localCache = parsed;
+          // Persist latest to local file for fast offline resilience
+          try {
+            ensureDbDir();
+            fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
+          } catch (e) {}
           return parsed;
         }
-        await writeDB(defaultDB);
-        return defaultDB;
       }
-    } catch (err) {
-      console.error('Failed to read database from Upstash Redis, using cache/file.', err);
-      if (localCache) return localCache;
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.warn('Upstash Redis read timed out (>2s), falling back to local database.');
+      } else {
+        console.warn('Upstash Redis read failed, falling back to local database.', err.message);
+      }
     }
   }
 
-  try {
-    ensureDbDir();
-    if (!fs.existsSync(DB_FILE)) {
-      fs.writeFileSync(DB_FILE, JSON.stringify(defaultDB, null, 2), 'utf-8');
-      localCache = defaultDB;
-      return defaultDB;
-    }
-    const raw = fs.readFileSync(DB_FILE, 'utf-8');
-    const parsed = JSON.parse(raw) as DatabaseSchema;
-    if (!parsed.menuItems || parsed.menuItems.length === 0) parsed.menuItems = defaultDB.menuItems;
-    if (!parsed.ingredientsInventory || parsed.ingredientsInventory.length === 0) parsed.ingredientsInventory = defaultDB.ingredientsInventory;
-    if (!parsed.stockLevels || Object.keys(parsed.stockLevels).length === 0) parsed.stockLevels = defaultDB.stockLevels;
-    if (!parsed.users || !Array.isArray(parsed.users)) parsed.users = defaultDB.users;
-    if (!parsed.promoVouchers) parsed.promoVouchers = defaultDB.promoVouchers;
-    if (!parsed.spoilageLogs) parsed.spoilageLogs = [];
-    if (!parsed.staffShifts) parsed.staffShifts = [];
-    if (!parsed.zReadAudits) parsed.zReadAudits = [];
-    localCache = parsed;
-    return parsed;
-
-  } catch (err) {
-    console.error('Failed to read database file, generating default.', err);
-    const defaultData = generateDefaultDB();
-    localCache = defaultData;
-    return defaultData;
-  }
+  return readLocalFile();
 };
 
 export const writeDB = async (data: DatabaseSchema): Promise<void> => {
   localCache = data;
-  const redis = getRedisConfig();
 
+  // 1. ALWAYS write locally first! Ensures zero data loss and instant responses
+  try {
+    ensureDbDir();
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to write local database file.', err);
+  }
+
+  // 2. Sync to Upstash Redis with a fast timeout (2000ms max) so it NEVER freezes Vite/Node
+  const redis = getRedisConfig();
   if (redis) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       const res = await fetch(redis.url, {
         method: 'POST',
         headers: {
@@ -274,19 +296,18 @@ export const writeDB = async (data: DatabaseSchema): Promise<void> => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(['SET', 'curvada_db', JSON.stringify(data)]),
+        signal: controller.signal,
       });
-      if (res.ok) {
-        return;
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        console.warn('Upstash Redis sync returned non-OK status:', res.status);
       }
-    } catch (err) {
-      console.error('Failed to write database to Upstash Redis.', err);
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.warn('Upstash Redis write timed out (>2s). Local database safely preserved.');
+      } else {
+        console.warn('Failed to sync to Upstash Redis (offline/network issue). Local database safely preserved.', err.message);
+      }
     }
-  }
-
-  try {
-    ensureDbDir();
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Failed to write database file.', err);
   }
 };

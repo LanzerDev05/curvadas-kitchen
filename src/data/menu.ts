@@ -20,11 +20,12 @@ export const MENU_ITEMS: MenuItem[] = [
     ],
     customizableOptions: [
       {
-        title: 'Rice Upgrade',
+        title: 'Rice',
         choices: [
-          { id: 'rice-garlic', name: 'Garlic Fried Rice', price: 0 },
-          { id: 'rice-double-garlic', name: 'Double Garlic Rice', price: 20 },
-          { id: 'rice-plain', name: 'Plain Steamed Rice', price: -5 }
+          { id: 'rice-plain', name: 'Plain Rice', price: 0 },
+          { id: 'rice-garlic', name: 'Garlic Rice', price: 0 },
+          { id: 'rice-java', name: 'Java Rice', price: 20 },
+          { id: 'rice-extra', name: 'Extra Rice', price: 15 }
         ]
       },
       {

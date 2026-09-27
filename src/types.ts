@@ -47,6 +47,9 @@ export interface MenuItem {
   batchYieldGrams?: number;   // Total batch yield weight in grams (e.g. 1000g for 1kg, 2000g for 2kg)
   servingSizeGrams?: number;  // Portion/serving weight in grams (e.g. 80g or 90g)
   totalBatchCost?: number;    // Overall raw materials batch cost (e.g. ₱3,000)
+  includeRice?: boolean;      // Whether this plate/dish includes steamed rice
+  ricePortionGrams?: number;  // Steamed rice portion weight in grams per serving (e.g. 150g, 180g, 200g)
+  riceCostPerGram?: number;   // Cost per cooked steamed rice gram (e.g. ₱0.04/g)
 }
 
 export interface SelectedOption {
