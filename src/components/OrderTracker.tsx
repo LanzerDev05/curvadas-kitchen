@@ -6,6 +6,8 @@ import { realtimeOrderService } from '../api/websocket';
 
 interface OrderTrackerProps {
   activeOrder: Order | null;
+  customerOrders?: Order[];
+  onSelectOrder?: (orderId: string) => void;
   onCancelOrder: (orderId: string) => void;
   onNewOrderClick: () => void;
   onUpdateConfirmedItems?: (orderId: string, confirmedItemIds: string[]) => void;
@@ -14,6 +16,8 @@ interface OrderTrackerProps {
 
 function OrderTracker({
   activeOrder,
+  customerOrders = [],
+  onSelectOrder,
   onCancelOrder,
   onNewOrderClick,
   onUpdateConfirmedItems,
@@ -22,6 +26,7 @@ function OrderTracker({
   const [riderProgress, setRiderProgress] = useState(0); // 0 to 100% on the map
   const [timeTick, setTimeTick] = useState(0);
   const [currentOrder, setCurrentOrder] = useState<Order | null>(activeOrder);
+
 
   useEffect(() => {
     setCurrentOrder(activeOrder);
@@ -169,6 +174,47 @@ function OrderTracker({
         
         {/* Status Tracker card */}
         <div className="bg-[#181818] border-2 border-white/5 rounded-[2rem] p-6 shadow-2xl space-y-6">
+          {/* Multiple Orders Switcher Bar */}
+          {customerOrders.length > 1 && (
+            <div className="bg-[#101010] p-2 rounded-2xl border border-white/5 space-y-1.5">
+              <div className="flex items-center justify-between px-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                <span>Your Active Orders ({customerOrders.length})</span>
+                <span className="text-brand-gold text-[9px]">Select to Track</span>
+              </div>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                {customerOrders.map((ord) => {
+                  const isSelected = ord.id === displayOrder.id;
+                  const ordStatusColor = 
+                    ord.status === 'delivered' ? 'text-green-400 bg-green-500/10 border-green-500/20' :
+                    ord.status === 'dispatched' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
+                    ord.status === 'preparing' ? 'text-brand-gold bg-brand-gold/10 border-brand-gold/20' :
+                    ord.status === 'cancelled' ? 'text-red-400 bg-red-500/10 border-red-500/20' :
+                    'text-blue-400 bg-blue-500/10 border-blue-500/20';
+
+                  return (
+                    <button
+                      key={ord.id}
+                      type="button"
+                      onClick={() => onSelectOrder?.(ord.id)}
+                      className={`flex-shrink-0 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                        isSelected
+                          ? 'bg-brand-red text-white border-brand-red shadow-md'
+                          : 'bg-[#181818] text-gray-300 border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      <span className="font-mono">#{ord.id.slice(0, 8).toUpperCase()}</span>
+                      <span className={`text-[9px] uppercase font-mono px-1.5 py-0.5 rounded-md border ${
+                        isSelected ? 'bg-black/30 border-white/20 text-white' : ordStatusColor
+                      }`}>
+                        {ord.status}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-white/5">
             <div>
               <div className="flex items-center gap-2">
@@ -459,11 +505,21 @@ function OrderTracker({
                     </div>
                     {item.selectedOptions.length > 0 && (
                       <div className="flex flex-wrap gap-x-1.5 mt-0.5">
-                        {item.selectedOptions.map((opt) => (
-                          <span key={opt.optionTitle} className="text-[9px] text-brand-red font-bold">
-                            {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
-                          </span>
-                        ))}
+                        {item.selectedOptions.map((opt) => {
+                          const rawChoiceName = opt.choice?.name || '';
+                          const choicePrice = opt.choice?.price || 0;
+                          if (choicePrice === 0 && (rawChoiceName.toLowerCase().startsWith('no ') || rawChoiceName.toLowerCase() === 'none')) {
+                            return null;
+                          }
+                          const choiceName = rawChoiceName.replace(/\s*\(Upgrade\)/gi, '').trim();
+                          const isDrink = (opt.optionTitle || '').toLowerCase().includes('drink');
+                          const displayName = isDrink ? `Drink: ${choiceName}` : choiceName;
+                          return (
+                            <span key={opt.optionTitle} className="text-[9px] text-brand-red font-bold">
+                              {displayName} {choicePrice > 0 ? `(+₱${choicePrice.toFixed(2)})` : ''}
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
                     {item.specialInstructions && (
@@ -538,7 +594,7 @@ function OrderTracker({
         </div>
 
         {/* Security badge and helpful triggers */}
-        <div className="pt-4 border-t-2 border-white/5 flex items-center gap-2 text-[10px] text-gray-400 leading-normal bg-[#141414] p-3.5 rounded-2xl">
+        <div className="flex items-center gap-2 text-[10px] text-gray-400 leading-normal bg-[#141414] p-3.5 rounded-2xl border border-white/5">
           <ShieldCheck className="w-5 h-5 text-brand-red flex-shrink-0" />
           <span>
             We value your order experience. If you need any immediate assistance, feel free to contact Curvada's kitchen support directly at <strong>0922-383-7377</strong>.
@@ -552,3 +608,4 @@ function OrderTracker({
 }
 
 export default React.memo(OrderTracker);
+

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Order, CartItem } from '../types';
 import { History, ShoppingBag, Eye, Calendar, ArrowRight, RotateCw, FileText } from 'lucide-react';
+import ReceiptModal from './ReceiptModal';
 
 interface OrderHistoryProps {
   orders: Order[];
@@ -15,6 +16,7 @@ export default function OrderHistory({
   onTrackOrder,
   onBrowseMenu,
 }: OrderHistoryProps) {
+  const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
   
   // Format Date beautifully
   const formatDate = (isoString: string) => {
@@ -122,9 +124,58 @@ export default function OrderHistory({
                   <div className="space-y-1.5 flex-1">
                     <div className="text-xs text-white font-bold flex flex-wrap gap-2">
                       {order.items.map((item) => (
-                        <span key={item.id} className="bg-[#0D0D0C] border-2 border-white/5 px-2.5 py-1 rounded-lg flex items-center gap-1.5 text-white">
-                          <strong className="text-brand-red">{item.quantity}x</strong> {item.menuItem.name}
-                        </span>
+                        <div key={item.id} className="bg-[#0D0D0C] border-2 border-white/5 px-2.5 py-1.5 rounded-lg flex flex-col gap-0.5 text-white">
+                          <div className="flex items-center gap-2">
+                            <strong className="text-brand-red">{item.quantity}x</strong> {item.menuItem.name}
+                            <span className="text-brand-gold text-[10px] font-mono ml-auto font-bold">
+                              ₱{(item.totalUnitPrice * item.quantity).toFixed(2)}
+                            </span>
+                          </div>
+                          {item.selectedOptions && item.selectedOptions.length > 0 && (
+                            <div className="text-[10px] text-gray-400 font-normal pl-2 border-l border-white/10 space-y-0.5 mt-0.5">
+                              {item.selectedOptions.map((opt: any, optIdx: number) => {
+                                const optTitle = opt.optionTitle || '';
+                                const choiceName = typeof opt.choice === 'string' ? opt.choice : (opt.choice?.name || 'Option');
+                                const choicePrice = opt.choice && typeof opt.choice.price === 'number' ? opt.choice.price : 0;
+
+                                if (choicePrice === 0 && (choiceName.toLowerCase().startsWith('no ') || choiceName.toLowerCase() === 'none')) {
+                                  return null;
+                                }
+
+                                const isExtra = optTitle.toLowerCase().includes('extra') || choiceName.toLowerCase().includes('extra');
+                                const isRice = optTitle.toLowerCase().includes('rice');
+                                const isRiceUpgrade = isRice && !isExtra && choicePrice > 0;
+
+                                const isDrink = optTitle.toLowerCase().includes('drink');
+
+                                let label = choiceName;
+                                if (isRiceUpgrade) {
+                                  label = `Rice Upgrade: ${choiceName}`;
+                                } else if (isExtra) {
+                                  label = `Extra: ${choiceName}`;
+                                } else if (isDrink) {
+                                  label = `Drink: ${choiceName}`;
+                                }
+
+                                return (
+                                  <div key={optIdx} className="flex items-center justify-between gap-2">
+                                    <span>+ {label}</span>
+                                    {choicePrice > 0 && (
+                                      <span className="text-brand-gold font-mono text-[9px] font-semibold">
+                                        +₱{(choicePrice * item.quantity).toFixed(2)}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {item.specialInstructions && (
+                            <span className="text-gray-500 text-[9px] italic pl-2">
+                              * "{item.specialInstructions}"
+                            </span>
+                          )}
+                        </div>
                       ))}
                     </div>
                     
@@ -142,13 +193,24 @@ export default function OrderHistory({
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => onOrderAgain(order.items)}
-                      className="px-3.5 py-2 rounded-xl bg-[#0D0D0C] hover:bg-[#222222] border-2 border-white/5 text-white hover:text-brand-gold text-xs font-bold transition-all flex items-center gap-1.5 focus:outline-none uppercase tracking-wider shadow-sm"
-                    >
-                      <RotateCw className="w-3.5 h-3.5" />
-                      Reorder
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setPrintingOrder(order)}
+                        className="px-3 py-2 rounded-xl bg-[#0D0D0C] hover:bg-[#222222] border-2 border-white/5 text-gray-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 focus:outline-none uppercase tracking-wider shadow-sm cursor-pointer"
+                        title="Print / View Customer Receipt"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-brand-gold" />
+                        Receipt
+                      </button>
+
+                      <button
+                        onClick={() => onOrderAgain(order.items)}
+                        className="px-3.5 py-2 rounded-xl bg-[#0D0D0C] hover:bg-[#222222] border-2 border-white/5 text-white hover:text-brand-gold text-xs font-bold transition-all flex items-center gap-1.5 focus:outline-none uppercase tracking-wider shadow-sm cursor-pointer"
+                      >
+                        <RotateCw className="w-3.5 h-3.5" />
+                        Reorder
+                      </button>
+                    </div>
                   </div>
 
                 </div>
@@ -159,6 +221,16 @@ export default function OrderHistory({
         </div>
       )}
 
+      {/* Printable Receipt Modal */}
+      {printingOrder && (
+        <ReceiptModal
+          order={printingOrder}
+          initialType="customer"
+          onClose={() => setPrintingOrder(null)}
+        />
+      )}
+
     </section>
   );
 }
+

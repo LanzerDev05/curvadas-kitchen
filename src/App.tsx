@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { MenuItem, MenuOption, CartItem, Order, CustomerInfo, OrderStatus, OrderLog, GroupMember, GroupCartItem, GroupOrderSession, IngredientStock } from './types';
+import { MenuItem, MenuOption, SelectedOption, CartItem, Order, CustomerInfo, OrderStatus, OrderLog, GroupMember, GroupCartItem, GroupOrderSession, IngredientStock } from './types';
 import { MENU_ITEMS } from './data/menu';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
@@ -15,6 +15,8 @@ import GroupOrderPanel from './components/GroupOrderPanel';
 import CustomerAuthModal from './components/CustomerAuthModal';
 import { ShoppingBag, ArrowRight, Utensils, ChefHat, Heart, Users } from 'lucide-react';
 import { realtimeOrderService } from './api/websocket';
+import { bluetoothPrinter } from './services/bluetoothPrinter';
+
 
 // --- MOCK SEED DATA FOR KITCHEN ENGAGEMENT ---
 const SEED_ORDERS: Order[] = [
@@ -26,8 +28,8 @@ const SEED_ORDERS: Order[] = [
         id: 'silog-tapsilog-default',
         menuItem: MENU_ITEMS[0], // Tapsilog
         selectedOptions: [
-          { optionTitle: 'Rice Upgrade', choice: { id: 'rice-garlic', name: 'Garlic Fried Rice', price: 0 } },
-          { optionTitle: 'Egg Style', choice: { id: 'egg-sunny', name: 'Sunny-side-up', price: 0 } }
+          { optionTitle: 'Rice (Included with Meal)', choice: { id: 'rice-garlic', name: 'Garlic Fried Rice', price: 0 } },
+          { optionTitle: 'Egg Style (Included)', choice: { id: 'egg-sunny', name: 'Sunny-side-up', price: 0 } }
         ],
         quantity: 2,
         totalUnitPrice: 149,
@@ -47,7 +49,7 @@ const SEED_ORDERS: Order[] = [
       name: 'Lanzer Villarlibo',
       phone: '0917-882-9382',
       email: 'lanzer@gmail.com',
-      address: 'Block 3 Lot 15, Springville Homes, Bacoor, Cavite',
+      address: 'Colo, Dinalupihan, Bataan',
       orderType: 'delivery',
     },
     paymentMethod: 'ewallet',
@@ -328,6 +330,13 @@ function AppContent() {
       setGroupSession(null);
     }
   };
+
+  // Auto-reconnect saved Bluetooth receipt printer on page load / browser refresh
+  useEffect(() => {
+    bluetoothPrinter.autoReconnect().catch((err) => {
+      console.debug('Bluetooth printer auto-reconnect on mount:', err);
+    });
+  }, []);
 
   // Run initial hydration and listen for storage updates (cross-tab real-time sync)
   useEffect(() => {
@@ -958,6 +967,22 @@ function AppContent() {
     }
   };
 
+  // Helper to generate a unique cart item ID taking into account menuItem id, all selected options/add-ons and prices, and instructions
+  const getCartItemId = (
+    menuItemId: string,
+    selectedOptions?: { optionTitle: string; choice: any }[],
+    specialInstructions?: string
+  ): string => {
+    const sortedOpts = (selectedOptions || [])
+      .slice()
+      .sort((a, b) => a.optionTitle.localeCompare(b.optionTitle))
+      .map((opt) => `${opt.optionTitle}:${opt.choice?.id || opt.choice?.name || 'def'}:${opt.choice?.price || 0}`)
+      .join('|');
+    const cleanNotes = (specialInstructions || '').trim().toLowerCase();
+    const safeNotes = encodeURIComponent(cleanNotes).slice(0, 32);
+    return `${menuItemId}-${sortedOpts}-${safeNotes}`;
+  };
+
   // --- ACTIONS ---
 
   // Triggered when clicking "Customize & Add to Cart"
@@ -1018,8 +1043,7 @@ function AppContent() {
       setIsGroupPanelOpen(true);
     } else {
       // Create unique cart ID based on options selected so same items with different configurations reside as individual items
-      const optionHash = selectedOptions.map((opt) => `${opt.optionTitle}-${opt.choice.id}`).join('|');
-      const cartItemId = `${menuItem.id}-${optionHash}-${specialInstructions ? btoa(specialInstructions).slice(0, 8) : ''}`;
+      const cartItemId = getCartItemId(menuItem.id, selectedOptions, specialInstructions);
 
       const existingIndex = cart.findIndex((item) => item.id === cartItemId);
 
@@ -1072,8 +1096,7 @@ function AppContent() {
     const freshCart = [...cart];
     itemsToCopy.forEach((copied) => {
       // create unique option key for fresh addition
-      const optionHash = copied.selectedOptions.map((opt) => `${opt.optionTitle}-${opt.choice.id}`).join('|');
-      const cartItemId = `${copied.menuItem.id}-${optionHash}-${copied.specialInstructions ? btoa(copied.specialInstructions).slice(0, 8) : ''}`;
+      const cartItemId = getCartItemId(copied.menuItem.id, copied.selectedOptions, copied.specialInstructions);
 
       const existingIndex = freshCart.findIndex((item) => item.id === cartItemId);
       if (existingIndex > -1) {
@@ -1708,13 +1731,16 @@ function AppContent() {
 
     for (const menuItem of itemsToPick) {
       const quantity = Math.floor(Math.random() * 3) + 1;
-      const selectedOptions: Record<string, string> = {};
+      const selectedOptions: SelectedOption[] = [];
       let itemPrice = menuItem.price;
 
       if (menuItem.customizableOptions) {
         menuItem.customizableOptions.forEach(opt => {
           const choice = opt.choices[Math.floor(Math.random() * opt.choices.length)];
-          selectedOptions[opt.title] = choice.name;
+          selectedOptions.push({
+            optionTitle: opt.title,
+            choice,
+          });
           itemPrice += choice.price;
         });
       }
@@ -1724,7 +1750,7 @@ function AppContent() {
         menuItem,
         quantity,
         selectedOptions,
-        price: itemPrice
+        totalUnitPrice: itemPrice
       });
 
       totalAmount += itemPrice * quantity;
@@ -1766,6 +1792,82 @@ function AppContent() {
     } catch (e) {
       console.error(e);
       setOrders([newOrder, ...orders]);
+    }
+  };
+
+  // Manual POS Order Placement Handler (Walk-in / Messenger / Phone)
+  const handleManualPlaceOrder = async (order: Order) => {
+    // 1. Broadcast live WebSocket event instantly
+    realtimeOrderService.broadcast({ type: 'NEW_ORDER', order });
+
+    // 2. Deduct item ready stock
+    const updatedStock = { ...stockLevels };
+    order.items.forEach((item) => {
+      const id = item.menuItem.id;
+      if (updatedStock[id] !== undefined) {
+        updatedStock[id] = Math.max(0, updatedStock[id] - item.quantity);
+      }
+    });
+
+    // 3. Deduct ingredient stock levels
+    const updatedIngredients = [...ingredientsInventory];
+    order.items.forEach((item) => {
+      const menuItem = item.menuItem;
+      const orderQty = item.quantity || 1;
+
+      if (menuItem.recipeRequirements && menuItem.recipeRequirements.length > 0) {
+        menuItem.recipeRequirements.forEach((req: any) => {
+          const ing = updatedIngredients.find(
+            (i) => i.name.toLowerCase() === req.name.toLowerCase()
+          );
+          if (ing) {
+            const amountPerServing = ing.unit === 'kg' ? req.amount / 1000 : req.amount;
+            const amountToDeduct = amountPerServing * orderQty;
+            ing.quantity = Math.max(0, Number((ing.quantity - amountToDeduct).toFixed(4)));
+          }
+        });
+      } else if (menuItem.ingredients) {
+        menuItem.ingredients.forEach((ingName: string) => {
+          const ing = updatedIngredients.find(
+            (i) => i.name.toLowerCase() === ingName.toLowerCase()
+          );
+          if (ing) {
+            let amountPerServing = 100;
+            if (ing.unit === 'pcs' || ing.unit === 'cans') {
+              amountPerServing = 1;
+            } else if (ing.unit === 'kg') {
+              amountPerServing = 0.1;
+            }
+            const amountToDeduct = amountPerServing * orderQty;
+            ing.quantity = Math.max(0, Number((ing.quantity - amountToDeduct).toFixed(4)));
+          }
+        });
+      }
+    });
+
+    // Save locally
+    setStockLevels(updatedStock);
+    setIngredientsInventory(updatedIngredients);
+    localStorage.setItem('curvada_stock_levels', JSON.stringify(updatedStock));
+
+    // Submit to server
+    try {
+      const res = await fetch('/api/orders/place', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order,
+          stockLevels: updatedStock,
+          ingredientsInventory: updatedIngredients
+        })
+      });
+      const data = await res.json();
+      if (data?.db?.orders) setOrders(data.db.orders);
+      if (data?.db?.stockLevels) setStockLevels(data.db.stockLevels);
+      if (data?.db?.ingredientsInventory) setIngredientsInventory(data.db.ingredientsInventory);
+    } catch (e) {
+      console.error('Failed to sync manual POS order to server', e);
+      setOrders([order, ...orders]);
     }
   };
 
@@ -1912,11 +2014,30 @@ function AppContent() {
     return cart.reduce((count, item) => count + item.quantity, 0);
   }, [cart]);
 
+  // Get all active/recent orders belonging to this customer or session
+  const userOrders = useMemo(() => {
+    if (loggedInCustomer) {
+      return orders.filter(
+        (o) =>
+          o.customer.email.toLowerCase() === loggedInCustomer.email.toLowerCase() ||
+          o.customer.phone === loggedInCustomer.phone
+      );
+    }
+    // If not logged in, show active order if any
+    return activeOrderId ? orders.filter((o) => o.id === activeOrderId) : [];
+  }, [orders, loggedInCustomer, activeOrderId]);
+
   // Get active order object
   const activeOrder = useMemo(() => {
-    if (!activeOrderId) return null;
-    return orders.find((o) => o.id === activeOrderId) || null;
-  }, [orders, activeOrderId]);
+    if (activeOrderId) {
+      const found = orders.find((o) => o.id === activeOrderId);
+      if (found) return found;
+    }
+    if (userOrders.length > 0) {
+      return userOrders[0];
+    }
+    return null;
+  }, [orders, activeOrderId, userOrders]);
 
   return (
     <div className="bg-[#0D0D0C] min-h-screen text-white font-sans selection:bg-brand-red selection:text-white flex flex-col justify-between">
@@ -2008,6 +2129,11 @@ function AppContent() {
           <div className="animate-fade-in">
             <OrderTracker
               activeOrder={activeOrder}
+              customerOrders={userOrders}
+              onSelectOrder={(ordId) => {
+                setActiveOrderId(ordId);
+                localStorage.setItem('curvada_active_id', ordId);
+              }}
               onCancelOrder={handleCancelOrder}
               onNewOrderClick={() => setActiveTab('menu')}
               onUpdateConfirmedItems={handleUpdateConfirmedItems}
@@ -2019,7 +2145,7 @@ function AppContent() {
         {activeTab === 'history' && (
           <div className="animate-fade-in">
             <OrderHistory
-              orders={orders}
+              orders={loggedInCustomer ? userOrders : orders}
               onOrderAgain={handleOrderAgain}
               onTrackOrder={(order) => {
                 setActiveOrderId(order.id);
@@ -2059,6 +2185,7 @@ function AppContent() {
               onSetCookedBy={handleSetCookedBy}
               onGenerateRandomOrder={handleGenerateRandomOrder}
               onStartItemCooking={handleStartItemCooking}
+              onManualPlaceOrder={handleManualPlaceOrder}
             />
           </div>
         )}
@@ -2072,6 +2199,9 @@ function AppContent() {
         onClose={() => setCustomizingItem(null)}
         onAddToCart={handleAddToCart}
         maxAvailable={customizingItem ? getDishStockCapacity(customizingItem) : 0}
+        availableDrinks={menuItems.filter(
+          (m) => m.category === 'drinks' && m.isAvailable && !unavailableItemIds.includes(m.id) && (getDishStockCapacity(m) > 0 || (stockLevels[m.id] ?? 0) > 0)
+        )}
       />
 
       {/* Sidebar Shopping Bag Cart Drawer */}
@@ -2083,6 +2213,10 @@ function AppContent() {
         onRemoveItem={handleRemoveCartItem}
         onCheckoutClick={() => {
           setIsCartOpen(false);
+          if (!loggedInCustomer) {
+            setIsAuthModalOpen(true);
+            return;
+          }
           setIsCheckoutOpen(true);
         }}
         getDishStockCapacity={getDishStockCapacity}
@@ -2107,6 +2241,10 @@ function AppContent() {
         onLoginSuccess={(customer) => {
           setLoggedInCustomer(customer);
           localStorage.setItem('curvada_logged_customer', JSON.stringify(customer));
+          // If cart has items or group ready, automatically proceed to checkout after successful login
+          if (cart.length > 0 || isCheckoutForGroup) {
+            setIsCheckoutOpen(true);
+          }
         }}
         onStaffPortalClick={() => {
           setIsAuthModalOpen(false);
@@ -2141,6 +2279,10 @@ function AppContent() {
           }
           setIsGroupPanelOpen(false);
           setIsCheckoutForGroup(true);
+          if (!loggedInCustomer) {
+            setIsAuthModalOpen(true);
+            return;
+          }
           setIsCheckoutOpen(true);
         }}
       />
@@ -2155,7 +2297,7 @@ function AppContent() {
               <span className="text-brand-red">MADE WITH FLAVOR, MADE TO GO</span>
             </div>
             <div className="text-gray-500 text-[10px] leading-relaxed max-w-sm sm:text-right font-medium">
-              Enjoy our delicious silog, bento and rich rice bowls cooked with pride. Delivery Hotline: <strong>0922-383-7377</strong>. Cavite HQ.
+              Enjoy our delicious silog, bento and rich rice bowls cooked with pride. Delivery Hotline: <strong>0922-383-7377</strong>. Colo, Dinalupihan, Bataan HQ.
             </div>
           </div>
         </footer>

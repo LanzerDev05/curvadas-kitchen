@@ -106,16 +106,46 @@ export default function CartDrawer({
                     </div>
 
                     {/* Options list */}
-                    {item.selectedOptions.length > 0 && (
+                    {item.selectedOptions && item.selectedOptions.length > 0 && (
                       <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
-                        {item.selectedOptions.map((opt) => (
-                          <span
-                            key={opt.optionTitle}
-                            className="text-[10px] text-brand-red font-bold"
-                          >
-                            • {opt.choice.name}
-                          </span>
-                        ))}
+                        {item.selectedOptions.map((opt, optIdx) => {
+                          const optTitle = opt.optionTitle || '';
+                          const choiceName = typeof opt.choice === 'string' ? opt.choice : (opt.choice?.name || '');
+                          const choicePrice = opt.choice && typeof opt.choice.price === 'number' ? opt.choice.price : 0;
+
+                          if (choicePrice === 0 && (choiceName.toLowerCase().startsWith('no ') || choiceName.toLowerCase() === 'none')) {
+                            return null;
+                          }
+
+                          const isExtra = optTitle.toLowerCase().includes('extra') || choiceName.toLowerCase().includes('extra');
+                          const isRice = optTitle.toLowerCase().includes('rice');
+                          const isRiceUpgrade = isRice && !isExtra && choicePrice > 0;
+
+                          const isDrink = optTitle.toLowerCase().includes('drink');
+
+                          let label = choiceName;
+                          if (isRiceUpgrade) {
+                            label = `Rice: ${choiceName}`;
+                          } else if (isExtra) {
+                            label = `Extra: ${choiceName}`;
+                          } else if (isDrink) {
+                            label = `Drink: ${choiceName}`;
+                          }
+
+                          return (
+                            <span
+                              key={`${opt.optionTitle}-${optIdx}`}
+                              className="text-[10px] text-brand-red font-bold inline-flex items-center gap-1"
+                            >
+                              • {label}
+                              {choicePrice > 0 && (
+                                <span className="text-brand-gold font-mono font-bold text-[9px]">
+                                  (+₱{(choicePrice * item.quantity).toFixed(2)})
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
 

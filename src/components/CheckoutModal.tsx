@@ -209,14 +209,52 @@ export default function CheckoutModal({
             <h4 className="text-gray-500 text-[10px] uppercase tracking-wider font-bold mb-2">Order Summary</h4>
             <div className="space-y-2.5 max-h-32 overflow-y-auto text-xs text-white font-semibold pr-1">
               {cartItems.map((item) => {
-                const optionNames = item.selectedOptions.map(o => o.choice.name).join(', ');
                 return (
-                  <div key={item.id} className="flex justify-between items-start">
+                  <div key={item.id} className="flex justify-between items-start border-b border-white/5 pb-2 last:border-b-0 last:pb-0">
                     <div className="flex flex-col max-w-[70%]">
-                      <span>{item.quantity}x {item.menuItem.name}</span>
-                      {optionNames && (
-                        <span className="text-gray-500 text-[10px] font-normal leading-tight mt-0.5">
-                          {optionNames}
+                      <span className="font-bold">{item.quantity}x {item.menuItem.name}</span>
+                      {item.selectedOptions && item.selectedOptions.length > 0 && (
+                        <div className="text-gray-400 text-[10px] font-normal leading-tight mt-1 space-y-0.5 pl-1.5 border-l-2 border-brand-red/40">
+                          {item.selectedOptions.map((opt, idx) => {
+                            const optTitle = opt.optionTitle || '';
+                            const choiceName = typeof opt.choice === 'string' ? opt.choice : (opt.choice?.name || 'Option');
+                            const choicePrice = opt.choice && typeof opt.choice.price === 'number' ? opt.choice.price : 0;
+
+                            if (choicePrice === 0 && (choiceName.toLowerCase().startsWith('no ') || choiceName.toLowerCase() === 'none')) {
+                              return null;
+                            }
+
+                            const isExtra = optTitle.toLowerCase().includes('extra') || choiceName.toLowerCase().includes('extra');
+                            const isRice = optTitle.toLowerCase().includes('rice');
+                            const isRiceUpgrade = isRice && !isExtra && choicePrice > 0;
+
+                            const isDrink = optTitle.toLowerCase().includes('drink');
+
+                            let label = choiceName;
+                            if (isRiceUpgrade) {
+                              label = `Rice Upgrade: ${choiceName}`;
+                            } else if (isExtra) {
+                              label = `Extra: ${choiceName}`;
+                            } else if (isDrink) {
+                              label = `Drink: ${choiceName}`;
+                            }
+
+                            return (
+                              <div key={idx} className="flex items-center gap-1.5">
+                                <span>+ {label}</span>
+                                {choicePrice > 0 && (
+                                  <span className="text-brand-gold font-mono text-[9px] font-bold">
+                                    (+₱{(choicePrice * item.quantity).toFixed(2)})
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {item.specialInstructions && (
+                        <span className="text-gray-500 text-[9px] italic mt-0.5">
+                          * "{item.specialInstructions}"
                         </span>
                       )}
                     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MenuItem, SelectedOption, MenuOption } from '../types';
 import { X, Plus, Minus, Check, AlertCircle } from 'lucide-react';
 
@@ -12,6 +12,7 @@ interface CustomizeModalProps {
     instructions: string
   ) => void;
   maxAvailable: number;
+  availableDrinks?: MenuItem[];
 }
 
 export default function CustomizeModal({
@@ -19,15 +20,92 @@ export default function CustomizeModal({
   onClose,
   onAddToCart,
   maxAvailable,
+  availableDrinks = [],
 }: CustomizeModalProps) {
   const [selectedOptions, setSelectedOptions] = useState<SelectedOption[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [specialInstructions, setSpecialInstructions] = useState('');
 
+  // Intelligently normalize option groups:
+  // If an option group is named "Rice" and contains both included choices (Plain, Garlic, Java) AND "Extra Rice",
+  // automatically split them so "Rice (Included with Meal)" and "Extra Rice (Add-on)" are distinct!
+  const normalizedOptionGroups = useMemo(() => {
+    if (!item) return [];
+    const groups: { title: string; choices: MenuOption[] }[] = [];
+
+    if (item.customizableOptions) {
+      item.customizableOptions.forEach((optGroup) => {
+        const isRice = optGroup.title.toLowerCase().includes('rice');
+        const hasExtraRice = optGroup.choices.some((c) => c.name.toLowerCase().includes('extra'));
+
+        if (isRice && hasExtraRice && !optGroup.title.toLowerCase().includes('extra')) {
+          // 1. Included rice group
+          const includedChoices = optGroup.choices
+            .filter((c) => !c.name.toLowerCase().includes('extra'))
+            .map((c) => ({
+              ...c,
+              name: c.name.replace(/\s*\(Upgrade\)/gi, '').trim(),
+            }));
+
+          groups.push({
+            title: 'Rice (Included with Meal)',
+            choices:
+              includedChoices.length > 0
+                ? includedChoices
+                : [
+                    { id: 'rice-garlic', name: 'Garlic Fried Rice', price: 0 },
+                    { id: 'rice-plain', name: 'Plain Steamed Rice', price: 0 },
+                    { id: 'rice-java', name: 'Java Rice', price: 20 },
+                  ],
+          });
+
+          // 2. Extra rice group
+          const extraChoices = optGroup.choices.filter((c) => c.name.toLowerCase().includes('extra'));
+          groups.push({
+            title: 'Extra Rice (Add-on)',
+            choices: [
+              { id: 'extra-rice-none', name: 'No Extra Rice', price: 0 },
+              ...(extraChoices.length > 0
+                ? extraChoices.map((c) => ({
+                    ...c,
+                    name: c.name.startsWith('+') ? c.name : `+1 ${c.name}`,
+                  }))
+                : [
+                    { id: 'extra-rice-plain', name: '+1 Extra Plain Rice', price: 15 },
+                    { id: 'extra-rice-garlic', name: '+1 Extra Garlic Rice', price: 20 },
+                    { id: 'extra-rice-java', name: '+1 Extra Java Rice', price: 25 },
+                  ]),
+            ],
+          });
+        } else {
+          groups.push(optGroup);
+        }
+      });
+    }
+
+    // Add optional available drinks if customizing a food item (non-drink)
+    // Placed at the top so it appears right below the food description
+    if (item.category !== 'drinks' && availableDrinks && availableDrinks.length > 0) {
+      groups.unshift({
+        title: 'Add a Drink (Optional)',
+        choices: [
+          { id: 'drink-none', name: 'No Drink', price: 0 },
+          ...availableDrinks.map((d) => ({
+            id: `addon-drink-${d.id}`,
+            name: d.name,
+            price: d.price,
+          })),
+        ],
+      });
+    }
+
+    return groups;
+  }, [item, availableDrinks]);
+
   // Auto-select first choice of each option category on load
   useEffect(() => {
-    if (item && item.customizableOptions) {
-      const defaults: SelectedOption[] = item.customizableOptions.map((opt) => ({
+    if (normalizedOptionGroups.length > 0) {
+      const defaults: SelectedOption[] = normalizedOptionGroups.map((opt) => ({
         optionTitle: opt.title,
         choice: opt.choices[0], // first option is default
       }));
@@ -37,7 +115,7 @@ export default function CustomizeModal({
     }
     setQuantity(1);
     setSpecialInstructions('');
-  }, [item]);
+  }, [normalizedOptionGroups]);
 
   if (!item) return null;
 
@@ -112,64 +190,113 @@ export default function CustomizeModal({
             "{item.description}"
           </p>
 
-          {/* Food Ingredients */}
-          {item.ingredients && item.ingredients.length > 0 && (
-            <div className="p-3.5 bg-[#0D0D0C] border border-white/5 rounded-2xl space-y-1.5">
-              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-extrabold block">Ingredients & Dish Contents:</span>
-              <div className="flex flex-wrap gap-1.5">
-                {item.ingredients.map((ing, i) => (
-                  <span key={i} className="text-[9px] bg-[#181818] border border-white/5 text-gray-300 font-bold px-2 py-1 rounded-lg">
-                    🌱 {ing}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Custom Option Groups */}
-          {item.customizableOptions && item.customizableOptions.map((optGroup) => {
+          {normalizedOptionGroups.map((optGroup) => {
             const activeChoice = selectedOptions.find(
               (opt) => opt.optionTitle === optGroup.title
             )?.choice;
 
+            const isDrinkGroup = optGroup.title.toLowerCase().includes('drink');
+            const isExtra = !isDrinkGroup && (optGroup.title.toLowerCase().includes('extra') || optGroup.title.toLowerCase().includes('add-on') || optGroup.title.toLowerCase().includes('side'));
+            const isRiceIncluded = optGroup.title.toLowerCase().includes('rice') && !isExtra;
+
             return (
               <div key={optGroup.title} className="space-y-2.5">
-                <h4 className="text-white font-display font-black text-sm uppercase tracking-tight flex items-center justify-between">
-                  <span>{optGroup.title}</span>
-                  <span className="text-[10px] bg-brand-red/20 text-brand-red font-bold px-2 py-0.5 rounded lowercase italic">
-                    Required select one
-                  </span>
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-white font-display font-black text-sm uppercase tracking-tight flex items-center gap-2">
+                    <span>{optGroup.title}</span>
+                  </h4>
+                  {isExtra ? (
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+                      Optional Extra
+                    </span>
+                  ) : isDrinkGroup ? (
+                    <span className="text-[10px] bg-sky-500/20 text-sky-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+                      Optional Drink
+                    </span>
+                  ) : isRiceIncluded ? (
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+                      Included with Meal
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-brand-red/20 text-brand-red font-bold px-2 py-0.5 rounded lowercase italic">
+                      Required select one
+                    </span>
+                  )}
+                </div>
                 
                 <div className="grid grid-cols-1 gap-2">
                   {optGroup.choices.map((choice) => {
                     const isSelected = activeChoice?.id === choice.id;
                     const priceDiff = choice.price;
+                    const isUpgrade = isRiceIncluded && priceDiff > 0;
+                    const isNoneChoice = choice.price === 0 && (choice.name.toLowerCase().startsWith('no ') || choice.name.toLowerCase() === 'none');
+                    const drinkObj = isDrinkGroup && choice.id.startsWith('addon-drink-')
+                      ? availableDrinks.find((d) => `addon-drink-${d.id}` === choice.id)
+                      : null;
 
                     return (
                       <button
                         key={choice.id}
+                        type="button"
                         onClick={() => handleOptionSelect(optGroup.title, choice)}
-                        className={`w-full flex items-center justify-between p-3.5 rounded-xl border-2 text-left text-sm transition-all ${
+                        className={`w-full flex items-center justify-between p-3.5 rounded-xl border-2 text-left text-sm transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-[#222222] border-brand-gold text-brand-gold font-black shadow-lg shadow-brand-gold/5'
                             : 'bg-[#0D0D0C] border-white/5 text-gray-400 hover:bg-[#222222] hover:border-white/10 transition-all font-semibold'
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-4 h-4 rounded-full flex items-center justify-center border ${
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center border ${
                             isSelected ? 'border-brand-gold bg-brand-gold' : 'border-white/20'
                           }`}>
                             {isSelected && <Check className="w-2.5 h-2.5 text-[#0d0d0c] stroke-[4]" />}
                           </div>
-                          <span className={isSelected ? 'text-white font-bold' : 'font-bold'}>{choice.name}</span>
+
+                          {drinkObj && drinkObj.image && (
+                            <img
+                              src={drinkObj.image}
+                              alt={drinkObj.name}
+                              className="w-10 h-10 rounded-lg object-cover border border-white/10 flex-shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                          )}
+
+                          <div className="flex flex-col min-w-0">
+                            <span className={`truncate ${isSelected ? 'text-white font-bold' : 'font-bold'}`}>
+                              {choice.name}
+                            </span>
+                            {isUpgrade && (
+                              <span className="text-[9px] text-amber-400/90 font-medium">
+                                Upgrades meal's included rice to {choice.name.replace(/\(Upgrade\)/i, '').trim()}
+                              </span>
+                            )}
+                            {isDrinkGroup && choice.id === 'drink-none' && (
+                              <span className="text-[9px] text-gray-500 font-medium">
+                                Continue meal without a drink
+                              </span>
+                            )}
+                            {drinkObj && drinkObj.description && (
+                              <span className="text-[9px] text-gray-400 font-normal line-clamp-1">
+                                {drinkObj.description}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         
-                        {priceDiff !== 0 && (
-                          <span className={`text-xs font-black font-mono ${isSelected ? 'text-brand-gold' : 'text-gray-500'}`}>
-                            {priceDiff > 0 ? `+₱${priceDiff.toFixed(2)}` : `-₱${Math.abs(priceDiff).toFixed(2)}`}
-                          </span>
-                        )}
+                        <div className="flex-shrink-0 ml-3 text-right">
+                          {priceDiff !== 0 ? (
+                            <span className={`text-xs font-black font-mono ${isSelected ? 'text-brand-gold' : 'text-gray-500'}`}>
+                              {priceDiff > 0 ? `+₱${priceDiff.toFixed(2)}` : `-₱${Math.abs(priceDiff).toFixed(2)}`}
+                            </span>
+                          ) : isNoneChoice ? (
+                            isSelected ? (
+                              <span className="text-[10px] text-gray-500 font-normal">None</span>
+                            ) : null
+                          ) : isRiceIncluded && isSelected ? (
+                            <span className="text-[10px] text-emerald-400 font-bold">Included</span>
+                          ) : null}
+                        </div>
                       </button>
                     );
                   })}

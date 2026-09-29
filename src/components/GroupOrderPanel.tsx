@@ -442,9 +442,9 @@ export default function GroupOrderPanel({
                                       {item.menuItem.name}
                                     </h6>
                                     
-                                    {item.selectedOptions.length > 0 && (
+                                    {item.selectedOptions && item.selectedOptions.length > 0 && (
                                       <p className="text-[9px] text-brand-red font-medium mt-0.5">
-                                        {item.selectedOptions.map(o => o.choice.name).join(', ')}
+                                        {item.selectedOptions.map(o => `${o.choice?.name || o.choice}${o.choice && typeof o.choice.price === 'number' && o.choice.price > 0 ? ` (+₱${(o.choice.price * item.quantity).toFixed(2)})` : ''}`).join(', ')}
                                       </p>
                                     )}
 

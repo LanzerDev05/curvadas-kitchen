@@ -16,7 +16,7 @@ export default function CustomerAuthModal({
   onStaffPortalClick,
 }: CustomerAuthModalProps) {
   const [tab, setTab] = useState<'signin' | 'register'>('signin');
-  
+
   // Fields for Sign In
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
@@ -71,7 +71,7 @@ export default function CustomerAuthModal({
         password: 'password123',
         name: 'Lanzer Villarlibo',
         phone: '0917-882-9382',
-        address: 'Block 3 Lot 15, Springville Homes, Bacoor, Cavite',
+        address: 'Colo, Dinalupihan, Bataan',
       });
     }
 
@@ -163,7 +163,7 @@ export default function CustomerAuthModal({
       address: newUser.address,
       orderType: 'delivery',
     });
-    
+
     onClose();
 
     // Reset inputs
@@ -177,7 +177,7 @@ export default function CustomerAuthModal({
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[99] animate-fade-in">
       <div className="bg-[#121211] border-2 border-white/5 rounded-[2.5rem] p-6 md:p-8 max-w-md w-full shadow-2xl relative space-y-6">
-        
+
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -204,11 +204,10 @@ export default function CustomerAuthModal({
               setTab('signin');
               setError('');
             }}
-            className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-              tab === 'signin'
+            className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${tab === 'signin'
                 ? 'bg-brand-red text-white shadow-md'
                 : 'text-gray-400 hover:text-white'
-            }`}
+              }`}
           >
             Sign In
           </button>
@@ -218,11 +217,10 @@ export default function CustomerAuthModal({
               setTab('register');
               setError('');
             }}
-            className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-              tab === 'register'
+            className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${tab === 'register'
                 ? 'bg-brand-red text-white shadow-md'
                 : 'text-gray-400 hover:text-white'
-            }`}
+              }`}
           >
             Register
           </button>
@@ -348,7 +346,7 @@ export default function CustomerAuthModal({
                 <textarea
                   required
                   rows={2}
-                  placeholder="Block 3 Lot 15, Springville Homes, Bacoor, Cavite"
+                  placeholder="Colo, Dinalupihan, Bataan"
                   value={registerAddress}
                   onChange={(e) => setRegisterAddress(e.target.value)}
                   className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white focus:outline-none focus:border-brand-red font-semibold resize-none"

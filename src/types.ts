@@ -101,6 +101,9 @@ export interface Order {
   cookedItemIds?: string[];
   startedItemIds?: string[];
   cookedBy?: string;
+  orderSource?: 'online' | 'walkin' | 'messenger';
+  amountTendered?: number;
+  changeAmount?: number;
 }
 
 export interface GroupMember {

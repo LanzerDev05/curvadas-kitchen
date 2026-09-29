@@ -20,21 +20,35 @@ export const MENU_ITEMS: MenuItem[] = [
     ],
     customizableOptions: [
       {
-        title: 'Rice',
+        title: 'Rice (Included with Meal)',
         choices: [
-          { id: 'rice-plain', name: 'Plain Rice', price: 0 },
-          { id: 'rice-garlic', name: 'Garlic Rice', price: 0 },
-          { id: 'rice-java', name: 'Java Rice', price: 20 },
-          { id: 'rice-extra', name: 'Extra Rice', price: 15 }
+          { id: 'rice-garlic', name: 'Garlic Fried Rice', price: 0 },
+          { id: 'rice-plain', name: 'Plain Steamed Rice', price: 0 },
+          { id: 'rice-java', name: 'Java Rice', price: 20 }
         ]
       },
       {
-        title: 'Egg Style',
+        title: 'Extra Rice (Add-on)',
+        choices: [
+          { id: 'extra-rice-none', name: 'No Extra Rice', price: 0 },
+          { id: 'extra-rice-plain', name: '+1 Extra Plain Rice', price: 15 },
+          { id: 'extra-rice-garlic', name: '+1 Extra Garlic Rice', price: 20 },
+          { id: 'extra-rice-java', name: '+1 Extra Java Rice', price: 25 }
+        ]
+      },
+      {
+        title: 'Egg Style (Included)',
         choices: [
           { id: 'egg-sunny', name: 'Sunny-side-up', price: 0 },
           { id: 'egg-scrambled', name: 'Scrambled', price: 0 },
-          { id: 'egg-well', name: 'Well Done', price: 0 },
-          { id: 'egg-extra', name: 'Add Extra Egg', price: 15 }
+          { id: 'egg-well', name: 'Well Done', price: 0 }
+        ]
+      },
+      {
+        title: 'Extra Egg (Add-on)',
+        choices: [
+          { id: 'extra-egg-none', name: 'No Extra Egg', price: 0 },
+          { id: 'extra-egg-add', name: '+1 Add Extra Egg', price: 15 }
         ]
       }
     ]
@@ -59,6 +73,23 @@ export const MENU_ITEMS: MenuItem[] = [
       { name: 'Fried Egg', amount: 1 }
     ],
     customizableOptions: [
+      {
+        title: 'Rice (Included with Meal)',
+        choices: [
+          { id: 'bento-rice-plain', name: 'Steamed White Rice', price: 0 },
+          { id: 'bento-rice-garlic', name: 'Garlic Rice', price: 15 },
+          { id: 'bento-rice-java', name: 'Java Rice', price: 20 }
+        ]
+      },
+      {
+        title: 'Extra Rice (Add-on)',
+        choices: [
+          { id: 'bento-extra-rice-none', name: 'No Extra Rice', price: 0 },
+          { id: 'bento-extra-rice-plain', name: '+1 Extra Steamed Rice', price: 15 },
+          { id: 'bento-extra-rice-garlic', name: '+1 Extra Garlic Rice', price: 20 },
+          { id: 'bento-extra-rice-java', name: '+1 Extra Java Rice', price: 25 }
+        ]
+      },
       {
         title: 'Sauce Option',
         choices: [

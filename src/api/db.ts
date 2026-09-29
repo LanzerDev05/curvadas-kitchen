@@ -88,7 +88,7 @@ const generateDefaultDB = (): DatabaseSchema => {
       name: 'Lanzer Villarlibo',
       email: 'lanzer@gmail.com',
       phone: '0917-882-9382',
-      address: 'Block 3 Lot 15, Springville Homes, Bacoor, Cavite',
+      address: 'Colo, Dinalupihan, Bataan',
       password: 'password123',
       role: 'customer',
       createdAt: new Date().toISOString(),
@@ -109,7 +109,7 @@ const generateDefaultDB = (): DatabaseSchema => {
       name: 'Curvada Manager',
       email: 'admin@curvada.com',
       phone: '0922-000-0002',
-      address: 'Curvada HQ Cavite',
+      address: 'Curvada HQ Colo, Dinalupihan, Bataan',
       password: 'admin123',
       role: 'admin',
       createdAt: new Date().toISOString()

@@ -56,8 +56,15 @@ import {
   BookOpen,
   Download,
   Save,
-  Bookmark
+  Bookmark,
+  Printer,
+  Bluetooth
 } from 'lucide-react';
+import ReceiptModal from './ReceiptModal';
+import BluetoothPrinterModal from './BluetoothPrinterModal';
+import CustomizeModal from './CustomizeModal';
+import { bluetoothPrinter, PrinterStatus } from '../services/bluetoothPrinter';
+
 
 interface AdminPanelProps {
   orders: Order[];
@@ -87,6 +94,7 @@ interface AdminPanelProps {
   onSetCookedBy?: (orderId: string, staffName: string) => void;
   onGenerateRandomOrder?: () => void;
   onStartItemCooking?: (orderId: string, itemId: string) => void;
+  onManualPlaceOrder?: (order: Order) => void;
 }
 
 const IMAGE_PRESETS = [
@@ -292,6 +300,7 @@ function AdminPanel({
   onSetCookedBy,
   onGenerateRandomOrder,
   onStartItemCooking,
+  onManualPlaceOrder,
 }: AdminPanelProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -329,6 +338,17 @@ function AdminPanel({
   const [bottleneckThreshold, setBottleneckThreshold] = useState<number>(15);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
+  const [printingOrderType, setPrintingOrderType] = useState<'customer' | 'kot'>('kot');
+  const [isBluetoothModalOpen, setIsBluetoothModalOpen] = useState(false);
+  const [printerStatus, setPrinterStatus] = useState<PrinterStatus>(bluetoothPrinter.getStatus());
+
+  useEffect(() => {
+    const unsub = bluetoothPrinter.subscribe((status) => {
+      setPrinterStatus(status);
+    });
+    return () => unsub();
+  }, []);
+
   const [tableQRModalOpen, setTableQRModalOpen] = useState(false);
   const [selectedQRTable, setSelectedQRTable] = useState(1);
   const [showPOModal, setShowPOModal] = useState(false);
@@ -342,6 +362,25 @@ function AdminPanel({
   const [activeShifts, setActiveShifts] = useState<{ id: string; staffName: string; clockIn: string; hourlyRate: number }[]>([]);
   const [showZReadModal, setShowZReadModal] = useState(false);
   const [zReadCashCount, setZReadCashCount] = useState(0);
+
+  // Manual POS Order (Walk-In / Messenger) State
+  const [showManualOrderModal, setShowManualOrderModal] = useState(false);
+  const [posOrderSource, setPosOrderSource] = useState<'walkin' | 'messenger'>('walkin');
+  const [posOrderType, setPosOrderType] = useState<'pickup' | 'delivery'>('pickup');
+  const [posCustomerName, setPosCustomerName] = useState('');
+  const [posCustomerPhone, setPosCustomerPhone] = useState('');
+  const [posTableNumber, setPosTableNumber] = useState('');
+  const [posDeliveryAddress, setPosDeliveryAddress] = useState('');
+  const [posPaymentMethod, setPosPaymentMethod] = useState<'cod' | 'ewallet' | 'card'>('cod');
+  const [posAmountTendered, setPosAmountTendered] = useState<number | ''>('');
+  const [posSelectedCategory, setPosSelectedCategory] = useState<string>('all');
+  const [posSearchQuery, setPosSearchQuery] = useState('');
+  const [posCart, setPosCart] = useState<any[]>([]);
+  const [posSelectedItem, setPosSelectedItem] = useState<MenuItem | null>(null);
+  const [posItemQuantity, setPosItemQuantity] = useState(1);
+  const [posSelectedOptions, setPosSelectedOptions] = useState<SelectedOption[]>([]);
+  const [posSpecialInstructions, setPosSpecialInstructions] = useState('');
+  const [posMobileTab, setPosMobileTab] = useState<'catalog' | 'ticket'>('catalog');
 
   // Financial Tracker Internal Sub-Tabs & Filter States
   const [financeSubTab, setFinanceSubTab] = useState<'overview' | 'overheads' | 'timeline' | 'daily-ledger'>('overview');
@@ -414,9 +453,17 @@ function AdminPanel({
   useEffect(() => {
     if (orders.length > prevOrdersCount.current) {
       playKitchenChime();
+      const settings = bluetoothPrinter.getSettings();
+      if (settings.autoPrintKOT && bluetoothPrinter.getStatus().isConnected) {
+        const newestOrder = orders[0];
+        if (newestOrder) {
+          bluetoothPrinter.printReceipt(newestOrder, 'kot').catch((e) => console.error('Auto KOT print failed', e));
+        }
+      }
     }
     prevOrdersCount.current = orders.length;
   }, [orders.length]);
+
 
   // Sync chefTab state with URL paths
   useEffect(() => {
@@ -583,14 +630,31 @@ function AdminPanel({
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setPrintingOrder(order)}
-            className="px-2 py-0.5 rounded bg-[#0D0D0C] hover:bg-[#222222] border border-white/10 text-gray-400 hover:text-brand-gold text-[9px] font-bold transition-all cursor-pointer"
-            title="Print Kitchen Ticket"
-          >
-            🖨️ KOT
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setPrintingOrderType('kot');
+                setPrintingOrder(order);
+              }}
+              className="px-2 py-0.5 rounded bg-[#0D0D0C] hover:bg-[#222222] border border-white/10 text-gray-400 hover:text-brand-gold text-[9px] font-bold transition-all cursor-pointer"
+              title="Print Kitchen Ticket (KOT)"
+            >
+              👨‍🍳 KOT
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPrintingOrderType('customer');
+                setPrintingOrder(order);
+              }}
+              className="px-2 py-0.5 rounded bg-[#0D0D0C] hover:bg-[#222222] border border-white/10 text-gray-400 hover:text-brand-gold text-[9px] font-bold transition-all cursor-pointer"
+              title="Print Customer Receipt"
+            >
+              🧾 Slip
+            </button>
+          </div>
+
         </div>
 
         {/* Customer & Fulfillment Info */}
@@ -599,6 +663,15 @@ function AdminPanel({
             <p className="font-bold text-white truncate">{order.customer.name}</p>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
+            {order.orderSource && order.orderSource !== 'online' && (
+              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                order.orderSource === 'walkin'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                  : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+              }`}>
+                {order.orderSource === 'walkin' ? '🚶 Walk-In' : '💬 Messenger'}
+              </span>
+            )}
             <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
               order.customer.orderType === 'delivery' 
                 ? 'bg-[#FF4D4D]/15 text-[#FF4D4D]' 
@@ -609,6 +682,11 @@ function AdminPanel({
             <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-white/5 text-gray-400 uppercase tracking-wider">
               {order.paymentMethod}
             </span>
+            {order.changeAmount !== undefined && order.changeAmount > 0 && (
+              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                Change: ₱{order.changeAmount.toFixed(0)}
+              </span>
+            )}
             {isAllItemsCooked && order.status === 'preparing' && (
               <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 uppercase tracking-wider animate-pulse">
                 🟢 Ready to Pack
@@ -1037,6 +1115,7 @@ function AdminPanel({
 
     const automationTools = [
       { id: 'qr', label: 'Table QR Generator', icon: QrCode },
+      { id: 'printer', label: 'Bluetooth Printer', icon: Printer },
       { id: 'vouchers', label: 'Promo Vouchers', icon: Ticket, adminOnly: true },
       { id: 'po', label: 'Low-Stock Supplier PO', icon: PackageCheck, adminOnly: true },
       { id: 'spoilage', label: 'Log Spoilage / Waste', icon: Trash2 },
@@ -1151,6 +1230,11 @@ function AdminPanel({
                 <button
                   key={tool.id}
                   onClick={() => {
+                    if (tool.id === 'printer') {
+                      setIsBluetoothModalOpen(true);
+                      setIsSidebarOpen(false);
+                      return;
+                    }
                     setChefTab(tool.id as any);
                     if (loginRole === 'admin') {
                       navigate(`/portal/admin/${tool.id}`);
@@ -1255,6 +1339,23 @@ function AdminPanel({
           >
             {soundEnabled ? '🔔 Chime On' : '🔕 Muted'}
           </button>
+
+          {/* Bluetooth Receipt Printer */}
+          <button
+            type="button"
+            onClick={() => setIsBluetoothModalOpen(true)}
+            className={`py-1 px-2.5 rounded-lg font-black uppercase text-[9px] tracking-wider transition-all cursor-pointer border flex items-center gap-1.5 ${
+              printerStatus.isConnected
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : 'bg-white/5 text-gray-400 hover:text-white border-white/10'
+            }`}
+            title="Bluetooth Receipt Printer Settings"
+          >
+            <span className={`w-2 h-2 rounded-full ${printerStatus.isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
+            <Printer className="w-3.5 h-3.5" />
+            <span>{printerStatus.isConnected ? (printerStatus.deviceName || 'Printer Ready') : 'Bluetooth Printer'}</span>
+          </button>
+
 
           {/* Table QR Code Generator */}
           <button
@@ -1661,13 +1762,26 @@ function AdminPanel({
                     <span className="font-mono text-brand-gold font-extrabold text-base lg:text-lg">
                       ₱{order.totalAmount.toFixed(2)}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setViewingOrderDetails(order)}
-                      className="px-4 py-2 rounded-xl bg-[#181818] hover:bg-[#222222] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-brand-gold" /> Inspect Details
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrintingOrderType('customer');
+                          setPrintingOrder(order);
+                        }}
+                        className="px-3 py-2 rounded-xl bg-[#181818] hover:bg-[#222222] border border-white/10 hover:border-brand-gold text-brand-gold text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        title="Print Receipt"
+                      >
+                        🖨️ Receipt
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewingOrderDetails(order)}
+                        className="px-4 py-2 rounded-xl bg-[#181818] hover:bg-[#222222] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-brand-gold" /> Inspect Details
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1708,6 +1822,25 @@ function AdminPanel({
               className="px-3.5 py-1.5 rounded-xl bg-[#181818] border border-white/10 hover:border-brand-gold text-brand-gold hover:text-white text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
             >
               📜 Order History Archive
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPosCart([]);
+                setPosCustomerName('');
+                setPosCustomerPhone('');
+                setPosTableNumber('');
+                setPosDeliveryAddress('');
+                setPosAmountTendered('');
+                setPosPaymentMethod('cod');
+                setPosOrderType('pickup');
+                setPosOrderSource('walkin');
+                setShowManualOrderModal(true);
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-brand-red hover:bg-red-600 text-white text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-brand-red/20"
+            >
+              <Plus className="w-3.5 h-3.5" /> Manual POS Order
             </button>
 
             {onGenerateRandomOrder && (
@@ -2056,7 +2189,14 @@ function AdminPanel({
                               <div className="mt-3 text-xs text-gray-300 leading-relaxed font-normal flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <div>
                                   <strong>Recipient:</strong> {order.customer.name} ({order.customer.phone}) <br />
-                                  <strong>Type:</strong> <span className="capitalize font-bold text-white">{order.customer.orderType}</span> • <strong>Payment:</strong> <span className="uppercase font-bold text-brand-gold">{order.paymentMethod}</span>
+                                  <strong>Type:</strong> <span className="capitalize font-bold text-white">{order.customer.orderType}</span>
+                                  {order.orderSource && order.orderSource !== 'online' && (
+                                    <> • <strong>Channel:</strong> <span className="font-bold text-amber-400 capitalize">{order.orderSource === 'walkin' ? 'Walk-In' : 'Messenger'}</span></>
+                                  )}
+                                  {' '}• <strong>Payment:</strong> <span className="uppercase font-bold text-brand-gold">{order.paymentMethod}</span>
+                                  {order.changeAmount !== undefined && order.changeAmount > 0 && (
+                                    <> • <strong className="text-amber-400">Change:</strong> <span className="font-mono font-bold text-amber-300">₱{order.changeAmount.toFixed(2)}</span> (Paid: ₱{order.amountTendered?.toFixed(2)})</>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1.5 text-[9px]">
                                   <span className="text-gray-500 font-bold uppercase">Chef:</span>
@@ -4003,12 +4143,21 @@ function AdminPanel({
     setFormCustomOptions([
       {
         id: 'opt-' + Math.random().toString(36).substr(2, 4),
-        title: 'Rice',
+        title: 'Rice (Included with Meal)',
         choices: [
-          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
           { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 },
+          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
           { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20 },
-          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Extra Rice', price: 15 }
+        ]
+      },
+      {
+        id: 'opt-' + Math.random().toString(36).substr(2, 4),
+        title: 'Extra Rice (Add-on)',
+        choices: [
+          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'No Extra Rice', price: 0 },
+          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Plain Rice', price: 15 },
+          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Garlic Rice', price: 20 },
+          { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Java Rice', price: 25 },
         ]
       }
     ]);
@@ -4068,12 +4217,21 @@ function AdminPanel({
         ? [
             {
               id: 'opt-' + Math.random().toString(36).substr(2, 4),
-              title: 'Rice',
+              title: 'Rice (Included with Meal)',
               choices: [
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
                 { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
                 { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20 },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Extra Rice', price: 15 }
+              ]
+            },
+            {
+              id: 'opt-' + Math.random().toString(36).substr(2, 4),
+              title: 'Extra Rice (Add-on)',
+              choices: [
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'No Extra Rice', price: 0 },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Plain Rice', price: 15 },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Garlic Rice', price: 20 },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Java Rice', price: 25 },
               ]
             }
           ]
@@ -4159,31 +4317,55 @@ function AdminPanel({
     if (formCategory === 'silog') {
       customizableOptions = [
         {
-          title: 'Rice',
+          title: 'Rice (Included with Meal)',
           choices: [
-            { id: 'rice-plain', name: 'Plain Rice', price: 0 },
             { id: 'rice-garlic', name: 'Garlic Rice', price: 0 },
-            { id: 'rice-java', name: 'Java Rice', price: 20 },
-            { id: 'rice-extra', name: 'Extra Rice', price: 15 }
+            { id: 'rice-plain', name: 'Plain Rice', price: 0 },
+            { id: 'rice-java', name: 'Java Rice', price: 20 }
           ]
         },
         {
-          title: 'Egg Style',
+          title: 'Extra Rice (Add-on)',
+          choices: [
+            { id: 'extra-rice-none', name: 'No Extra Rice', price: 0 },
+            { id: 'extra-rice-plain', name: '+1 Extra Plain Rice', price: 15 },
+            { id: 'extra-rice-garlic', name: '+1 Extra Garlic Rice', price: 20 },
+            { id: 'extra-rice-java', name: '+1 Extra Java Rice', price: 25 }
+          ]
+        },
+        {
+          title: 'Egg Style (Included)',
           choices: [
             { id: 'egg-sunny', name: 'Sunny-side-up', price: 0 },
-            { id: 'egg-scrambled', name: 'Scrambled', price: 0 }
+            { id: 'egg-scrambled', name: 'Scrambled', price: 0 },
+            { id: 'egg-well', name: 'Well Done', price: 0 }
+          ]
+        },
+        {
+          title: 'Extra Egg (Add-on)',
+          choices: [
+            { id: 'extra-egg-none', name: 'No Extra Egg', price: 0 },
+            { id: 'extra-egg-add', name: '+1 Add Extra Egg', price: 15 }
           ]
         }
       ];
     } else if (formCategory === 'bento') {
       customizableOptions = [
         {
-          title: 'Rice',
+          title: 'Rice (Included with Meal)',
           choices: [
-            { id: 'rice-plain', name: 'Plain Rice', price: 0 },
-            { id: 'rice-garlic', name: 'Garlic Rice', price: 0 },
-            { id: 'rice-java', name: 'Java Rice', price: 20 },
-            { id: 'rice-extra', name: 'Extra Rice', price: 15 }
+            { id: 'bento-rice-plain', name: 'Steamed White Rice', price: 0 },
+            { id: 'bento-rice-garlic', name: 'Garlic Rice', price: 15 },
+            { id: 'bento-rice-java', name: 'Java Rice', price: 20 }
+          ]
+        },
+        {
+          title: 'Extra Rice (Add-on)',
+          choices: [
+            { id: 'bento-extra-rice-none', name: 'No Extra Rice', price: 0 },
+            { id: 'bento-extra-rice-plain', name: '+1 Extra Steamed Rice', price: 15 },
+            { id: 'bento-extra-rice-garlic', name: '+1 Extra Garlic Rice', price: 20 },
+            { id: 'bento-extra-rice-java', name: '+1 Extra Java Rice', price: 25 }
           ]
         },
         {
@@ -4196,19 +4378,28 @@ function AdminPanel({
         {
           title: 'Bento Sides Upgrade',
           choices: [
-            { id: 'side-gyoza', name: 'Classic Gyoza (2pcs)', price: 0 }
+            { id: 'side-none', name: 'Standard Sides', price: 0 },
+            { id: 'side-gyoza', name: '+2 Extra Gyoza Dumplings', price: 35 }
           ]
         }
       ];
     } else if (formCategory === 'rice-bowl') {
       customizableOptions = [
         {
-          title: 'Rice',
+          title: 'Rice (Included with Meal)',
           choices: [
-            { id: 'rice-plain', name: 'Plain Rice', price: 0 },
             { id: 'rice-garlic', name: 'Garlic Rice', price: 0 },
-            { id: 'rice-java', name: 'Java Rice', price: 20 },
-            { id: 'rice-extra', name: 'Extra Rice', price: 15 }
+            { id: 'rice-plain', name: 'Plain Rice', price: 0 },
+            { id: 'rice-java', name: 'Java Rice', price: 20 }
+          ]
+        },
+        {
+          title: 'Extra Rice (Add-on)',
+          choices: [
+            { id: 'extra-rice-none', name: 'No Extra Rice', price: 0 },
+            { id: 'extra-rice-plain', name: '+1 Extra Plain Rice', price: 15 },
+            { id: 'extra-rice-garlic', name: '+1 Extra Garlic Rice', price: 20 },
+            { id: 'extra-rice-java', name: '+1 Extra Java Rice', price: 25 }
           ]
         },
         {
@@ -9301,50 +9492,35 @@ function AdminPanel({
                     <button
                       type="button"
                       onClick={() => {
-                        const existingRiceIdx = formCustomOptions.findIndex(
-                          opt => opt.title.toLowerCase().includes('rice')
-                        );
-                        if (existingRiceIdx >= 0) {
-                          const newOpts = [...formCustomOptions];
-                          const group = newOpts[existingRiceIdx];
-                          group.title = 'Rice';
-                          
-                          // Ensure Plain Rice (₱0) and Garlic Rice (₱0)
-                          const updatedChoices = group.choices.map(c => {
-                            if (c.name.toLowerCase().includes('plain')) return { ...c, name: 'Plain Rice', price: 0 };
-                            if (c.name.toLowerCase().includes('garlic') && !c.name.toLowerCase().includes('double')) return { ...c, name: 'Garlic Rice', price: 0 };
-                            return c;
-                          });
-
-                          if (!updatedChoices.some(c => c.name.toLowerCase().includes('plain'))) {
-                            updatedChoices.unshift({ id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 });
+                        // Filter out any previous rice groups and add separate Included Rice and Extra Rice groups
+                        const nonRice = formCustomOptions.filter(opt => !opt.title.toLowerCase().includes('rice'));
+                        setFormCustomOptions([
+                          ...nonRice,
+                          {
+                            id: 'opt-' + Math.random().toString(36).substr(2, 4),
+                            title: 'Rice (Included with Meal)',
+                            choices: [
+                              { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 },
+                              { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
+                              { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20 },
+                            ]
+                          },
+                          {
+                            id: 'opt-' + Math.random().toString(36).substr(2, 4),
+                            title: 'Extra Rice (Add-on)',
+                            choices: [
+                              { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'No Extra Rice', price: 0 },
+                              { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Plain Rice', price: 15 },
+                              { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Garlic Rice', price: 20 },
+                              { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Java Rice', price: 25 },
+                            ]
                           }
-                          if (!updatedChoices.some(c => c.name.toLowerCase().includes('garlic') && !c.name.toLowerCase().includes('double'))) {
-                            const plainPos = updatedChoices.findIndex(c => c.name === 'Plain Rice');
-                            updatedChoices.splice(plainPos + 1, 0, { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 });
-                          }
-                          group.choices = updatedChoices;
-                          setFormCustomOptions(newOpts);
-                        } else {
-                          setFormCustomOptions([
-                            ...formCustomOptions,
-                            {
-                              id: 'opt-' + Math.random().toString(36).substr(2, 4),
-                              title: 'Rice',
-                              choices: [
-                                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
-                                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 },
-                                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20 },
-                                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Extra Rice', price: 15 }
-                              ]
-                            }
-                          ]);
-                        }
+                        ]);
                       }}
                       className="px-2.5 py-1 bg-brand-gold/10 hover:bg-brand-gold hover:text-black border border-brand-gold/40 text-brand-gold text-[10px] font-black uppercase tracking-wider rounded-lg flex items-center gap-1.5 transition-all focus:outline-none shadow-sm cursor-pointer"
-                      title="Set standard Rice options: Plain Rice (₱0), Garlic Rice (₱0) + Optional Java/Extra Rice"
+                      title="Set standard Rice options: Included Rice (Plain, Garlic, Java Upgrade) and Extra Rice Add-ons"
                     >
-                      <span>🍚</span> Default Rice (Plain & Garlic ₱0)
+                      <span>🍚</span> Default Rice (Included & Extra Add-on)
                     </button>
 
                     <button
@@ -12326,73 +12502,1087 @@ ${standaloneIngredients.map((item, idx) => {
         </div>
       )}
 
-      {/* THERMAL KITCHEN TICKET (KOT) PRINT OVERLAY */}
-      {printingOrder && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
-          <div className="bg-white text-black font-mono w-full max-w-xs p-6 rounded-2xl shadow-2xl space-y-4 text-xs border border-gray-300">
-            <div className="text-center border-b border-black pb-3 space-y-1">
-              <h2 className="text-base font-black uppercase tracking-tighter">CURVADA'S KITCHEN</h2>
-              <p className="text-[10px]">KITCHEN ORDER TICKET (KOT)</p>
-              <p className="text-[10px] font-bold">Ticket #{printingOrder.id.slice(0, 8)}</p>
-              <p className="text-[9px]">{new Date(printingOrder.timestamp).toLocaleString()}</p>
-            </div>
+      {/* ========================================================
+          MANUAL POS ORDER TERMINAL (Walk-In / Messenger Order)
+          ======================================================== */}
+      {showManualOrderModal && (() => {
+        const categories: { id: string; label: string }[] = [
+          { id: 'all', label: 'All Dishes' },
+          { id: 'bento', label: 'Bento' },
+          { id: 'silog', label: 'Silog' },
+          { id: 'rice-bowl', label: 'Rice Bowls' },
+          { id: 'drinks', label: 'Drinks' },
+        ];
 
-            <div className="border-b border-black pb-2 space-y-0.5 text-[11px]">
-              <p><strong>TYPE:</strong> {printingOrder.customer.orderType.toUpperCase()}</p>
-              {printingOrder.customer.tableNumber && (
-                <p className="text-sm font-black bg-black text-white px-1 rounded inline-block mt-0.5">TABLE #{printingOrder.customer.tableNumber}</p>
-              )}
-              <p><strong>NAME:</strong> {printingOrder.customer.name}</p>
-              <p><strong>PHONE:</strong> {printingOrder.customer.phone}</p>
-              <p><strong>PAYMENT:</strong> {printingOrder.paymentMethod.toUpperCase()}</p>
-            </div>
+        const filteredMenuItems = menuItems.filter((item) => {
+          if (!item.isAvailable) return false;
+          if (unavailableItemIds.includes(item.id)) return false;
+          if (posSelectedCategory !== 'all' && item.category !== posSelectedCategory) return false;
+          if (posSearchQuery.trim()) {
+            const q = posSearchQuery.toLowerCase();
+            return item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q);
+          }
+          return true;
+        });
 
-            <div className="border-b border-black pb-3 space-y-2">
-              <p className="font-black text-[10px] uppercase">ORDER ITEMS:</p>
-              {printingOrder.items.map((item, idx) => (
-                <div key={idx} className="space-y-0.5">
-                  <div className="flex justify-between font-bold text-xs">
-                    <span>{item.quantity}x {item.menuItem.name}</span>
-                    <span>₱{(item.totalUnitPrice * item.quantity).toFixed(2)}</span>
+        const posCartTotal = posCart.reduce((sum, item) => sum + item.totalUnitPrice * item.quantity, 0);
+        const cashGiven = typeof posAmountTendered === 'number' ? posAmountTendered : 0;
+        const changeDue = Math.max(0, cashGiven - posCartTotal);
+
+        const availableDrinksList = menuItems.filter(
+          (m) => m.category === 'drinks' && m.isAvailable && !unavailableItemIds.includes(m.id)
+        );
+
+        // Normalize options for selected item (split rice / extra rice / add drinks)
+        const activeNormalizedOptionGroups = (() => {
+          if (!posSelectedItem) return [];
+          const groups: { title: string; choices: MenuOption[] }[] = [];
+
+          if (posSelectedItem.customizableOptions) {
+            posSelectedItem.customizableOptions.forEach((optGroup) => {
+              const isRice = optGroup.title.toLowerCase().includes('rice');
+              const hasExtraRice = optGroup.choices.some((c) => c.name.toLowerCase().includes('extra'));
+
+              if (isRice && hasExtraRice && !optGroup.title.toLowerCase().includes('extra')) {
+                // Included rice group
+                const includedChoices = optGroup.choices
+                  .filter((c) => !c.name.toLowerCase().includes('extra'))
+                  .map((c) => ({
+                    ...c,
+                    name: c.name.replace(/\s*\(Upgrade\)/gi, '').trim(),
+                  }));
+
+                groups.push({
+                  title: 'Rice (Included)',
+                  choices:
+                    includedChoices.length > 0
+                      ? includedChoices
+                      : [
+                          { id: 'rice-garlic', name: 'Garlic Fried Rice', price: 0 },
+                          { id: 'rice-plain', name: 'Plain Steamed Rice', price: 0 },
+                          { id: 'rice-java', name: 'Java Rice', price: 20 },
+                        ],
+                });
+
+                // Extra rice group
+                const extraChoices = optGroup.choices.filter((c) => c.name.toLowerCase().includes('extra'));
+                groups.push({
+                  title: 'Extra Rice (Add-on)',
+                  choices: [
+                    { id: 'extra-rice-none', name: 'No Extra Rice', price: 0 },
+                    ...(extraChoices.length > 0
+                      ? extraChoices.map((c) => ({
+                          ...c,
+                          name: c.name.startsWith('+') ? c.name : `+1 ${c.name}`,
+                        }))
+                      : [
+                          { id: 'extra-rice-plain', name: '+1 Extra Plain Rice', price: 15 },
+                          { id: 'extra-rice-garlic', name: '+1 Extra Garlic Rice', price: 20 },
+                          { id: 'extra-rice-java', name: '+1 Extra Java Rice', price: 25 },
+                        ]),
+                  ],
+                });
+              } else {
+                groups.push(optGroup);
+              }
+            });
+          }
+
+          // Optional Drink add-on
+          if (posSelectedItem.category !== 'drinks' && availableDrinksList.length > 0) {
+            groups.unshift({
+              title: 'Add a Drink (Optional)',
+              choices: [
+                { id: 'drink-none', name: 'No Drink', price: 0 },
+                ...availableDrinksList.map((d) => ({
+                  id: `addon-drink-${d.id}`,
+                  name: d.name,
+                  price: d.price,
+                })),
+              ],
+            });
+          }
+
+          return groups;
+        })();
+
+        // Click a dish in the catalog
+        const handleSelectDish = (item: MenuItem) => {
+          setPosSelectedItem(item);
+          setPosItemQuantity(1);
+          setPosSpecialInstructions('');
+
+          // Auto-select defaults
+          const groups: { title: string; choices: MenuOption[] }[] = [];
+          if (item.customizableOptions) {
+            item.customizableOptions.forEach((optGroup) => {
+              const isRice = optGroup.title.toLowerCase().includes('rice');
+              const hasExtraRice = optGroup.choices.some((c) => c.name.toLowerCase().includes('extra'));
+
+              if (isRice && hasExtraRice && !optGroup.title.toLowerCase().includes('extra')) {
+                const included = optGroup.choices.filter((c) => !c.name.toLowerCase().includes('extra'));
+                groups.push({
+                  title: 'Rice (Included)',
+                  choices: included.length > 0 ? included : [{ id: 'rice-garlic', name: 'Garlic Rice', price: 0 }]
+                });
+                const extras = optGroup.choices.filter((c) => c.name.toLowerCase().includes('extra'));
+                groups.push({
+                  title: 'Extra Rice (Add-on)',
+                  choices: [{ id: 'extra-none', name: 'No Extra Rice', price: 0 }, ...extras]
+                });
+              } else {
+                groups.push(optGroup);
+              }
+            });
+          }
+
+          if (item.category !== 'drinks' && availableDrinksList.length > 0) {
+            groups.unshift({
+              title: 'Add a Drink (Optional)',
+              choices: [{ id: 'drink-none', name: 'No Drink', price: 0 }, ...availableDrinksList]
+            });
+          }
+
+          const initialSelections: SelectedOption[] = groups.map((g) => ({
+            optionTitle: g.title,
+            choice: g.choices[0]
+          }));
+
+          setPosSelectedOptions(initialSelections);
+        };
+
+        const handleOptionToggle = (groupTitle: string, choice: MenuOption) => {
+          setPosSelectedOptions((prev) => {
+            const filtered = prev.filter((o) => o.optionTitle !== groupTitle);
+            return [...filtered, { optionTitle: groupTitle, choice }];
+          });
+        };
+
+        // Add configured dish from center column to POS cart
+        const handleAddConfiguredDishToCart = () => {
+          if (!posSelectedItem) return;
+
+          const optionsExtraPrice = posSelectedOptions.reduce((sum, opt) => sum + (opt.choice?.price || 0), 0);
+          const totalUnitPrice = posSelectedItem.price + optionsExtraPrice;
+
+          setPosCart((prev) => [
+            ...prev,
+            {
+              id: `pos-${posSelectedItem.id}-${Date.now()}`,
+              menuItem: posSelectedItem,
+              selectedOptions: [...posSelectedOptions],
+              quantity: posItemQuantity,
+              specialInstructions: posSpecialInstructions,
+              totalUnitPrice
+            }
+          ]);
+
+          // Keep selected item active or ready for next
+          setPosItemQuantity(1);
+          setPosSpecialInstructions('');
+        };
+
+        const handleUpdatePosItemQty = (cartId: string, delta: number) => {
+          setPosCart((prev) => {
+            return prev
+              .map((ci) => {
+                if (ci.id === cartId) {
+                  const newQty = ci.quantity + delta;
+                  return newQty > 0 ? { ...ci, quantity: newQty } : null;
+                }
+                return ci;
+              })
+              .filter(Boolean) as any[];
+          });
+        };
+
+        const handleRemovePosItem = (cartId: string) => {
+          setPosCart((prev) => prev.filter((ci) => ci.id !== cartId));
+        };
+
+        const handleSubmitPosOrder = () => {
+          if (posCart.length === 0) {
+            alert('Please add at least 1 menu item to the order.');
+            return;
+          }
+
+          const customerName = posCustomerName.trim() || (posOrderSource === 'walkin' ? 'Walk-In Customer' : 'Messenger Customer');
+          const customerPhone = posCustomerPhone.trim() || 'N/A';
+
+          if (posOrderType === 'delivery' && !posDeliveryAddress.trim()) {
+            alert('Please enter a delivery address for delivery orders.');
+            return;
+          }
+
+          if (posPaymentMethod === 'cod' && typeof posAmountTendered === 'number' && posAmountTendered < posCartTotal) {
+            alert(`Amount given (₱${posAmountTendered.toFixed(2)}) is less than total due (₱${posCartTotal.toFixed(2)}).`);
+            return;
+          }
+
+          const newOrderId = `ord-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+          const newOrder: Order = {
+            id: newOrderId,
+            items: posCart,
+            totalAmount: posCartTotal,
+            customer: {
+              name: customerName,
+              phone: customerPhone,
+              email: `${customerName.toLowerCase().replace(/[^a-z0-9]/g, '')}@curvada.local`,
+              orderType: posOrderType,
+              tableNumber: posOrderType === 'pickup' && posTableNumber.trim() ? posTableNumber.trim() : undefined,
+              address: posOrderType === 'delivery' ? posDeliveryAddress.trim() : undefined
+            },
+            paymentMethod: posPaymentMethod,
+            orderSource: posOrderSource,
+            amountTendered: posPaymentMethod === 'cod' && typeof posAmountTendered === 'number' ? posAmountTendered : undefined,
+            changeAmount: posPaymentMethod === 'cod' && typeof posAmountTendered === 'number' ? changeDue : undefined,
+            status: 'pending',
+            timestamp: new Date().toISOString(),
+            logs: [
+              {
+                status: 'pending',
+                timestamp: new Date().toISOString(),
+                note: `Order manually registered at Counter POS (${posOrderSource === 'walkin' ? 'Walk-In' : 'Facebook Messenger'}).`
+              }
+            ]
+          };
+
+          if (onManualPlaceOrder) {
+            onManualPlaceOrder(newOrder);
+          }
+
+          // Open receipt print preview immediately so cashier can print receipt or KOT
+          setPrintingOrderType('customer');
+          setPrintingOrder(newOrder);
+
+          setShowManualOrderModal(false);
+          setPosCart([]);
+          setPosSelectedItem(null);
+        };
+
+        const currentConfiguredUnitPrice = posSelectedItem
+          ? posSelectedItem.price + posSelectedOptions.reduce((sum, opt) => sum + (opt.choice?.price || 0), 0)
+          : 0;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-5 bg-black/85 backdrop-blur-md animate-fade-in text-left">
+            <div className="bg-[#141413] border-2 border-brand-gold/30 rounded-[2rem] max-w-7xl w-full h-[94vh] max-h-[900px] shadow-2xl flex flex-col overflow-hidden">
+              
+              {/* Modal Top Header */}
+              <div className="px-4 md:px-5 py-2.5 md:py-3 border-b border-white/10 flex items-center justify-between bg-[#181818]/70 flex-shrink-0">
+                <div className="flex items-center gap-2.5 md:gap-3">
+                  <div className="p-2 bg-brand-gold/10 text-brand-gold rounded-xl border border-brand-gold/20 flex-shrink-0">
+                    <ShoppingCart className="w-4 h-4" />
                   </div>
-                  {item.selectedOptions.length > 0 && (
-                    <p className="text-[10px] pl-3 text-gray-700">
-                      └ {item.selectedOptions.map(o => o.choice.name).join(', ')}
+                  <div>
+                    <h3 className="font-display font-black text-white text-sm md:text-base uppercase tracking-tight flex items-center gap-1.5 md:gap-2">
+                      Point of Sale (POS) Order Terminal
+                      <span className="text-[8px] md:text-[9px] bg-brand-gold text-black font-black uppercase px-2 py-0.5 rounded-full">
+                        Counter Mode
+                      </span>
+                    </h3>
+                    <p className="text-gray-400 text-[10px] md:text-[11px] hidden sm:block">
+                      Select dish → Click upgrades/options inline → Add to ticket & print receipt
                     </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowManualOrderModal(false)}
+                  className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Mobile View Navigation Bar (Shown only on < lg screens) */}
+              <div className="lg:hidden flex items-center justify-between border-b border-white/10 bg-[#161615] px-3 py-2 flex-shrink-0">
+                <div className="flex items-center gap-1.5 p-1 bg-[#0D0D0C] rounded-xl border border-white/10 flex-1 max-w-xs">
+                  <button
+                    type="button"
+                    onClick={() => setPosMobileTab('catalog')}
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                      posMobileTab === 'catalog'
+                        ? 'bg-brand-gold text-black shadow-sm'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🍱</span> Menu Catalog
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPosMobileTab('ticket')}
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 relative ${
+                      posMobileTab === 'ticket'
+                        ? 'bg-brand-gold text-black shadow-sm'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🧾</span> Ticket
+                    {posCart.length > 0 && (
+                      <span className={`px-1.5 py-0.2 rounded-full font-mono text-[9px] font-black ${
+                        posMobileTab === 'ticket' ? 'bg-black text-brand-gold' : 'bg-brand-gold text-black'
+                      }`}>
+                        {posCart.reduce((sum, ci) => sum + ci.quantity, 0)}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                <div className="text-right pl-2">
+                  <span className="text-[9px] text-gray-500 font-bold uppercase block leading-none">Total</span>
+                  <span className="text-sm font-mono font-black text-brand-gold">₱{posCartTotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Modal Body: 3-Column POS Workspace Layout */}
+              <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden relative">
+                
+                {/* COLUMN 1 (5 cols): Menu Dishes Catalog */}
+                <div className={`${
+                  posMobileTab === 'catalog' ? 'flex' : 'hidden'
+                } lg:flex lg:col-span-5 flex-col border-b lg:border-b-0 lg:border-r border-white/10 overflow-hidden bg-[#10100F]`}>
+                  
+                  {/* Category Filter & Search Bar */}
+                  <div className="p-3 border-b border-white/5 space-y-2 flex-shrink-0 bg-[#141413]">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search menu..."
+                        value={posSearchQuery}
+                        onChange={(e) => setPosSearchQuery(e.target.value)}
+                        className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar">
+                      {categories.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setPosSelectedCategory(c.id)}
+                          className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer ${
+                            posSelectedCategory === c.id
+                              ? 'bg-brand-gold text-black shadow-sm'
+                              : 'bg-[#181818] border border-white/5 text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Menu Dishes Grid with Compact Fixed-Height Cards */}
+                  <div className="p-3 overflow-y-auto flex-1 grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 pb-20 lg:pb-3">
+                    {filteredMenuItems.map((item) => {
+                      const isSelected = posSelectedItem?.id === item.id;
+                      const inCartCount = posCart
+                        .filter((ci) => ci.menuItem.id === item.id)
+                        .reduce((sum, ci) => sum + ci.quantity, 0);
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleSelectDish(item)}
+                          className={`border rounded-2xl p-2 text-left transition-all flex flex-col justify-between group relative shadow-md active:scale-95 cursor-pointer h-44 ${
+                            isSelected
+                              ? 'bg-[#221c10] border-brand-gold ring-1 ring-brand-gold shadow-brand-gold/10'
+                              : 'bg-[#181818] hover:bg-[#202020] border-white/5 hover:border-brand-gold/40'
+                          }`}
+                        >
+                          {inCartCount > 0 && (
+                            <span className="absolute top-1.5 right-1.5 bg-brand-gold text-black font-mono font-black text-[9px] w-5 h-5 rounded-full flex items-center justify-center shadow-lg z-10">
+                              {inCartCount}
+                            </span>
+                          )}
+
+                          {/* Fixed Aspect Image Viewport */}
+                          <div className="h-24 w-full rounded-xl overflow-hidden bg-black/40 relative flex-shrink-0">
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src =
+                                  'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600';
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                            <span className="absolute bottom-1 left-2 font-mono font-black text-xs text-white">
+                              ₱{item.price.toFixed(2)}
+                            </span>
+                          </div>
+
+                          {/* Dish Information */}
+                          <div className="pt-1.5 flex-1 flex flex-col justify-between min-w-0">
+                            <h4 className={`font-bold text-xs truncate leading-tight ${
+                              isSelected ? 'text-brand-gold' : 'text-white'
+                            }`}>
+                              {item.name}
+                            </h4>
+                            <div className="flex items-center justify-between text-[9px] text-gray-500 pt-0.5">
+                              <span className="capitalize">{item.category}</span>
+                              <span className="text-brand-gold font-bold">
+                                {item.customizableOptions?.length ? '⚙️ Options' : '⚡ Quick'}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Floating Bottom Bar on Mobile when items are in cart to easily jump to ticket */}
+                  {posCart.length > 0 && (
+                    <div className="lg:hidden absolute bottom-3 left-3 right-3 z-30 animate-slide-up">
+                      <button
+                        type="button"
+                        onClick={() => setPosMobileTab('ticket')}
+                        className="w-full py-3 px-4 bg-brand-gold text-black rounded-2xl font-black uppercase text-xs tracking-wider flex items-center justify-between shadow-2xl border border-brand-gold/40 active:scale-98 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="bg-black text-brand-gold text-[10px] font-mono px-2 py-0.5 rounded-full font-black">
+                            {posCart.reduce((sum, ci) => sum + ci.quantity, 0)} Items
+                          </span>
+                          <span>View Ticket & Checkout</span>
+                        </div>
+                        <span className="font-mono font-black text-sm">
+                          ₱{posCartTotal.toFixed(2)} →
+                        </span>
+                      </button>
+                    </div>
                   )}
-                  {item.specialInstructions && (
-                    <p className="text-[10px] pl-3 italic font-bold">
-                      * "{item.specialInstructions}"
-                    </p>
+
+                </div>
+
+                {/* COLUMN 2 (3 cols): INLINE CUSTOMIZATION & UPGRADES PANEL (Desktop Only) */}
+                <div className="hidden lg:flex lg:col-span-3 flex-col border-b lg:border-b-0 lg:border-r border-white/10 overflow-hidden bg-[#121211]">
+                  <div className="px-3.5 py-3 border-b border-white/10 bg-[#181818]/60 flex items-center justify-between flex-shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs">⚙️</span>
+                      <h4 className="font-display font-black text-xs uppercase tracking-wider text-white">
+                        Dish Upgrades & Add-ons
+                      </h4>
+                    </div>
+                    {posSelectedItem && (
+                      <span className="text-[9px] bg-brand-gold/10 text-brand-gold font-bold px-2 py-0.5 rounded-full border border-brand-gold/20">
+                        Selected
+                      </span>
+                    )}
+                  </div>
+
+                  {!posSelectedItem ? (
+                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-500 space-y-2">
+                      <span className="text-3xl">👈</span>
+                      <p className="text-xs font-bold text-gray-400">No Dish Selected</p>
+                      <p className="text-[10px] text-gray-500 max-w-[200px]">
+                        Click any dish on the left catalog to configure rice upgrades, extra egg, and drinks here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                      
+                      {/* Active Item Title Header */}
+                      <div className="p-3 bg-[#181818] border-b border-white/5 flex items-center justify-between gap-2 flex-shrink-0">
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-white text-xs truncate">
+                            {posSelectedItem.name}
+                          </h4>
+                          <span className="text-[10px] font-mono text-brand-gold font-bold">
+                            Base: ₱{posSelectedItem.price.toFixed(2)}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          ₱{currentConfiguredUnitPrice.toFixed(2)}
+                        </span>
+                      </div>
+
+                      {/* Options & Choices List */}
+                      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                        {activeNormalizedOptionGroups.length === 0 ? (
+                          <div className="text-center py-8 text-gray-500 text-xs">
+                            ✨ Standard recipe dish (no options required). Ready to add!
+                          </div>
+                        ) : (
+                          activeNormalizedOptionGroups.map((group, gIdx) => {
+                            const currentChoice = posSelectedOptions.find((o) => o.optionTitle === group.title)?.choice;
+
+                            return (
+                              <div key={gIdx} className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block">
+                                  {group.title}
+                                </label>
+                                <div className="space-y-1">
+                                  {group.choices.map((choice) => {
+                                    const isChoiceSelected = currentChoice?.id === choice.id;
+                                    const cleanName = choice.name.replace(/\s*\(Upgrade\)/gi, '').trim();
+
+                                    return (
+                                      <button
+                                        key={choice.id}
+                                        type="button"
+                                        onClick={() => handleOptionToggle(group.title, choice)}
+                                        className={`w-full py-1.5 px-2.5 rounded-xl text-left text-xs transition-all flex items-center justify-between cursor-pointer border ${
+                                          isChoiceSelected
+                                            ? 'bg-brand-gold/15 border-brand-gold text-white font-bold'
+                                            : 'bg-[#0D0D0C] hover:bg-[#181818] border-white/5 text-gray-400'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 truncate">
+                                          <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${
+                                            isChoiceSelected ? 'border-brand-gold bg-brand-gold text-black' : 'border-gray-600'
+                                          }`}>
+                                            {isChoiceSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                          </div>
+                                          <span className="truncate text-[11px]">{cleanName}</span>
+                                        </div>
+                                        <span className={`text-[10px] font-mono font-bold flex-shrink-0 ${
+                                          choice.price > 0 ? 'text-brand-gold' : 'text-gray-500'
+                                        }`}>
+                                          {choice.price > 0 ? `+₱${choice.price}` : 'Free'}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+
+                        {/* Special Note Input */}
+                        <div className="pt-1">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">
+                            Chef Cooking Note (Optional)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Well done egg, less sauce..."
+                            value={posSpecialInstructions}
+                            onChange={(e) => setPosSpecialInstructions(e.target.value)}
+                            className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Quantity & Add to Cart Footer */}
+                      <div className="p-3 border-t border-white/10 bg-[#181818] space-y-2 flex-shrink-0">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400 font-bold">Portions:</span>
+                          <div className="flex items-center gap-1.5 bg-[#0D0D0C] rounded-xl p-1 border border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => setPosItemQuantity((q) => Math.max(1, q - 1))}
+                              className="w-6 h-6 rounded-lg bg-[#181818] flex items-center justify-center text-gray-300 hover:text-white cursor-pointer"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="font-mono font-bold text-white px-2 text-xs">
+                              {posItemQuantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setPosItemQuantity((q) => q + 1)}
+                              className="w-6 h-6 rounded-lg bg-[#181818] flex items-center justify-center text-gray-300 hover:text-white cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAddConfiguredDishToCart()}
+                          className="w-full py-2.5 rounded-xl bg-brand-gold hover:opacity-95 text-black font-black uppercase tracking-wider text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+                        >
+                          <Plus className="w-4 h-4" /> Add to Ticket • ₱{(currentConfiguredUnitPrice * posItemQuantity).toFixed(2)}
+                        </button>
+                      </div>
+
+                    </div>
                   )}
                 </div>
-              ))}
+
+                {/* COLUMN 3 (4 cols): Order Ticket, Channel, Customer & Cash Tender */}
+                <div className={`${
+                  posMobileTab === 'ticket' ? 'flex' : 'hidden'
+                } lg:flex lg:col-span-4 flex-col bg-[#141413] overflow-hidden`}>
+                  
+                  {/* Channel & Order Type Selectors */}
+                  <div className="p-3 border-b border-white/10 space-y-2.5 flex-shrink-0 bg-[#181818]/40">
+                    
+                    {/* Order Source / Channel (Walk-In vs Messenger) */}
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-gray-400 block mb-1">
+                        Order Channel / Origin
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setPosOrderSource('walkin')}
+                          className={`py-1.5 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer border ${
+                            posOrderSource === 'walkin'
+                              ? 'bg-purple-600 border-purple-400 text-white shadow-md'
+                              : 'bg-[#0D0D0C] border-white/5 text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          🚶 Walk-In Counter
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPosOrderSource('messenger')}
+                          className={`py-1.5 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer border ${
+                            posOrderSource === 'messenger'
+                              ? 'bg-blue-600 border-blue-400 text-white shadow-md'
+                              : 'bg-[#0D0D0C] border-white/5 text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          💬 Messenger
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Fulfillment Type: Pickup vs Delivery */}
+                    <div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setPosOrderType('pickup')}
+                          className={`py-1 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer border ${
+                            posOrderType === 'pickup'
+                              ? 'bg-brand-gold border-brand-gold text-black shadow-sm'
+                              : 'bg-[#0D0D0C] border-white/5 text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          🛍️ Pickup / Dine
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPosOrderType('delivery')}
+                          className={`py-1 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer border ${
+                            posOrderType === 'delivery'
+                              ? 'bg-brand-red border-red-500 text-white shadow-sm'
+                              : 'bg-[#0D0D0C] border-white/5 text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          🛵 Delivery
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Customer Inputs */}
+                    <div className="grid grid-cols-2 gap-1.5 text-xs">
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Customer Name..."
+                          value={posCustomerName}
+                          onChange={(e) => setPosCustomerName(e.target.value)}
+                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Contact #..."
+                          value={posCustomerPhone}
+                          onChange={(e) => setPosCustomerPhone(e.target.value)}
+                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+                    </div>
+
+                    {posOrderType === 'pickup' ? (
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Table # (Optional, for dine-in)..."
+                          value={posTableNumber}
+                          onChange={(e) => setPosTableNumber(e.target.value)}
+                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Delivery Address (Barangay, Landmark)..."
+                          value={posDeliveryAddress}
+                          onChange={(e) => setPosDeliveryAddress(e.target.value)}
+                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+                    )}
+
+                  </div>
+
+                  {/* Cart Item List */}
+                  <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-gray-400 pb-1 border-b border-white/5">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPosMobileTab('catalog')}
+                          className="lg:hidden text-brand-gold hover:underline font-bold text-[9px] flex items-center gap-0.5 cursor-pointer"
+                        >
+                          ← Add More Dishes
+                        </button>
+                        <span className="hidden lg:inline">Order Items ({posCart.reduce((s, i) => s + i.quantity, 0)})</span>
+                        <span className="lg:hidden font-mono">({posCart.reduce((s, i) => s + i.quantity, 0)} items)</span>
+                      </div>
+                      {posCart.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setPosCart([])}
+                          className="text-red-400 hover:text-red-300 font-bold lowercase hover:underline cursor-pointer"
+                        >
+                          clear
+                        </button>
+                      )}
+                    </div>
+
+                    {posCart.length === 0 ? (
+                      <div className="text-center py-6 text-gray-500 text-xs">
+                        🛒 Ticket is empty. Configure dishes to add.
+                      </div>
+                    ) : (
+                      posCart.map((ci) => (
+                        <div
+                          key={ci.id}
+                          className="bg-[#0D0D0C] border border-white/5 rounded-xl p-2 flex items-center justify-between gap-1.5 text-xs"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-white truncate text-[11px]">{ci.menuItem.name}</p>
+                            {ci.selectedOptions && ci.selectedOptions.length > 0 && (
+                              <p className="text-[9px] text-brand-gold truncate">
+                                + {ci.selectedOptions.map((o: any) => o.choice?.name?.replace(/\s*\(Upgrade\)/gi, '')).join(', ')}
+                              </p>
+                            )}
+                            <p className="text-[9px] text-gray-400 font-mono">
+                              ₱{ci.totalUnitPrice.toFixed(2)} each
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-0.5 bg-[#181818] rounded-lg p-0.5 border border-white/10">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdatePosItemQty(ci.id, -1)}
+                                className="w-4 h-4 rounded flex items-center justify-center text-gray-400 hover:text-white"
+                              >
+                                <Minus className="w-2.5 h-2.5" />
+                              </button>
+                              <span className="font-mono font-bold text-white px-1 text-[11px]">
+                                {ci.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdatePosItemQty(ci.id, 1)}
+                                className="w-4 h-4 rounded flex items-center justify-center text-gray-400 hover:text-white"
+                              >
+                                <Plus className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+
+                            <span className="font-mono font-bold text-white text-xs w-12 text-right">
+                              ₱{(ci.totalUnitPrice * ci.quantity).toFixed(0)}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePosItem(ci.id)}
+                              className="text-gray-500 hover:text-red-400 p-0.5"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Payment Method, Cash Tendered & POS Change Due */}
+                  <div className="p-3 border-t border-white/10 space-y-2.5 bg-[#181818]/60 flex-shrink-0">
+                    
+                    {/* Payment Mode Selector */}
+                    <div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { id: 'cod', label: '💵 Cash (COD)' },
+                          { id: 'ewallet', label: '📱 GCash' },
+                          { id: 'card', label: '💳 Card' },
+                        ].map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setPosPaymentMethod(m.id as any)}
+                            className={`py-1 px-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                              posPaymentMethod === m.id
+                                ? 'bg-brand-gold text-black border-brand-gold shadow-sm'
+                                : 'bg-[#0D0D0C] border-white/5 text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Cash Tendered & Change Computation (when COD is chosen) */}
+                    {posPaymentMethod === 'cod' && (
+                      <div className="bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[9px] font-black uppercase tracking-wider text-gray-400">
+                            Cash Given:
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-500 font-mono font-bold text-xs">₱</span>
+                            <input
+                              type="number"
+                              min={posCartTotal}
+                              step="1"
+                              placeholder={posCartTotal.toFixed(0)}
+                              value={posAmountTendered}
+                              onChange={(e) => setPosAmountTendered(e.target.value === '' ? '' : Number(e.target.value))}
+                              className="w-24 bg-[#181818] border border-white/10 rounded-lg px-2 py-0.5 text-white font-mono font-black text-xs text-right focus:outline-none focus:border-brand-gold"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Quick Cash Presets */}
+                        <div className="flex items-center gap-1 justify-end flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setPosAmountTendered(posCartTotal)}
+                            className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-gray-300 text-[8px] font-mono font-bold"
+                          >
+                            Exact
+                          </button>
+                          {[100, 200, 500, 1000].filter((amt) => amt >= posCartTotal).map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setPosAmountTendered(preset)}
+                              className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-brand-gold text-[8px] font-mono font-bold"
+                            >
+                              ₱{preset}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Live Change Calculation Box */}
+                        <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                          <span className="text-[10px] font-bold text-gray-300">Change Due:</span>
+                          <span className={`font-mono font-black text-sm ${
+                            changeDue > 0 ? 'text-emerald-400' : 'text-gray-400'
+                          }`}>
+                            ₱{changeDue.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Total Due & Confirm Button */}
+                    <div className="pt-0.5 flex items-center justify-between gap-3">
+                      <div>
+                        <span className="text-[9px] text-gray-400 font-black uppercase tracking-wider block">
+                          Total Due
+                        </span>
+                        <span className="font-display font-black text-brand-gold text-lg md:text-xl">
+                          ₱{posCartTotal.toFixed(2)}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSubmitPosOrder}
+                        disabled={posCart.length === 0}
+                        className={`flex-1 py-2.5 px-4 rounded-xl font-black uppercase tracking-wider text-xs flex items-center justify-center gap-1.5 shadow-xl transition-all cursor-pointer ${
+                          posCart.length === 0
+                            ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                            : 'bg-brand-red hover:bg-red-600 text-white shadow-brand-red/30 active:scale-95'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" /> Place & Print Order
+                      </button>
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* MOBILE DISH CUSTOMIZATION MODAL / DIALOG (Shown on < lg screens when a dish is selected) */}
+              {posSelectedItem && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-sm lg:hidden animate-fade-in text-left">
+                  <div className="bg-[#141413] border-2 border-brand-gold/40 rounded-[2rem] max-w-lg w-full max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-scale-up">
+                    
+                    {/* Dialog Header */}
+                    <div className="px-4 py-3 border-b border-white/10 bg-[#181818]/90 flex items-center justify-between flex-shrink-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base">⚙️</span>
+                        <div className="min-w-0">
+                          <h4 className="font-display font-black text-sm uppercase tracking-wider text-white truncate">
+                            {posSelectedItem.name}
+                          </h4>
+                          <span className="text-[10px] font-mono text-brand-gold font-bold">
+                            Base: ₱{posSelectedItem.price.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPosSelectedItem(null)}
+                        className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all cursor-pointer flex-shrink-0"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Dialog Body (Options & Upgrades List) */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      {activeNormalizedOptionGroups.length === 0 ? (
+                        <div className="text-center py-6 text-gray-400 text-xs bg-[#181818]/50 rounded-2xl border border-white/5 p-4">
+                          ✨ Standard recipe dish with no customizable options required. Adjust portions below and add to ticket!
+                        </div>
+                      ) : (
+                        activeNormalizedOptionGroups.map((group, gIdx) => {
+                          const currentChoice = posSelectedOptions.find((o) => o.optionTitle === group.title)?.choice;
+
+                          return (
+                            <div key={gIdx} className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block">
+                                {group.title}
+                              </label>
+                              <div className="space-y-1.5">
+                                {group.choices.map((choice) => {
+                                  const isChoiceSelected = currentChoice?.id === choice.id;
+                                  const cleanName = choice.name.replace(/\s*\(Upgrade\)/gi, '').trim();
+
+                                  return (
+                                    <button
+                                      key={choice.id}
+                                      type="button"
+                                      onClick={() => handleOptionToggle(group.title, choice)}
+                                      className={`w-full py-2 px-3 rounded-xl text-left text-xs transition-all flex items-center justify-between cursor-pointer border ${
+                                        isChoiceSelected
+                                          ? 'bg-brand-gold/15 border-brand-gold text-white font-bold'
+                                          : 'bg-[#0D0D0C] hover:bg-[#181818] border-white/5 text-gray-400'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2.5 truncate">
+                                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${
+                                          isChoiceSelected ? 'border-brand-gold bg-brand-gold text-black' : 'border-gray-600'
+                                        }`}>
+                                          {isChoiceSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                        </div>
+                                        <span className="truncate text-xs">{cleanName}</span>
+                                      </div>
+                                      <span className={`text-[11px] font-mono font-bold flex-shrink-0 ${
+                                        choice.price > 0 ? 'text-brand-gold' : 'text-gray-500'
+                                      }`}>
+                                        {choice.price > 0 ? `+₱${choice.price}` : 'Free'}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+
+                      {/* Special Note Input */}
+                      <div className="pt-1">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">
+                          Chef Cooking Note (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Well done egg, less sauce..."
+                          value={posSpecialInstructions}
+                          onChange={(e) => setPosSpecialInstructions(e.target.value)}
+                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Dialog Footer (Quantity & Add to Ticket) */}
+                    <div className="p-4 border-t border-white/10 bg-[#181818] space-y-3 flex-shrink-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400 font-bold">Portions:</span>
+                        <div className="flex items-center gap-2 bg-[#0D0D0C] rounded-xl p-1 border border-white/10">
+                          <button
+                            type="button"
+                            onClick={() => setPosItemQuantity((q) => Math.max(1, q - 1))}
+                            className="w-7 h-7 rounded-lg bg-[#181818] flex items-center justify-center text-gray-300 hover:text-white cursor-pointer"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="font-mono font-bold text-white px-3 text-xs">
+                            {posItemQuantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setPosItemQuantity((q) => q + 1)}
+                            className="w-7 h-7 rounded-lg bg-[#181818] flex items-center justify-center text-gray-300 hover:text-white cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPosSelectedItem(null)}
+                          className="py-2.5 rounded-xl border border-white/10 text-gray-400 hover:text-white hover:bg-white/5 font-black uppercase tracking-wider text-xs flex items-center justify-center cursor-pointer transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleAddConfiguredDishToCart();
+                            setPosSelectedItem(null);
+                          }}
+                          className="py-2.5 rounded-xl bg-brand-gold hover:opacity-95 text-black font-black uppercase tracking-wider text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+                        >
+                          <Plus className="w-4 h-4" /> Add • ₱{(currentConfiguredUnitPrice * posItemQuantity).toFixed(2)}
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+
             </div>
 
-            <div className="flex justify-between items-center text-sm font-black pt-1">
-              <span>TOTAL</span>
-              <span>₱{printingOrder.totalAmount.toFixed(2)}</span>
-            </div>
-
-            <div className="pt-3 border-t border-gray-200 flex gap-2">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex-1 py-2 bg-black text-white font-bold rounded-xl text-xs uppercase"
-              >
-                🖨️ Print Ticket
-              </button>
-              <button
-                type="button"
-                onClick={() => setPrintingOrder(null)}
-                className="px-3 py-2 bg-gray-200 text-black font-bold rounded-xl text-xs uppercase"
-              >
-                Close
-              </button>
-            </div>
           </div>
-        </div>
+        );
+      })()}
+
+      {/* THERMAL RECEIPT & KITCHEN TICKET (KOT) MODAL */}
+      {printingOrder && (
+        <ReceiptModal
+          order={printingOrder}
+          initialType={printingOrderType}
+          onClose={() => setPrintingOrder(null)}
+        />
       )}
+
+      {/* BLUETOOTH PRINTER SETUP & DIAGNOSTIC MODAL */}
+      <BluetoothPrinterModal
+        isOpen={isBluetoothModalOpen}
+        onClose={() => setIsBluetoothModalOpen(false)}
+      />
+
 
       {/* DINE-IN TABLE QR CODE GENERATOR OVERLAY */}
       {tableQRModalOpen && (

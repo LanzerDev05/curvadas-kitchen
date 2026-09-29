@@ -58,4 +58,59 @@
   color: #FFFFFF;
 }
 
+/* Thermal Receipt Print Styles */
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+  
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide everything except printable receipt */
+  body > * {
+    display: none !important;
+  }
+
+  /* But show the portal / root container holding the receipt */
+  body > #root {
+    display: block !important;
+  }
+
+  #root > *:not(#printable-thermal-receipt-portal):not(:has(#printable-thermal-receipt)) {
+    display: none !important;
+  }
+
+  /* Ensure receipt element is visible and isolated */
+  #printable-thermal-receipt {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 58mm !important;
+    max-width: 58mm !important;
+    padding: 2mm !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'JetBrains Mono', monospace, Courier, monospace !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+
+  /* Hide modal overlays, backdrops, buttons and header bars during printing */
+  .fixed, .backdrop-blur-md, button, nav, header {
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+}
+
+
 
