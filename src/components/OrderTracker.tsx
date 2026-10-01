@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Order, OrderStatus } from '../types';
-import { MapPin, Clock, Phone, CheckCircle2, ShieldCheck, ShoppingBag, Loader2, RefreshCw } from 'lucide-react';
+import { MapPin, Clock, Phone, CheckCircle2, ShieldCheck, ShoppingBag, Loader2, RefreshCw, Navigation } from 'lucide-react';
 
 import { realtimeOrderService } from '../api/websocket';
 
@@ -427,9 +427,28 @@ function OrderTracker({
             <span className="text-white font-mono font-bold">{customer.phone}</span>
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-gray-500 font-bold uppercase tracking-wider">Fulfillment Address / Point:</span>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-500 font-bold uppercase tracking-wider">Fulfillment Address / Point:</span>
+              {customer.latitude && customer.longitude && (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${customer.latitude},${customer.longitude}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[10px] text-brand-gold hover:text-white font-bold underline flex items-center gap-1"
+                >
+                  <Navigation className="w-3 h-3 text-brand-gold" />
+                  🗺️ Open in Google Maps
+                </a>
+              )}
+            </div>
             <span className="text-white bg-[#0D0D0C] p-3 rounded-xl border-2 border-white/5 leading-relaxed font-normal mt-0.5">
               {customer.address}
+              {customer.latitude && customer.longitude && (
+                <span className="flex items-center gap-1.5 text-[10px] text-emerald-400 mt-1 font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" />
+                  <span>Exact GPS Delivery Pin Tagged</span>
+                </span>
+              )}
             </span>
           </div>
           {customer.tableNumber && (

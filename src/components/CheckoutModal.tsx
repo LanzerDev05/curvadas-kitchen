@@ -1,6 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { CartItem, CustomerInfo } from '../types';
-import { X, Truck, Store, MapPin, CreditCard, ShieldCheck, Loader2 } from 'lucide-react';
+import { 
+  X, 
+  Truck, 
+  Store, 
+  MapPin, 
+  CreditCard, 
+  ShieldCheck, 
+  Loader2, 
+  Navigation, 
+  AlertTriangle, 
+  CheckCircle2, 
+  ShieldAlert,
+  PhoneCall,
+  Map as MapIcon
+} from 'lucide-react';
+import MapPickerModal from './MapPickerModal';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -24,6 +39,23 @@ export default function CheckoutModal({
   const [orderType, setOrderType] = useState<'delivery' | 'pickup'>(() => (localStorage.getItem('curvada_cust_ordertype') as 'delivery' | 'pickup') || 'delivery');
   const [tableNumber, setTableNumber] = useState(() => localStorage.getItem('curvada_cust_tablenumber') || '');
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'ewallet' | 'card'>(() => (localStorage.getItem('curvada_cust_paymentmethod') as 'cod' | 'ewallet' | 'card') || 'cod');
+
+  // GPS & Map Geolocation state
+  const [latitude, setLatitude] = useState<number | undefined>(() => {
+    const saved = localStorage.getItem('curvada_cust_lat');
+    return saved ? parseFloat(saved) : undefined;
+  });
+  const [longitude, setLongitude] = useState<number | undefined>(() => {
+    const saved = localStorage.getItem('curvada_cust_lng');
+    return saved ? parseFloat(saved) : undefined;
+  });
+  const [locationAccuracy, setLocationAccuracy] = useState<number | undefined>(() => {
+    const saved = localStorage.getItem('curvada_cust_accuracy');
+    return saved ? parseFloat(saved) : undefined;
+  });
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationSuccessMsg, setLocationSuccessMsg] = useState('');
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
 
   // Promo Voucher state
   const [promoCode, setPromoCode] = useState('');
@@ -49,11 +81,24 @@ export default function CheckoutModal({
         setPhone(loggedInCustomer.phone);
         setEmail(loggedInCustomer.email);
         setAddress(loggedInCustomer.address);
+        if (loggedInCustomer.latitude && loggedInCustomer.longitude) {
+          setLatitude(loggedInCustomer.latitude);
+          setLongitude(loggedInCustomer.longitude);
+          setLocationAccuracy(loggedInCustomer.locationAccuracy);
+        }
       } else {
         setName(localStorage.getItem('curvada_cust_name') || '');
         setPhone(localStorage.getItem('curvada_cust_phone') || '');
         setEmail(localStorage.getItem('curvada_cust_email') || '');
         setAddress(localStorage.getItem('curvada_cust_address') || '');
+        const savedLat = localStorage.getItem('curvada_cust_lat');
+        const savedLng = localStorage.getItem('curvada_cust_lng');
+        const savedAcc = localStorage.getItem('curvada_cust_accuracy');
+        if (savedLat && savedLng) {
+          setLatitude(parseFloat(savedLat));
+          setLongitude(parseFloat(savedLng));
+          setLocationAccuracy(savedAcc ? parseFloat(savedAcc) : undefined);
+        }
       }
     }
   }, [isOpen, loggedInCustomer]);
@@ -128,19 +173,118 @@ export default function CheckoutModal({
     }
   };
 
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      setErrorMsg('Geolocation is not supported by your device or browser.');
+      return;
+    }
+    setIsLocating(true);
+    setErrorMsg('');
+    setLocationSuccessMsg('');
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        setIsLocating(false);
+        const lat = Number(position.coords.latitude.toFixed(6));
+        const lng = Number(position.coords.longitude.toFixed(6));
+        const acc = Math.round(position.coords.accuracy);
+
+        setLatitude(lat);
+        setLongitude(lng);
+        setLocationAccuracy(acc);
+        setLocationSuccessMsg('GPS Location successfully pinned!');
+
+        localStorage.setItem('curvada_cust_lat', lat.toString());
+        localStorage.setItem('curvada_cust_lng', lng.toString());
+        localStorage.setItem('curvada_cust_accuracy', acc.toString());
+
+        // Reverse-geocode to auto-populate address name in the text box
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.display_name) {
+              const addr = data.address || {};
+              const road = addr.road || addr.pedestrian || addr.suburb || '';
+              const village = addr.village || addr.neighbourhood || addr.quarter || '';
+              const city = addr.city || addr.town || addr.municipality || '';
+              const state = addr.state || addr.province || '';
+              
+              const parts = [road, village, city, state].filter(Boolean);
+              const resolvedAddress = parts.length > 0 ? parts.join(', ') : data.display_name;
+              
+              if (resolvedAddress) {
+                setAddress(resolvedAddress);
+                localStorage.setItem('curvada_cust_address', resolvedAddress);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Reverse geocoding not available, keeping typed address.', e);
+        }
+      },
+      (err) => {
+        setIsLocating(false);
+        let msg = 'Unable to fetch current GPS coordinates. Please check device location permissions.';
+        if (err.code === err.PERMISSION_DENIED) {
+          msg = 'Location permission was denied. You may manually write your detailed landmarks & street address below.';
+        }
+        setErrorMsg(msg);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  };
+
+  const handleClearLocation = () => {
+    setLatitude(undefined);
+    setLongitude(undefined);
+    setLocationAccuracy(undefined);
+    setLocationSuccessMsg('');
+    localStorage.removeItem('curvada_cust_lat');
+    localStorage.removeItem('curvada_cust_lng');
+    localStorage.removeItem('curvada_cust_accuracy');
+  };
+
+  const handleConfirmMapLocation = (loc: { latitude: number; longitude: number; addressText: string }) => {
+    setLatitude(loc.latitude);
+    setLongitude(loc.longitude);
+    setLocationAccuracy(5);
+    setLocationSuccessMsg('Exact map pin location saved!');
+    localStorage.setItem('curvada_cust_lat', loc.latitude.toString());
+    localStorage.setItem('curvada_cust_lng', loc.longitude.toString());
+    localStorage.setItem('curvada_cust_accuracy', '5');
+
+    if (loc.addressText && loc.addressText.trim()) {
+      setAddress(loc.addressText.trim());
+      localStorage.setItem('curvada_cust_address', loc.addressText.trim());
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
     // Validations
     if (!name.trim()) return setErrorMsg('Full Name is required.');
-    if (!phone.trim()) return setErrorMsg('Phone Number is required.');
+    
+    // Clean and validate Philippine phone number (11 digits starting with 09)
+    const cleanPhone = phone.replace(/[\s-]/g, '');
+    if (!cleanPhone) {
+      return setErrorMsg('Phone Number is required for order & rider dispatch contact.');
+    }
+    if (!/^09\d{9}$/.test(cleanPhone)) {
+      return setErrorMsg('Please enter a valid 11-digit Philippine mobile number starting with 09 (e.g. 09171234567).');
+    }
+
     if (orderType === 'delivery' && !address.trim()) {
-      return setErrorMsg('Delivery Address is required.');
+      return setErrorMsg('Delivery Address is required so our rider can reach you.');
     }
 
     if (paymentMethod === 'ewallet' && !ewalletPhone.trim()) {
-      return setErrorMsg('GCash/Maya mobile number is required.');
+      return setErrorMsg('GCash/Maya registered mobile number is required.');
     }
     if (paymentMethod === 'card' && (!cardNumber.trim() || !cardExpiry.trim() || !cardCvv.trim())) {
       return setErrorMsg('Please fill in complete Card details.');
@@ -152,16 +296,20 @@ export default function CheckoutModal({
       setIsProcessing(false);
       
       const customer: CustomerInfo = {
-        name,
-        phone,
-        email,
-        address: orderType === 'delivery' ? address : 'Curvada Kitchen Main HQ (Store Pickup)',
+        name: name.trim(),
+        phone: cleanPhone,
+        email: email.trim(),
+        address: orderType === 'delivery' ? address.trim() : 'Curvada Kitchen Main HQ (Store Pickup)',
         orderType,
         tableNumber: orderType === 'pickup' && tableNumber ? tableNumber : undefined,
+        latitude,
+        longitude,
+        locationAccuracy,
+        isLocationVerified: Boolean(latitude && longitude),
       };
 
       localStorage.setItem('curvada_cust_name', name);
-      localStorage.setItem('curvada_cust_phone', phone);
+      localStorage.setItem('curvada_cust_phone', cleanPhone);
       localStorage.setItem('curvada_cust_email', email);
       if (orderType === 'delivery') {
         localStorage.setItem('curvada_cust_address', address);
@@ -325,13 +473,17 @@ export default function CheckoutModal({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Phone Number <span className="text-brand-red">*</span></label>
+                <div className="flex justify-between items-center">
+                  <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Mobile Number <span className="text-brand-red">*</span></label>
+                  <span className="text-[9px] text-gray-500 font-mono font-medium">09XXXXXXXXX</span>
+                </div>
                 <input
                   type="tel"
-                  placeholder="E.g., 0912 345 6789"
+                  placeholder="0917 123 4567"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full bg-[#0D0D0C] text-white rounded-xl p-3 border-2 border-white/5 focus:border-brand-red focus:outline-none transition-all placeholder:text-gray-600 font-semibold text-sm shadow-inner"
+                  maxLength={13}
+                  className="w-full bg-[#0D0D0C] text-white rounded-xl p-3 border-2 border-white/5 focus:border-brand-red focus:outline-none transition-all placeholder:text-gray-600 font-semibold text-sm shadow-inner font-mono"
                   required
                 />
               </div>
@@ -356,19 +508,97 @@ export default function CheckoutModal({
             </h4>
 
             {orderType === 'delivery' ? (
-              <div className="space-y-1.5">
-                <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">House No. / Street / Barangay / City <span className="text-brand-red">*</span></label>
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">House No. / Street / Barangay / City <span className="text-brand-red">*</span></label>
+                  
+                  {/* Manual Pin & GPS Buttons */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsMapPickerOpen(true)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-gold/15 hover:bg-brand-gold/25 text-brand-gold border border-brand-gold/40 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-sm"
+                      title="Open interactive map to drag and place exact pin"
+                    >
+                      <MapIcon className="w-3 h-3 text-brand-gold" />
+                      <span>{latitude && longitude ? '📍 Adjust Pin on Map' : '📍 Pin on Map'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleGetLocation}
+                      disabled={isLocating}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#222222] hover:bg-white/10 text-gray-300 border border-white/10 text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer"
+                      title="Quick GPS auto-detect"
+                    >
+                      {isLocating ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin text-brand-gold" />
+                          <span>GPS...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Navigation className="w-3 h-3 text-brand-gold" />
+                          <span>Quick GPS</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="relative">
                   <MapPin className="absolute left-4 top-4 w-4 h-4 text-brand-red" />
                   <textarea
                     rows={2}
-                    placeholder="Provide full address directions so our riders can find you quickly..."
+                    placeholder="Provide full address & landmark directions so our riders can find you quickly..."
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     className="w-full bg-[#0D0D0C] text-white rounded-xl py-3 pl-11 pr-4 border-2 border-white/5 focus:border-brand-red focus:outline-none transition-all placeholder:text-gray-600 font-semibold text-sm shadow-inner"
                     required
                   />
                 </div>
+
+                {/* GPS / Map Verified Status Badge */}
+                {latitude && longitude && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/25 rounded-xl flex items-center justify-between text-emerald-400 text-xs font-semibold">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <div>
+                        <span className="font-bold block text-white text-[11px]">📍 Exact Delivery Pin Attached</span>
+                        <span className="text-[10px] text-emerald-300/90 font-medium">
+                          Rider GPS location saved in background
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsMapPickerOpen(true)}
+                        className="text-[10px] text-brand-gold bg-brand-gold/10 hover:bg-brand-gold/20 border border-brand-gold/30 px-2 py-0.5 rounded font-bold cursor-pointer transition-all"
+                      >
+                        Adjust Pin 📍
+                      </button>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-gray-300 underline font-bold hover:text-white"
+                      >
+                        Preview
+                      </a>
+                      <button
+                        type="button"
+                        onClick={handleClearLocation}
+                        className="text-[10px] text-gray-400 hover:text-red-400 px-1.5 py-0.5 rounded bg-black/40 border border-white/5 cursor-pointer"
+                        title="Remove attached GPS pin"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {locationSuccessMsg && !latitude && (
+                  <p className="text-[10px] text-emerald-400 font-semibold">{locationSuccessMsg}</p>
+                )}
               </div>
             ) : (
               <div className="p-4 bg-[#0D0D0C] border-2 border-white/5 rounded-2xl space-y-3 shadow-inner">
@@ -504,6 +734,28 @@ export default function CheckoutModal({
 
             </div>
 
+            {/* COD Anti-Bogus Security Notice */}
+            {paymentMethod === 'cod' && (
+              <div className="bg-amber-500/10 border-2 border-amber-500/25 rounded-2xl p-4 space-y-2 animate-fade-in">
+                <div className="flex items-center gap-2 text-amber-400 font-black text-xs uppercase tracking-wider">
+                  <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>Anti-Bogus Order & COD Safety Policy</span>
+                </div>
+                <p className="text-[11px] text-gray-300 leading-relaxed font-normal">
+                  To protect our small kitchen & rider partners against fake bookings, our dispatch staff may place a quick verification call to <strong className="text-white font-mono">{phone || 'your phone number'}</strong> before cooking starts. Please ensure your line is reachable.
+                </p>
+                {totalAmount > 1500 && (
+                  <div className="bg-red-500/15 border border-red-500/30 rounded-xl p-3 flex items-start gap-2.5 text-[11px] text-red-200">
+                    <AlertTriangle className="w-4 h-4 text-brand-red flex-shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-white block font-bold">High-Value COD Order (₱{totalAmount.toFixed(2)}):</strong>
+                      Orders above ₱1,500 require verbal phone confirmation before cooking, or you may pay via GCash/Maya for instant express cooking.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Simulated Payment details portal based on choice */}
             {paymentMethod === 'ewallet' && (
               <div className="bg-[#0D0D0C] p-4 rounded-2xl border-2 border-white/5 space-y-3 animate-fade-in shadow-inner">
@@ -636,6 +888,15 @@ export default function CheckoutModal({
         </div>
 
       </div>
+
+      {/* Interactive Map Pinning Modal */}
+      <MapPickerModal
+        isOpen={isMapPickerOpen}
+        onClose={() => setIsMapPickerOpen(false)}
+        initialLat={latitude}
+        initialLng={longitude}
+        onConfirmLocation={handleConfirmMapLocation}
+      />
     </div>
   );
 }

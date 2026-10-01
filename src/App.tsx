@@ -1227,9 +1227,8 @@ function AppContent() {
         return;
       }
 
-      // Create order with group tags
-      const newOrderId = `ord-group-${groupSession.id}-${Math.random().toString(36).substr(2, 5)}`;
-      const totalAmount = mappedGroupCartItems.reduce((sum, item) => sum + item.totalUnitPrice * item.quantity, 0);
+      const isExistingCustomer = orders.some(o => o.customer.phone === customer.phone && o.status === 'delivered');
+      const isFirstTimeCod = paymentMethod === 'cod' && !isExistingCustomer;
 
       finalOrder = {
         id: newOrderId,
@@ -1248,6 +1247,10 @@ function AppContent() {
         ],
         isGroupOrder: true,
         groupSessionId: groupSession.id,
+        isFirstTimeCod,
+        isLocationVerified: Boolean(customer.latitude && customer.longitude),
+        confirmationCallStatus: paymentMethod === 'cod' ? 'pending' : 'confirmed',
+        isBogusRisk: false,
       };
 
       // Deduct stock levels
@@ -1318,6 +1321,9 @@ function AppContent() {
       const newOrderId = `ord-${Math.random().toString(36).substr(2, 9)}`;
       const totalAmount = cart.reduce((sum, item) => sum + item.totalUnitPrice * item.quantity, 0);
 
+      const isExistingCustomer = orders.some(o => o.customer.phone === customer.phone && o.status === 'delivered');
+      const isFirstTimeCod = paymentMethod === 'cod' && !isExistingCustomer;
+
       finalOrder = {
         id: newOrderId,
         items: cart,
@@ -1333,6 +1339,10 @@ function AppContent() {
             note: 'Your order was successfully placed and transmitted to Curvada Kitchen.',
           },
         ],
+        isFirstTimeCod,
+        isLocationVerified: Boolean(customer.latitude && customer.longitude),
+        confirmationCallStatus: paymentMethod === 'cod' ? 'pending' : 'confirmed',
+        isBogusRisk: false,
       };
 
       // Deduct stock levels for purchased items
@@ -1552,6 +1562,38 @@ function AppContent() {
       });
     });
   }, [orders, stockLevels, ingredientsInventory]);
+
+  const handleUpdateConfirmationCallStatus = React.useCallback((
+    orderId: string, 
+    callStatus: 'pending' | 'confirmed' | 'unreachable' | 'rejected',
+    isBogusRisk?: boolean
+  ) => {
+    setOrders((prevOrders) => {
+      const o = prevOrders.find(ord => ord.id === orderId);
+      if (!o) return prevOrders;
+      const note = `Verification call status updated to: ${callStatus.toUpperCase()}${isBogusRisk ? ' (Flagged as Bogus Risk)' : ''}`;
+      const logs = [
+        ...o.logs,
+        {
+          status: o.status,
+          timestamp: new Date().toISOString(),
+          note,
+        },
+      ];
+
+      return prevOrders.map((item) => {
+        if (item.id === orderId) {
+          return {
+            ...item,
+            confirmationCallStatus: callStatus,
+            isBogusRisk: isBogusRisk !== undefined ? isBogusRisk : item.isBogusRisk,
+            logs,
+          };
+        }
+        return item;
+      });
+    });
+  }, []);
 
   const handleToggleItemCooked = async (orderId: string, itemId: string) => {
     const o = orders.find(ord => ord.id === orderId);
@@ -2186,6 +2228,7 @@ function AppContent() {
               onGenerateRandomOrder={handleGenerateRandomOrder}
               onStartItemCooking={handleStartItemCooking}
               onManualPlaceOrder={handleManualPlaceOrder}
+              onUpdateConfirmationCallStatus={handleUpdateConfirmationCallStatus}
             />
           </div>
         )}

@@ -44,8 +44,10 @@ export interface MenuItem {
     water?: number;       // Water cost per serving (e.g. ₱1.00)
     packaging?: number;   // Packaging/misc cost per serving (e.g. ₱2.00)
   };
-  batchYieldGrams?: number;   // Total batch yield weight in grams (e.g. 1000g for 1kg, 2000g for 2kg)
-  servingSizeGrams?: number;  // Portion/serving weight in grams (e.g. 80g or 90g)
+  batchYieldGrams?: number;   // Total batch yield weight/quantity (e.g. 1000g for 1kg, 2000g for 2kg, or 100 for 100pcs)
+  batchYieldUnit?: 'g' | 'pcs'; // Unit for batch yield ('g' or 'pcs')
+  servingSizeGrams?: number;  // Portion/serving weight/count (e.g. 80g, 90g, or 4pcs)
+  servingSizeUnit?: 'g' | 'pcs'; // Unit for portion/serving size ('g' or 'pcs')
   totalBatchCost?: number;    // Overall raw materials batch cost (e.g. ₱3,000)
   includeRice?: boolean;      // Whether this plate/dish includes steamed rice
   ricePortionGrams?: number;  // Steamed rice portion weight in grams per serving (e.g. 150g, 180g, 200g)
@@ -82,6 +84,11 @@ export interface CustomerInfo {
   orderType: 'delivery' | 'pickup';
   tableNumber?: string; // If ordering inside the restaurant
   loyaltyPoints?: number;
+  latitude?: number;
+  longitude?: number;
+  locationAccuracy?: number;
+  isLocationVerified?: boolean;
+  isFirstTimeCustomer?: boolean;
 }
 
 export interface Order {
@@ -104,6 +111,10 @@ export interface Order {
   orderSource?: 'online' | 'walkin' | 'messenger';
   amountTendered?: number;
   changeAmount?: number;
+  isFirstTimeCod?: boolean;
+  isLocationVerified?: boolean;
+  isBogusRisk?: boolean;
+  confirmationCallStatus?: 'pending' | 'confirmed' | 'unreachable' | 'rejected';
 }
 
 export interface GroupMember {

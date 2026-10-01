@@ -56,9 +56,12 @@ import {
   BookOpen,
   Download,
   Save,
-  Bookmark,
   Printer,
-  Bluetooth
+  Bluetooth,
+  PhoneCall,
+  MessageSquare,
+  Navigation,
+  ShieldAlert
 } from 'lucide-react';
 import ReceiptModal from './ReceiptModal';
 import BluetoothPrinterModal from './BluetoothPrinterModal';
@@ -95,6 +98,7 @@ interface AdminPanelProps {
   onGenerateRandomOrder?: () => void;
   onStartItemCooking?: (orderId: string, itemId: string) => void;
   onManualPlaceOrder?: (order: Order) => void;
+  onUpdateConfirmationCallStatus?: (orderId: string, callStatus: 'pending' | 'confirmed' | 'unreachable' | 'rejected', isBogusRisk?: boolean) => void;
 }
 
 const IMAGE_PRESETS = [
@@ -301,6 +305,7 @@ function AdminPanel({
   onGenerateRandomOrder,
   onStartItemCooking,
   onManualPlaceOrder,
+  onUpdateConfirmationCallStatus,
 }: AdminPanelProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -658,50 +663,176 @@ function AdminPanel({
         </div>
 
         {/* Customer & Fulfillment Info */}
-        <div className="space-y-1 text-xs">
+        <div className="space-y-2 text-xs">
           <div className="flex items-center justify-between gap-2 min-w-0">
-            <p className="font-bold text-white truncate">{order.customer.name}</p>
+            <p className="font-bold text-white truncate text-sm">{order.customer.name}</p>
+            <span className="text-[10px] text-gray-400 font-mono tracking-tight font-semibold">{order.customer.phone}</span>
           </div>
+
+          {/* Badges line: non-conflicting */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            {order.orderSource && order.orderSource !== 'online' && (
-              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                order.orderSource === 'walkin'
-                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                  : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+            {order.orderSource === 'walkin' ? (
+              <span className="text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                🚶 Walk-In
+              </span>
+            ) : (
+              <span className={`text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                order.customer.orderType === 'delivery' 
+                  ? 'bg-red-500/15 text-red-400 border border-red-500/30' 
+                  : 'bg-brand-gold/10 text-brand-gold border border-brand-gold/30'
               }`}>
-                {order.orderSource === 'walkin' ? '🚶 Walk-In' : '💬 Messenger'}
+                {order.customer.orderType === 'delivery' ? '🛵 Delivery' : `🛍️ Pickup ${order.customer.tableNumber ? `(T-${order.customer.tableNumber})` : ''}`}
               </span>
             )}
-            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
-              order.customer.orderType === 'delivery' 
-                ? 'bg-[#FF4D4D]/15 text-[#FF4D4D]' 
-                : 'bg-brand-gold/10 text-brand-gold'
+
+            {order.orderSource === 'messenger' && (
+              <span className="text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                💬 Messenger
+              </span>
+            )}
+
+            <span className={`text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider ${
+              order.paymentMethod === 'cod' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' : 'bg-white/5 text-gray-400 border border-white/10'
             }`}>
-              {order.customer.orderType === 'delivery' ? '🛵 Delivery' : `🛍️ Pickup ${order.customer.tableNumber ? `(Table ${order.customer.tableNumber})` : ''}`}
+              {order.paymentMethod === 'cod' ? '💵 COD' : order.paymentMethod}
             </span>
-            <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-white/5 text-gray-400 uppercase tracking-wider">
-              {order.paymentMethod}
-            </span>
+
             {order.changeAmount !== undefined && order.changeAmount > 0 && (
-              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <span className="text-[8px] font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">
                 Change: ₱{order.changeAmount.toFixed(0)}
               </span>
             )}
+
             {isAllItemsCooked && order.status === 'preparing' && (
-              <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 uppercase tracking-wider animate-pulse">
+              <span className="text-[8px] font-black px-2 py-0.5 rounded-md bg-green-500/10 text-green-400 uppercase tracking-wider animate-pulse border border-green-500/20">
                 🟢 Ready to Pack
               </span>
             )}
           </div>
+
+          {/* GPS Pin Badge & Direct Google Maps Navigation */}
+          {order.customer.latitude && order.customer.longitude && (
+            <div className="flex items-center justify-between text-[9px] bg-emerald-500/10 border border-emerald-500/20 rounded-xl py-1.5 px-2.5">
+              <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                <Navigation className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                GPS Location Attached
+              </span>
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${order.customer.latitude},${order.customer.longitude}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-brand-gold font-black underline hover:text-white flex items-center gap-0.5 text-[9px]"
+              >
+                🗺️ Maps ↗
+              </a>
+            </div>
+          )}
+
+          {/* COD Anti-Bogus Call & Verification Toolbar (Compact Grid) */}
+          {order.paymentMethod === 'cod' && (
+            <div className="bg-[#121211] border border-white/10 rounded-xl p-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                  <span className="text-[9px] font-black uppercase tracking-wider text-amber-300">
+                    {order.isFirstTimeCod ? '⚠️ 1st-Time COD' : 'COD Verification'}
+                  </span>
+                </div>
+                <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                  order.confirmationCallStatus === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                  order.confirmationCallStatus === 'unreachable' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                  order.confirmationCallStatus === 'rejected' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                  'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                }`}>
+                  {order.confirmationCallStatus === 'confirmed' ? '✓ Confirmed' :
+                   order.confirmationCallStatus === 'unreachable' ? '📵 Unreachable' :
+                   order.confirmationCallStatus === 'rejected' ? '🚫 Rejected' :
+                   '📞 Call Pending'}
+                </span>
+              </div>
+
+              {/* 5-Button Unified Action Grid */}
+              <div className="grid grid-cols-5 gap-1 pt-0.5">
+                <a
+                  href={`tel:${order.customer.phone}`}
+                  className="py-1 px-1 rounded-lg bg-[#1c1c1a] hover:bg-emerald-600/30 text-emerald-400 hover:text-white border border-white/5 hover:border-emerald-500/30 text-[9px] font-bold flex items-center justify-center gap-1 transition-all text-center"
+                  title="Call Customer"
+                >
+                  <PhoneCall className="w-3 h-3" />
+                  <span>Call</span>
+                </a>
+
+                <a
+                  href={`sms:${order.customer.phone}?body=Hi ${encodeURIComponent(order.customer.name)}, this is Curvada's Kitchen regarding your COD order #${order.id.slice(0, 8)}. Please confirm your order so we can cook!`}
+                  className="py-1 px-1 rounded-lg bg-[#1c1c1a] hover:bg-blue-600/30 text-blue-400 hover:text-white border border-white/5 hover:border-blue-500/30 text-[9px] font-bold flex items-center justify-center gap-1 transition-all text-center"
+                  title="Send SMS"
+                >
+                  <MessageSquare className="w-3 h-3" />
+                  <span>SMS</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => onUpdateConfirmationCallStatus?.(order.id, 'confirmed', false)}
+                  className={`py-1 px-1 rounded-lg text-[8px] font-black uppercase transition-all cursor-pointer flex items-center justify-center ${
+                    order.confirmationCallStatus === 'confirmed' 
+                      ? 'bg-emerald-500 text-black font-extrabold shadow-sm' 
+                      : 'bg-[#1c1c1a] text-gray-300 hover:bg-emerald-500/20 hover:text-emerald-400 border border-white/5'
+                  }`}
+                  title="Mark Confirmed (OK to Cook)"
+                >
+                  ✓ OK
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onUpdateConfirmationCallStatus?.(order.id, 'unreachable')}
+                  className={`py-1 px-1 rounded-lg text-[8px] font-black uppercase transition-all cursor-pointer flex items-center justify-center truncate ${
+                    order.confirmationCallStatus === 'unreachable' 
+                      ? 'bg-orange-500 text-black font-extrabold shadow-sm' 
+                      : 'bg-[#1c1c1a] text-gray-300 hover:bg-orange-500/20 hover:text-orange-400 border border-white/5'
+                  }`}
+                  title="Customer Unreachable"
+                >
+                  📵 No Ans
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('Flag this order as Fake/Bogus?')) {
+                      onUpdateConfirmationCallStatus?.(order.id, 'rejected', true);
+                    }
+                  }}
+                  className={`py-1 px-1 rounded-lg text-[8px] font-black uppercase transition-all cursor-pointer flex items-center justify-center ${
+                    order.confirmationCallStatus === 'rejected' 
+                      ? 'bg-red-500 text-white font-extrabold shadow-sm' 
+                      : 'bg-[#1c1c1a] text-gray-300 hover:bg-red-500/20 hover:text-red-400 border border-white/5'
+                  }`}
+                  title="Flag Bogus Order"
+                >
+                  🚫 Fake
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Bogus Order Warning Banner */}
+          {order.isBogusRisk && (
+            <div className="p-2 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center gap-1.5 text-red-400 text-[9px] font-black uppercase tracking-wider animate-pulse">
+              <ShieldAlert className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>🚨 Flagged as Bogus / Suspicious</span>
+            </div>
+          )}
         </div>
 
-        {/* Prepared By Staff / Chef Tag */}
-        <div className="flex items-center justify-between gap-2 pt-1 pb-1 border-t border-white/5 text-[9px]">
-          <span className="text-gray-500 font-bold uppercase">Prepared By:</span>
+        {/* Prepared By Staff / Chef Tag (Clean compact box) */}
+        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-[#121211] border border-white/5 rounded-xl text-[9px]">
+          <span className="text-gray-400 font-bold uppercase tracking-wider">Chef:</span>
           {onSetCookedBy ? (
             <input
               type="text"
-              placeholder="Chef Name..."
+              placeholder="Assign Chef..."
               defaultValue={order.cookedBy || ''}
               onBlur={(e) => onSetCookedBy(order.id, e.target.value)}
               onKeyDown={(e) => {
@@ -709,7 +840,7 @@ function AdminPanel({
                   onSetCookedBy(order.id, (e.target as HTMLInputElement).value);
                 }
               }}
-              className="bg-[#0D0D0C] border border-white/10 rounded px-2 py-0.5 text-[9px] text-white focus:outline-none focus:border-brand-gold w-28 font-semibold"
+              className="bg-black/40 border border-white/10 rounded-lg px-2 py-0.5 text-[9px] text-white focus:outline-none focus:border-brand-gold w-32 font-semibold text-right"
             />
           ) : (
             <span className="font-bold text-brand-gold">{order.cookedBy || 'Kitchen Team'}</span>
@@ -2186,19 +2317,100 @@ function AdminPanel({
                                 </div>
                               )}
 
-                              <div className="mt-3 text-xs text-gray-300 leading-relaxed font-normal flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                <div>
-                                  <strong>Recipient:</strong> {order.customer.name} ({order.customer.phone}) <br />
-                                  <strong>Type:</strong> <span className="capitalize font-bold text-white">{order.customer.orderType}</span>
-                                  {order.orderSource && order.orderSource !== 'online' && (
-                                    <> • <strong>Channel:</strong> <span className="font-bold text-amber-400 capitalize">{order.orderSource === 'walkin' ? 'Walk-In' : 'Messenger'}</span></>
+                              <div className="mt-3 text-xs text-gray-300 leading-relaxed font-normal flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                <div className="space-y-1.5 flex-1">
+                                  <div>
+                                    <strong>Recipient:</strong> {order.customer.name} ({order.customer.phone}) <br />
+                                    <strong>Type:</strong> <span className="capitalize font-bold text-white">{order.customer.orderType}</span>
+                                    {order.orderSource && order.orderSource !== 'online' && (
+                                      <> • <strong>Channel:</strong> <span className="font-bold text-amber-400 capitalize">{order.orderSource === 'walkin' ? 'Walk-In' : 'Messenger'}</span></>
+                                    )}
+                                    {' '}• <strong>Payment:</strong> <span className="uppercase font-bold text-brand-gold">{order.paymentMethod === 'cod' ? '💵 COD' : order.paymentMethod}</span>
+                                    {order.changeAmount !== undefined && order.changeAmount > 0 && (
+                                      <> • <strong className="text-amber-400">Change:</strong> <span className="font-mono font-bold text-amber-300">₱{order.changeAmount.toFixed(2)}</span> (Paid: ₱{order.amountTendered?.toFixed(2)})</>
+                                    )}
+                                  </div>
+
+                                  {/* GPS Info in List view */}
+                                  {order.customer.latitude && order.customer.longitude && (
+                                    <div className="inline-flex items-center gap-2 text-[10px] bg-emerald-500/10 border border-emerald-500/20 rounded-lg py-0.5 px-2">
+                                      <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                                        <Navigation className="w-3 h-3 text-emerald-400" />
+                                        GPS Location Attached
+                                      </span>
+                                      <a
+                                        href={`https://www.google.com/maps/search/?api=1&query=${order.customer.latitude},${order.customer.longitude}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-brand-gold font-bold underline hover:text-white"
+                                      >
+                                        Map ↗
+                                      </a>
+                                    </div>
                                   )}
-                                  {' '}• <strong>Payment:</strong> <span className="uppercase font-bold text-brand-gold">{order.paymentMethod}</span>
-                                  {order.changeAmount !== undefined && order.changeAmount > 0 && (
-                                    <> • <strong className="text-amber-400">Change:</strong> <span className="font-mono font-bold text-amber-300">₱{order.changeAmount.toFixed(2)}</span> (Paid: ₱{order.amountTendered?.toFixed(2)})</>
+
+                                  {/* COD Call & Verification Controls in List view */}
+                                  {order.paymentMethod === 'cod' && (
+                                    <div className="flex items-center gap-2 flex-wrap pt-1">
+                                      <span className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                                        order.confirmationCallStatus === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                                        order.confirmationCallStatus === 'unreachable' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                                        order.confirmationCallStatus === 'rejected' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                                        'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                                      }`}>
+                                        {order.confirmationCallStatus === 'confirmed' ? '✓ Call Confirmed' :
+                                         order.confirmationCallStatus === 'unreachable' ? '📵 Unreachable' :
+                                         order.confirmationCallStatus === 'rejected' ? '🚫 Bogus' :
+                                         '⚠️ Call Pending'}
+                                      </span>
+
+                                      <a
+                                        href={`tel:${order.customer.phone}`}
+                                        className="px-2 py-0.5 rounded bg-black/40 hover:bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold flex items-center gap-1"
+                                      >
+                                        <PhoneCall className="w-2.5 h-2.5" /> Call
+                                      </a>
+                                      <a
+                                        href={`sms:${order.customer.phone}?body=Hi ${encodeURIComponent(order.customer.name)}, Curvada's Kitchen received your COD order #${order.id.slice(0, 8)}. Please confirm!`}
+                                        className="px-2 py-0.5 rounded bg-black/40 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 text-[9px] font-bold flex items-center gap-1"
+                                      >
+                                        <MessageSquare className="w-2.5 h-2.5" /> SMS
+                                      </a>
+
+                                      {onUpdateConfirmationCallStatus && (
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => onUpdateConfirmationCallStatus(order.id, 'confirmed', false)}
+                                            className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 cursor-pointer"
+                                          >
+                                            ✓ Confirm
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => onUpdateConfirmationCallStatus(order.id, 'unreachable')}
+                                            className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-orange-500/15 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 cursor-pointer"
+                                          >
+                                            📵 No Answer
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (confirm('Flag this order as Fake/Bogus?')) {
+                                                onUpdateConfirmationCallStatus(order.id, 'rejected', true);
+                                              }
+                                            }}
+                                            className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-red-500/15 hover:bg-red-500/30 text-red-400 border border-red-500/30 cursor-pointer"
+                                          >
+                                            🚫 Bogus
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-1.5 text-[9px]">
+                                
+                                <div className="flex items-center gap-1.5 text-[9px] flex-shrink-0">
                                   <span className="text-gray-500 font-bold uppercase">Chef:</span>
                                   {onSetCookedBy ? (
                                     <input
@@ -2804,8 +3016,10 @@ function AdminPanel({
   const [formPkgOverhead, setFormPkgOverhead] = useState<number | ''>(0.00);
 
   // Batch Yield & Portion Costing state in Add/Edit modal (Viand / Meat Batch)
-  const [formBatchYieldGrams, setFormBatchYieldGrams] = useState<number | ''>(2000); // 2000g (2kg) default
-  const [formServingSizeGrams, setFormServingSizeGrams] = useState<number | ''>(90); // 90g default
+  const [formBatchYieldGrams, setFormBatchYieldGrams] = useState<number | ''>(2000); // 2000g (2kg) or pieces count default
+  const [formBatchYieldUnit, setFormBatchYieldUnit] = useState<'g' | 'pcs'>('g');
+  const [formServingSizeGrams, setFormServingSizeGrams] = useState<number | ''>(90); // 90g or pieces count default
+  const [formServingSizeUnit, setFormServingSizeUnit] = useState<'g' | 'pcs'>('g');
   const [formBatchTotalCost, setFormBatchTotalCost] = useState<number | ''>(3000); // ₱3,000 default
   const [batchYieldInputMode, setBatchYieldInputMode] = useState<'quick' | 'ingredients'>('quick');
   const [batchIngredientsList, setBatchIngredientsList] = useState<Array<{ name: string; amount: number | ''; unit: string; cost: number | '' }>>([
@@ -2828,8 +3042,9 @@ function AdminPanel({
 
   // Standalone Batch Yield & Portion Calculator Modal state
   const [isBatchCalcModalOpen, setIsBatchCalcModalOpen] = useState(false);
-  const [standaloneBatchWeight, setStandaloneBatchWeight] = useState<number | ''>(2000); // 2000g / 2kg default
-  const [standaloneServingGrams, setStandaloneServingGrams] = useState<number | ''>(90); // 90g default
+  const [standaloneBatchWeight, setStandaloneBatchWeight] = useState<number | ''>(2000); // 2000g / 2kg or count default
+  const [standaloneBatchUnit, setStandaloneBatchUnit] = useState<'g' | 'pcs'>('g');
+  const [standaloneServingGrams, setStandaloneServingGrams] = useState<number | ''>(90); // 90g or count default
   const [standaloneTotalBatchCost, setStandaloneTotalBatchCost] = useState<number | ''>(3000); // ₱3,000 default
   const [standaloneTargetMargin, setStandaloneTargetMargin] = useState<number | ''>(50);
   const [standaloneRecipeName, setStandaloneRecipeName] = useState<string>('');
@@ -2874,6 +3089,7 @@ function AdminPanel({
     setStandaloneIngredients([]);
     setStandaloneTotalBatchCost(0);
     setStandaloneBatchWeight(2000);
+    setStandaloneBatchUnit('g');
     setStandaloneServingGrams(90);
     setStandaloneTargetMargin(50);
     setStandaloneIncludeRice(true);
@@ -3040,6 +3256,8 @@ function AdminPanel({
     name: string;
     category?: Category;
     description?: string;
+    batchYieldUnit?: 'g' | 'pcs';
+    servingSizeUnit?: 'g' | 'pcs';
     servingSizeGrams: number;
     batchYieldGrams: number;
     targetMargin: number;
@@ -3056,10 +3274,35 @@ function AdminPanel({
 
   const DEFAULT_RECIPE_TEMPLATES: SavedRecipeTemplate[] = [
     {
+      id: 'template-lumpiang-shanghai',
+      name: 'Crispy Lumpiang Shanghai (100 pcs Batch)',
+      category: 'silog',
+      description: 'Golden crispy pork spring rolls with minced carrots, garlic, onions, and egg seasoning, paired with sweet chili sauce and steamed rice.',
+      batchYieldUnit: 'pcs',
+      servingSizeUnit: 'pcs',
+      servingSizeGrams: 4,
+      batchYieldGrams: 100,
+      targetMargin: 55,
+      includeRice: true,
+      ricePortionGrams: 150,
+      riceCostPerGram: 0.04,
+      ingredients: [
+        { name: 'Ground Pork Meat', batchAmount: 1000, unit: 'g' },
+        { name: 'Lumpia Wrappers', batchAmount: 100, unit: 'pcs' },
+        { name: 'Fresh Eggs', batchAmount: 2, unit: 'pcs' },
+        { name: 'Finely Minced Carrots', batchAmount: 150, unit: 'g' },
+        { name: 'White & Red Onions', batchAmount: 100, unit: 'g' },
+        { name: 'Minced Garlic', batchAmount: 50, unit: 'g' },
+        { name: 'Cooking Oil (Deep Fry)', batchAmount: 200, unit: 'ml' }
+      ]
+    },
+    {
       id: 'template-sisig-special',
       name: 'Sizzling Pork Sisig Recipe',
       category: 'silog',
       description: 'Authentic Pampanga-style crispy pork belly & jowl with chicken liver, onions, siling haba, and calamansi seasoning.',
+      batchYieldUnit: 'g',
+      servingSizeUnit: 'g',
       servingSizeGrams: 90,
       batchYieldGrams: 2000,
       targetMargin: 55,
@@ -3081,6 +3324,8 @@ function AdminPanel({
       name: 'Special Garlic Beef Tapa Bento',
       category: 'bento',
       description: 'Special garlic soy cured beef tapa with aromatics.',
+      batchYieldUnit: 'g',
+      servingSizeUnit: 'g',
       servingSizeGrams: 90,
       batchYieldGrams: 2000,
       targetMargin: 50,
@@ -3100,6 +3345,8 @@ function AdminPanel({
       name: 'Crispy Chicken Teriyaki Bento',
       category: 'bento',
       description: 'Tender chicken fillet with sweet teriyaki glaze.',
+      batchYieldUnit: 'g',
+      servingSizeUnit: 'g',
       servingSizeGrams: 80,
       batchYieldGrams: 1000,
       targetMargin: 50,
@@ -3121,7 +3368,13 @@ function AdminPanel({
       const stored = localStorage.getItem('curvada_saved_recipe_templates');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // If stored templates exist but do not have lumpiang shanghai, prepend it
+          if (!parsed.some((t: SavedRecipeTemplate) => t.id === 'template-lumpiang-shanghai')) {
+            return [DEFAULT_RECIPE_TEMPLATES[0], ...parsed];
+          }
+          return parsed;
+        }
       }
     } catch (e) {
       console.error('Failed to load saved templates', e);
@@ -3152,8 +3405,10 @@ function AdminPanel({
     const newTemplate: SavedRecipeTemplate = {
       id: 'template-' + Date.now(),
       name: finalName,
-      servingSizeGrams: Number(standaloneServingGrams) || 90,
-      batchYieldGrams: Number(standaloneBatchWeight) || 2000,
+      batchYieldUnit: standaloneBatchUnit,
+      servingSizeUnit: standaloneBatchUnit,
+      servingSizeGrams: Number(standaloneServingGrams) || (standaloneBatchUnit === 'pcs' ? 4 : 90),
+      batchYieldGrams: Number(standaloneBatchWeight) || (standaloneBatchUnit === 'pcs' ? 100 : 2000),
       targetMargin: Number(standaloneTargetMargin) || 50,
       includeRice: standaloneIncludeRice,
       ricePortionGrams: Number(standaloneRicePortionGrams) || 150,
@@ -3185,9 +3440,11 @@ function AdminPanel({
       const t = savedRecipeTemplates.find(item => item.id === templateId);
       if (!t) return;
 
+      const unit = t.batchYieldUnit || 'g';
+      setStandaloneBatchUnit(unit);
       setStandaloneRecipeName(t.name);
-      setStandaloneServingGrams(t.servingSizeGrams || 90);
-      setStandaloneBatchWeight(t.batchYieldGrams || 2000);
+      setStandaloneServingGrams(t.servingSizeGrams || (unit === 'pcs' ? 4 : 90));
+      setStandaloneBatchWeight(t.batchYieldGrams || (unit === 'pcs' ? 100 : 2000));
       setStandaloneTargetMargin(t.targetMargin || 50);
       setStandaloneIncludeRice(t.includeRice ?? true);
       setStandaloneRicePortionGrams(t.ricePortionGrams || 150);
@@ -3219,8 +3476,10 @@ function AdminPanel({
 
   const handleOpenBatchCalculatorForRecipe = (item: MenuItem) => {
     setStandaloneRecipeName(item.name);
-    const servingG = item.servingSizeGrams || 90;
-    const batchG = item.batchYieldGrams || 2000;
+    const unit = item.batchYieldUnit || 'g';
+    setStandaloneBatchUnit(unit);
+    const servingG = item.servingSizeGrams || (unit === 'pcs' ? 4 : 90);
+    const batchG = item.batchYieldGrams || (unit === 'pcs' ? 100 : 2000);
     setStandaloneServingGrams(servingG);
     setStandaloneBatchWeight(batchG);
     setStandaloneTargetMargin(item.targetMarginPercent || 50);
@@ -3351,8 +3610,10 @@ function AdminPanel({
   const handleSendRecipeFormToBatchCalc = () => {
     const dishName = formName || 'Custom Recipe';
     setStandaloneRecipeName(dishName);
-    const servingG = Number(formServingSizeGrams) || 90;
-    const batchG = Number(formBatchYieldGrams) || 2000;
+    const unit = formBatchYieldUnit || 'g';
+    setStandaloneBatchUnit(unit);
+    const servingG = Number(formServingSizeGrams) || (unit === 'pcs' ? 4 : 90);
+    const batchG = Number(formBatchYieldGrams) || (unit === 'pcs' ? 100 : 2000);
     setStandaloneServingGrams(servingG);
     setStandaloneBatchWeight(batchG);
     setStandaloneTargetMargin(Number(formTargetMargin) || 50);
@@ -4184,8 +4445,10 @@ function AdminPanel({
     setFormGasOverhead(item.utilityOverhead?.gas !== undefined ? item.utilityOverhead.gas : 2.50);
     setFormWaterOverhead(item.utilityOverhead?.water !== undefined ? item.utilityOverhead.water : 1.00);
     setFormPkgOverhead(item.utilityOverhead?.packaging !== undefined ? item.utilityOverhead.packaging : 0.00);
-    setFormBatchYieldGrams(item.batchYieldGrams !== undefined ? item.batchYieldGrams : 2000);
-    setFormServingSizeGrams(item.servingSizeGrams !== undefined ? item.servingSizeGrams : 90);
+    setFormBatchYieldUnit(item.batchYieldUnit || 'g');
+    setFormServingSizeUnit(item.servingSizeUnit || 'g');
+    setFormBatchYieldGrams(item.batchYieldGrams !== undefined ? item.batchYieldGrams : (item.batchYieldUnit === 'pcs' ? 100 : 2000));
+    setFormServingSizeGrams(item.servingSizeGrams !== undefined ? item.servingSizeGrams : (item.servingSizeUnit === 'pcs' ? 4 : 90));
     setFormBatchTotalCost(item.totalBatchCost !== undefined ? item.totalBatchCost : 3000);
     setBatchYieldInputMode('quick');
 
@@ -4239,8 +4502,10 @@ function AdminPanel({
     ));
 
     // Synchronize Batch Calculator state with this recipe
-    const batchG = item.batchYieldGrams !== undefined ? item.batchYieldGrams : 2000;
-    const servingG = item.servingSizeGrams !== undefined ? item.servingSizeGrams : 90;
+    const unit = item.batchYieldUnit || 'g';
+    setStandaloneBatchUnit(unit);
+    const batchG = item.batchYieldGrams !== undefined ? item.batchYieldGrams : (unit === 'pcs' ? 100 : 2000);
+    const servingG = item.servingSizeGrams !== undefined ? item.servingSizeGrams : (unit === 'pcs' ? 4 : 90);
     const multiplier = batchG / Math.max(1, servingG);
 
     setStandaloneRecipeName(item.name);
@@ -4471,8 +4736,10 @@ function AdminPanel({
         popular: formPopular,
         targetMarginPercent: Number(formTargetMargin) || 50,
         utilityOverhead: utilityOverheadData,
-        batchYieldGrams: Number(formBatchYieldGrams) || 2000,
-        servingSizeGrams: Number(formServingSizeGrams) || 90,
+        batchYieldGrams: Number(formBatchYieldGrams) || (formBatchYieldUnit === 'pcs' ? 100 : 2000),
+        batchYieldUnit: formBatchYieldUnit,
+        servingSizeGrams: Number(formServingSizeGrams) || (formServingSizeUnit === 'pcs' ? 4 : 90),
+        servingSizeUnit: formServingSizeUnit,
         totalBatchCost: Number(formBatchTotalCost) || 0,
         includeRice: formIncludeRice,
         ricePortionGrams: formIncludeRice ? (Number(formRicePortionGrams) || 150) : undefined,
@@ -4497,8 +4764,10 @@ function AdminPanel({
         isAvailable: true,
         targetMarginPercent: Number(formTargetMargin) || 50,
         utilityOverhead: utilityOverheadData,
-        batchYieldGrams: Number(formBatchYieldGrams) || 2000,
-        servingSizeGrams: Number(formServingSizeGrams) || 90,
+        batchYieldGrams: Number(formBatchYieldGrams) || (formBatchYieldUnit === 'pcs' ? 100 : 2000),
+        batchYieldUnit: formBatchYieldUnit,
+        servingSizeGrams: Number(formServingSizeGrams) || (formServingSizeUnit === 'pcs' ? 4 : 90),
+        servingSizeUnit: formServingSizeUnit,
         totalBatchCost: Number(formBatchTotalCost) || 0,
         includeRice: formIncludeRice,
         ricePortionGrams: formIncludeRice ? (Number(formRicePortionGrams) || 150) : undefined,
@@ -7066,11 +7335,17 @@ function AdminPanel({
                               <div className="flex items-center gap-1.5 text-gray-300">
                                 <Scale className="w-3 h-3 text-brand-gold" />
                                 <span className="text-gray-400">Portion:</span>
-                                <strong className="text-brand-gold">{item.servingSizeGrams}g / plate</strong>
+                                <strong className="text-brand-gold">
+                                  {item.servingSizeGrams}{item.servingSizeUnit === 'pcs' ? ' pcs' : 'g'} / plate
+                                </strong>
                               </div>
                               {item.batchYieldGrams && (
                                 <span className="text-gray-400 text-[8.5px]">
-                                  Yield: <strong className="text-white">{(item.batchYieldGrams / 1000).toFixed(1)}kg</strong> ({(item.batchYieldGrams / item.servingSizeGrams).toFixed(1)} svgs)
+                                  Yield: <strong className="text-white">
+                                    {item.batchYieldUnit === 'pcs'
+                                      ? `${item.batchYieldGrams} pcs`
+                                      : `${(item.batchYieldGrams / 1000).toFixed(1)}kg`}
+                                  </strong> ({((item.batchYieldGrams) / (item.servingSizeGrams || 1)).toFixed(1)} svgs)
                                 </span>
                               )}
                             </div>
@@ -9142,7 +9417,9 @@ function AdminPanel({
                     <div className="flex items-center gap-2 mt-0.5 text-[9px] text-gray-400 font-medium flex-wrap">
                       <span className="text-gray-500 font-bold uppercase text-[8px] tracking-wider">Batch Setup:</span>
                       <span className="text-amber-400 font-bold">
-                        🥩 {(Number(formBatchYieldGrams) / 1000).toFixed(1)}kg Batch ({formServingSizeGrams}g/plate)
+                        🥩 {formBatchYieldUnit === 'pcs'
+                          ? `${formBatchYieldGrams} pcs Batch (${formServingSizeGrams} pcs/plate)`
+                          : `${(Number(formBatchYieldGrams) / 1000).toFixed(1)}kg Batch (${formServingSizeGrams}g/plate)`}
                       </span>
                       <span className="text-gray-600">•</span>
                       <span className="text-emerald-400 font-bold">
@@ -10067,126 +10344,241 @@ function AdminPanel({
                   </select>
                 </div>
               </div>
-              {/* Recipe Title & Batch Parameters */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Recipe Name */}
-                <div className="space-y-1.5 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
-                  <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
-                    Viand / Dish Title
-                  </label>
-                  <input
-                    type="text"
-                    value={standaloneRecipeName}
-                    onChange={(e) => setStandaloneRecipeName(e.target.value)}
-                    placeholder="e.g. Garlic Pork Tapa Bento"
-                    className="w-full bg-[#121211] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-gold"
-                  />
-                  <span className="text-[8.5px] text-gray-500 block">Name of the menu item you are producing.</span>
-                </div>
-
-                {/* Batch Yield Weight */}
-                <div className="space-y-2 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
-                      1. Viand Batch Yield (Meat Only)
-                    </label>
-                    <span className="text-xs font-mono font-black text-brand-gold">
-                      {((Number(standaloneBatchWeight) || 0) / 1000).toFixed(2)} kg
+              {/* Recipe Title, Unit Switcher & Batch Parameters */}
+              <div className="space-y-3">
+                {/* Unit Mode Selector Tab */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#121211] p-3 rounded-2xl border border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-300 uppercase font-black tracking-wider flex items-center gap-1.5">
+                      <span className="text-brand-gold text-sm">⚙️</span>
+                      <span>Batch Calculation Unit Mode:</span>
+                    </span>
+                    <span className="text-[9px] text-gray-500">
+                      {standaloneBatchUnit === 'pcs' ? '(Piece-counted items like Lumpiang Shanghai, Siomai, Wings)' : '(Weight-based meats like Sisig, Tapa, Teriyaki)'}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="50"
-                      step="50"
-                      value={standaloneBatchWeight}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setStandaloneBatchWeight(v === '' ? '' : Number(v));
+                  <div className="flex items-center gap-1 bg-[#0D0D0C] p-1 rounded-xl border border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStandaloneBatchUnit('g');
+                        if (standaloneBatchWeight === 100 || standaloneBatchWeight === 60 || standaloneBatchWeight === 50 || standaloneBatchWeight === 120) {
+                          setStandaloneBatchWeight(2000);
+                        }
+                        if (standaloneServingGrams === 4 || standaloneServingGrams === 5 || standaloneServingGrams === 6 || standaloneServingGrams === 3) {
+                          setStandaloneServingGrams(90);
+                        }
                       }}
-                      onBlur={() => {
-                        if (standaloneBatchWeight === '' || Number(standaloneBatchWeight) < 10) setStandaloneBatchWeight(2000);
-                      }}
-                      className="flex-1 bg-[#121211] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
-                    />
-                    <span className="text-[10px] text-gray-500 font-bold uppercase">grams (g)</span>
-                  </div>
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                        standaloneBatchUnit === 'g'
+                          ? 'bg-brand-gold text-black shadow-md'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <span>⚖️ Weight (Grams / kg)</span>
+                    </button>
 
-                  <div className="flex items-center gap-1 pt-1 flex-wrap">
-                    {[
-                      { label: '1 Kilo (1,000g)', val: 1000 },
-                      { label: '2 Kilo (2,000g)', val: 2000 },
-                      { label: '3 Kilo (3,000g)', val: 3000 },
-                      { label: '5 Kilo (5,000g)', val: 5000 }
-                    ].map((item) => (
-                      <button
-                        key={item.val}
-                        type="button"
-                        onClick={() => setStandaloneBatchWeight(item.val)}
-                        className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
-                          standaloneBatchWeight === item.val
-                            ? 'bg-brand-gold text-black font-black'
-                            : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStandaloneBatchUnit('pcs');
+                        if (standaloneBatchWeight === 2000 || standaloneBatchWeight === 1000 || standaloneBatchWeight === 3000 || standaloneBatchWeight === 5000) {
+                          setStandaloneBatchWeight(100);
+                        }
+                        if (standaloneServingGrams === 90 || standaloneServingGrams === 80 || standaloneServingGrams === 70 || standaloneServingGrams === 100) {
+                          setStandaloneServingGrams(4);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                        standaloneBatchUnit === 'pcs'
+                          ? 'bg-brand-gold text-black shadow-md'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <span>🔢 Pieces (pcs / Count)</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* Serving Portion in Grams */}
-                <div className="space-y-2 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Recipe Name */}
+                  <div className="space-y-1.5 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
                     <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
-                      2. Viand Portion per Plate (Meat Only)
+                      Viand / Dish Title
                     </label>
-                    <span className="text-xs font-mono font-black text-brand-gold">
-                      {Number(standaloneServingGrams) || 0} grams
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
                     <input
-                      type="number"
-                      min="5"
-                      step="5"
-                      value={standaloneServingGrams}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setStandaloneServingGrams(v === '' ? '' : Number(v));
-                      }}
-                      onBlur={() => {
-                        if (standaloneServingGrams === '' || Number(standaloneServingGrams) < 1) setStandaloneServingGrams(90);
-                      }}
-                      className="flex-1 bg-[#121211] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
+                      type="text"
+                      value={standaloneRecipeName}
+                      onChange={(e) => setStandaloneRecipeName(e.target.value)}
+                      placeholder={standaloneBatchUnit === 'pcs' ? "e.g. Crispy Lumpiang Shanghai" : "e.g. Garlic Pork Tapa Bento"}
+                      className="w-full bg-[#121211] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-gold"
                     />
-                    <span className="text-[10px] text-gray-500 font-bold uppercase">grams / plate</span>
+                    <span className="text-[8.5px] text-gray-500 block">Name of the menu item you are producing.</span>
                   </div>
 
-                  <div className="flex items-center gap-1 pt-1 flex-wrap">
-                    {[
-                      { label: '70g', val: 70 },
-                      { label: '80g (Sample 1)', val: 80 },
-                      { label: '90g (Sample 2)', val: 90 },
-                      { label: '100g', val: 100 },
-                      { label: '120g', val: 120 },
-                      { label: '150g', val: 150 }
-                    ].map((item) => (
-                      <button
-                        key={item.val}
-                        type="button"
-                        onClick={() => setStandaloneServingGrams(item.val)}
-                        className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
-                          standaloneServingGrams === item.val
-                            ? 'bg-brand-gold text-black font-black'
-                            : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
+                  {/* Batch Yield (Weight or Pieces) */}
+                  <div className="space-y-2 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
+                        {standaloneBatchUnit === 'pcs' ? '1. Viand Batch Yield (Total Pieces)' : '1. Viand Batch Yield (Meat Only)'}
+                      </label>
+                      <span className="text-xs font-mono font-black text-brand-gold">
+                        {standaloneBatchUnit === 'pcs'
+                          ? `${Number(standaloneBatchWeight) || 0} pcs`
+                          : `${((Number(standaloneBatchWeight) || 0) / 1000).toFixed(2)} kg`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        step={standaloneBatchUnit === 'pcs' ? "1" : "50"}
+                        value={standaloneBatchWeight}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setStandaloneBatchWeight(v === '' ? '' : Number(v));
+                        }}
+                        onBlur={() => {
+                          if (standaloneBatchWeight === '' || Number(standaloneBatchWeight) < 1) {
+                            setStandaloneBatchWeight(standaloneBatchUnit === 'pcs' ? 100 : 2000);
+                          }
+                        }}
+                        className="flex-1 bg-[#121211] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
+                      />
+                      <span className="text-[10px] text-gray-500 font-bold uppercase">
+                        {standaloneBatchUnit === 'pcs' ? 'pieces (pcs)' : 'grams (g)'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 pt-1 flex-wrap">
+                      {standaloneBatchUnit === 'pcs' ? (
+                        [
+                          { label: '30 pcs', val: 30 },
+                          { label: '50 pcs', val: 50 },
+                          { label: '60 pcs', val: 60 },
+                          { label: '100 pcs (Shanghai)', val: 100 },
+                          { label: '120 pcs', val: 120 },
+                          { label: '200 pcs', val: 200 }
+                        ].map((item) => (
+                          <button
+                            key={item.val}
+                            type="button"
+                            onClick={() => setStandaloneBatchWeight(item.val)}
+                            className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                              standaloneBatchWeight === item.val
+                                ? 'bg-brand-gold text-black font-black'
+                                : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))
+                      ) : (
+                        [
+                          { label: '1 Kilo (1,000g)', val: 1000 },
+                          { label: '2 Kilo (2,000g)', val: 2000 },
+                          { label: '3 Kilo (3,000g)', val: 3000 },
+                          { label: '5 Kilo (5,000g)', val: 5000 }
+                        ].map((item) => (
+                          <button
+                            key={item.val}
+                            type="button"
+                            onClick={() => setStandaloneBatchWeight(item.val)}
+                            className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                              standaloneBatchWeight === item.val
+                                ? 'bg-brand-gold text-black font-black'
+                                : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Serving Portion in Grams or Pieces */}
+                  <div className="space-y-2 bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
+                        {standaloneBatchUnit === 'pcs' ? '2. Viand Portion per Plate (Pieces Count)' : '2. Viand Portion per Plate (Meat Only)'}
+                      </label>
+                      <span className="text-xs font-mono font-black text-brand-gold">
+                        {Number(standaloneServingGrams) || 0} {standaloneBatchUnit === 'pcs' ? 'pcs' : 'grams'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        step={standaloneBatchUnit === 'pcs' ? "1" : "5"}
+                        value={standaloneServingGrams}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setStandaloneServingGrams(v === '' ? '' : Number(v));
+                        }}
+                        onBlur={() => {
+                          if (standaloneServingGrams === '' || Number(standaloneServingGrams) < 1) {
+                            setStandaloneServingGrams(standaloneBatchUnit === 'pcs' ? 4 : 90);
+                          }
+                        }}
+                        className="flex-1 bg-[#121211] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white font-mono font-bold text-right focus:outline-none focus:border-brand-gold"
+                      />
+                      <span className="text-[10px] text-gray-500 font-bold uppercase">
+                        {standaloneBatchUnit === 'pcs' ? 'pcs / plate' : 'grams / plate'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 pt-1 flex-wrap">
+                      {standaloneBatchUnit === 'pcs' ? (
+                        [
+                          { label: '3 pcs', val: 3 },
+                          { label: '4 pcs (Standard)', val: 4 },
+                          { label: '5 pcs', val: 5 },
+                          { label: '6 pcs (Bento)', val: 6 },
+                          { label: '8 pcs', val: 8 },
+                          { label: '10 pcs', val: 10 }
+                        ].map((item) => (
+                          <button
+                            key={item.val}
+                            type="button"
+                            onClick={() => setStandaloneServingGrams(item.val)}
+                            className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                              standaloneServingGrams === item.val
+                                ? 'bg-brand-gold text-black font-black'
+                                : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))
+                      ) : (
+                        [
+                          { label: '70g', val: 70 },
+                          { label: '80g (Sample 1)', val: 80 },
+                          { label: '90g (Sample 2)', val: 90 },
+                          { label: '100g', val: 100 },
+                          { label: '120g', val: 120 },
+                          { label: '150g', val: 150 }
+                        ].map((item) => (
+                          <button
+                            key={item.val}
+                            type="button"
+                            onClick={() => setStandaloneServingGrams(item.val)}
+                            className={`px-2 py-0.5 rounded text-[8.5px] font-mono font-bold transition-all ${
+                              standaloneServingGrams === item.val
+                                ? 'bg-brand-gold text-black font-black'
+                                : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -10197,7 +10589,7 @@ function AdminPanel({
                   <div>
                     <h5 className="font-display font-bold text-white text-xs uppercase tracking-wider flex items-center gap-1.5">
                       <span className="text-brand-gold">🥩</span>
-                      <span>Viand Raw Materials for the {((Number(standaloneBatchWeight) || 0) / 1000).toFixed(1)}kg Batch ({standaloneIngredients.length} Ingredients)</span>
+                      <span>Viand Raw Materials for the {standaloneBatchUnit === 'pcs' ? `${standaloneBatchWeight} pcs` : `${((Number(standaloneBatchWeight) || 0) / 1000).toFixed(1)}kg`} Batch ({standaloneIngredients.length} Ingredients)</span>
                     </h5>
                     <div className="flex items-center gap-2 text-[9px] text-gray-400 font-medium mt-0.5 flex-wrap">
                       <span className="text-gray-500">Plate Recipe Breakdown:</span>
@@ -11210,7 +11602,7 @@ function AdminPanel({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-gray-400 text-[9px] uppercase font-bold">Plate Breakdown:</span>
                         <span className="px-2 py-0.5 rounded bg-brand-gold/10 border border-brand-gold/30 text-brand-gold font-bold">
-                          🥩 Viand ({servingG}g): ₱{viandCostPerServing.toFixed(2)} ({((viandCostPerServing / Math.max(0.01, totalPlateCogs)) * 100).toFixed(0)}%)
+                          🥩 Viand ({servingG}{standaloneBatchUnit === 'pcs' ? ' pcs' : 'g'}): ₱{viandCostPerServing.toFixed(2)} ({((viandCostPerServing / Math.max(0.01, totalPlateCogs)) * 100).toFixed(0)}%)
                         </span>
                         <span className="text-gray-500">+</span>
                         <span className={`px-2 py-0.5 rounded border font-bold ${
@@ -11242,7 +11634,7 @@ function AdminPanel({
                         <span className="text-base font-black text-blue-400 block">
                           {servingsProduced.toFixed(1)} <span className="text-[10px] text-gray-400">plates</span>
                         </span>
-                        <span className="text-[8px] text-gray-400 block truncate">({batchWeightG}g ÷ {servingG}g)</span>
+                        <span className="text-[8px] text-gray-400 block truncate">({batchWeightG}{standaloneBatchUnit === 'pcs' ? ' pcs' : 'g'} ÷ {servingG}{standaloneBatchUnit === 'pcs' ? ' pcs' : 'g'})</span>
                       </div>
 
                       <div className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-1">
@@ -11277,7 +11669,7 @@ function AdminPanel({
                         <span>Commercial Production Summary:</span>
                       </div>
                       <p>
-                        A bulk viand batch of <strong className="text-brand-gold">{(batchWeightG / 1000).toFixed(2)} kg ({batchWeightG}g)</strong> raw materials costing <strong className="text-brand-gold">₱{batchCost.toLocaleString()}</strong> produces exactly <strong className="text-blue-400">{servingsProduced.toFixed(1)} full portions</strong> at <strong className="text-white">{servingG} grams of meat per plate</strong>.
+                        A bulk viand batch of <strong className="text-brand-gold">{standaloneBatchUnit === 'pcs' ? `${batchWeightG} pcs` : `${(batchWeightG / 1000).toFixed(2)} kg (${batchWeightG}g)`}</strong> raw materials costing <strong className="text-brand-gold">₱{batchCost.toLocaleString()}</strong> produces exactly <strong className="text-blue-400">{servingsProduced.toFixed(1)} full portions</strong> at <strong className="text-white">{servingG} {standaloneBatchUnit === 'pcs' ? 'pcs' : 'grams of meat'} per plate</strong>.
                       </p>
                       {standaloneIncludeRice ? (
                         <p className="text-amber-300">
@@ -11300,8 +11692,8 @@ function AdminPanel({
                         onClick={() => {
                           const sheetText = `CURVADA'S KITCHEN - BATCH PRODUCTION & PORTION SHEET
 Recipe Title: ${standaloneRecipeName}
-Viand Batch Yield: ${(batchWeightG / 1000).toFixed(2)} kg (${batchWeightG} grams cooked meat)
-Viand Portion Size: ${servingG} grams / plate
+Viand Batch Yield: ${standaloneBatchUnit === 'pcs' ? `${batchWeightG} pcs` : `${(batchWeightG / 1000).toFixed(2)} kg (${batchWeightG} grams cooked meat)`}
+Viand Portion Size: ${servingG} ${standaloneBatchUnit === 'pcs' ? 'pcs' : 'grams'} / plate
 Total Servings Produced: ${servingsProduced.toFixed(1)} plates
 Overall Viand Batch Cost: ₱${batchCost.toFixed(2)}
 Viand COGS per Serving: ₱${viandCostPerServing.toFixed(2)}
@@ -11406,7 +11798,7 @@ ${standaloneIngredients.map((item, idx) => {
                             // Pre-fill Add/Edit Recipe Form with Costing & Selling Price WITHOUT wiping out existing dish metadata!
                             if (!editingItem) {
                               setFormName(standaloneRecipeName);
-                              setFormDescription(`Prepared in bulk ${(batchWeightG / 1000).toFixed(1)}kg viand batch, portioned at ${servingG}g meat${standaloneIncludeRice ? ` with ${standaloneRicePortionGrams}g steamed rice` : ''}. Served fresh with savory traditional accompaniments.`);
+                              setFormDescription(`Prepared in bulk ${standaloneBatchUnit === 'pcs' ? `${batchWeightG} pcs` : `${(batchWeightG / 1000).toFixed(1)}kg`} viand batch, portioned at ${servingG}${standaloneBatchUnit === 'pcs' ? ' pcs' : 'g meat'}${standaloneIncludeRice ? ` with ${standaloneRicePortionGrams}g steamed rice` : ''}. Served fresh with savory traditional accompaniments.`);
                               if (!formCategory) setFormCategory('silog');
                               if (!formImage) setFormImage(IMAGE_PRESETS[2].url);
                               if (!formOriginalImage) setFormOriginalImage(IMAGE_PRESETS[2].url);
@@ -11417,6 +11809,8 @@ ${standaloneIngredients.map((item, idx) => {
                             }
                             setFormPrice(recSellingPrice);
                             setFormTargetMargin(Number(standaloneTargetMargin) || 50);
+                            setFormBatchYieldUnit(standaloneBatchUnit);
+                            setFormServingSizeUnit(standaloneBatchUnit);
                             setFormBatchYieldGrams(batchWeightG);
                             setFormServingSizeGrams(servingG);
                             setFormBatchTotalCost(batchCost);
