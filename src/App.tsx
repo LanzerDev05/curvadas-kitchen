@@ -78,11 +78,12 @@ const SEED_ORDERS: Order[] = [
     totalAmount: 189,
     customer: {
       name: 'Sarah Geronimo',
-      phone: '0922-383-7377',
+      phone: '09568247699',
       email: 'sarahg@gmail.com',
       address: 'Zone 4, Curvada National Highway (Eat-in)',
       orderType: 'pickup',
       tableNumber: '7',
+      pickupTime: 'ASAP (~15-20 mins)',
     },
     paymentMethod: 'cod',
     status: 'pending',
@@ -230,14 +231,19 @@ function AppContent() {
     }
   };
 
-  const handleAddIngredient = (name: string, quantity: number, unit: string, lowStockAlert: number, costPerUnit?: number) => {
+  const handleAddIngredient = (name: string, quantity: number, unit: string, lowStockAlert: number, costPerUnit?: number, packCount?: number, packSize?: number, packCost?: number) => {
+    const rawCost = costPerUnit !== undefined ? costPerUnit : (unit === 'pcs' ? 15.00 : unit === 'cans' ? 45.00 : unit === 'ml' ? 0.08 : unit === 'L' ? 80.00 : unit === 'kg' ? 150.00 : 0.05);
+    const resolvedCost = Number(rawCost.toFixed(2));
     const newIng: IngredientStock = {
       id: `ing-new-${Math.random().toString(36).substr(2, 4)}`,
       name,
       quantity,
       unit,
       lowStockAlert,
-      costPerUnit: costPerUnit !== undefined ? costPerUnit : (unit === 'pcs' ? 15.00 : unit === 'cans' ? 45.00 : unit === 'ml' ? 0.08 : unit === 'L' ? 80.00 : unit === 'kg' ? 150.00 : 0.05)
+      costPerUnit: resolvedCost,
+      packCount,
+      packSize,
+      packCost: packCost !== undefined ? Number(packCost.toFixed(2)) : undefined
     };
     saveIngredientsInventory([...ingredientsInventory, newIng]);
   };
@@ -262,10 +268,21 @@ function AppContent() {
     saveIngredientsInventory(updated);
   };
 
-  const handleEditIngredient = (id: string, name: string, quantity: number, unit: string, lowStockAlert: number, costPerUnit?: number) => {
+  const handleEditIngredient = (id: string, name: string, quantity: number, unit: string, lowStockAlert: number, costPerUnit?: number, packCount?: number, packSize?: number, packCost?: number) => {
     const updated = ingredientsInventory.map(ing => {
       if (ing.id === id) {
-        return { ...ing, name, quantity: Math.max(0, quantity), unit, lowStockAlert, costPerUnit };
+        const resolvedCost = costPerUnit !== undefined ? Number(costPerUnit.toFixed(2)) : ing.costPerUnit;
+        return { 
+          ...ing, 
+          name, 
+          quantity: Math.max(0, quantity), 
+          unit, 
+          lowStockAlert, 
+          costPerUnit: resolvedCost,
+          packCount: packCount !== undefined ? packCount : ing.packCount,
+          packSize: packSize !== undefined ? packSize : ing.packSize,
+          packCost: packCost !== undefined ? Number(packCost.toFixed(2)) : ing.packCost
+        };
       }
       return ing;
     });
@@ -1227,11 +1244,17 @@ function AppContent() {
         return;
       }
 
+      const newOrderId = `ord-grp-${Math.random().toString(36).substr(2, 9)}`;
+      const totalAmount = mappedGroupCartItems.reduce((sum, item) => sum + item.totalUnitPrice * item.quantity, 0);
       const isExistingCustomer = orders.some(o => o.customer.phone === customer.phone && o.status === 'delivered');
       const isFirstTimeCod = paymentMethod === 'cod' && !isExistingCustomer;
 
+      const todayOrdersCount = orders.filter(o => new Date(o.timestamp).toDateString() === new Date().toDateString()).length;
+      const nextQueueNum = todayOrdersCount + 1;
+
       finalOrder = {
         id: newOrderId,
+        queueNumber: nextQueueNum,
         items: mappedGroupCartItems as any[],
         totalAmount,
         customer,
@@ -1324,8 +1347,12 @@ function AppContent() {
       const isExistingCustomer = orders.some(o => o.customer.phone === customer.phone && o.status === 'delivered');
       const isFirstTimeCod = paymentMethod === 'cod' && !isExistingCustomer;
 
+      const todayOrdersCount = orders.filter(o => new Date(o.timestamp).toDateString() === new Date().toDateString()).length;
+      const nextQueueNum = todayOrdersCount + 1;
+
       finalOrder = {
         id: newOrderId,
+        queueNumber: nextQueueNum,
         items: cart,
         totalAmount,
         customer,
@@ -2340,7 +2367,7 @@ function AppContent() {
               <span className="text-brand-red">MADE WITH FLAVOR, MADE TO GO</span>
             </div>
             <div className="text-gray-500 text-[10px] leading-relaxed max-w-sm sm:text-right font-medium">
-              Enjoy our delicious silog, bento and rich rice bowls cooked with pride. Delivery Hotline: <strong>0922-383-7377</strong>. Colo, Dinalupihan, Bataan HQ.
+              Enjoy our delicious silog, bento and rich rice bowls cooked with pride. Delivery Hotline: <strong>09568247699</strong>. Colo, Dinalupihan, Bataan HQ.
             </div>
           </div>
         </footer>

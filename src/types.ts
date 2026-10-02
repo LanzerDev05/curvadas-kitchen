@@ -7,6 +7,9 @@ export interface IngredientStock {
   unit: string;
   lowStockAlert: number;
   costPerUnit?: number; // Price/cost per unit (e.g. per gram or per pc)
+  packCount?: number;   // Number of bulk packs / cans count (e.g. 60)
+  packSize?: number;    // Size per pack (e.g. 30g)
+  packCost?: number;    // Purchase cost per pack (e.g. ₱10)
   supplier?: {
     name: string;
     contact: string;
@@ -32,6 +35,9 @@ export interface MenuItem {
   isAvailable: boolean;
   ingredients?: string[];
   recipeRequirements?: { name: string; amount: number }[];
+  batchIngredients?: { name: string; batchAmount: number; unit: string; cost?: number }[];
+  garnishes?: Array<{ name: string; amount: number; unit?: string; costPerUnit?: number; selected: boolean }>;
+  packaging?: Array<{ name: string; amount: number; unit?: string; costPerUnit?: number; selected: boolean }>;
   customizableOptions?: {
     title: string;
     choices: MenuOption[];
@@ -83,6 +89,9 @@ export interface CustomerInfo {
   address: string;
   orderType: 'delivery' | 'pickup';
   tableNumber?: string; // If ordering inside the restaurant
+  pickupTime?: string; // Target or estimated pickup time for pickup orders
+  deliveryTime?: string; // Target or scheduled delivery date & time for delivery orders
+  scheduleType?: 'asap' | 'scheduled'; // Fulfillment timing preference: 'asap' or 'scheduled'
   loyaltyPoints?: number;
   latitude?: number;
   longitude?: number;
@@ -93,6 +102,7 @@ export interface CustomerInfo {
 
 export interface Order {
   id: string;
+  queueNumber?: number; // Daily sequential queue priority number
   items: CartItem[];
   totalAmount: number;
   customer: CustomerInfo;

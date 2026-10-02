@@ -451,6 +451,18 @@ function OrderTracker({
               )}
             </span>
           </div>
+          {customer.orderType === 'pickup' && (
+            <div className="flex justify-between">
+              <span className="text-gray-500 font-bold uppercase tracking-wider">Pickup Schedule:</span>
+              <span className="text-brand-gold font-bold">{customer.pickupTime || 'ASAP (~15-20 mins)'}</span>
+            </div>
+          )}
+          {customer.orderType === 'delivery' && (
+            <div className="flex justify-between">
+              <span className="text-gray-500 font-bold uppercase tracking-wider">Delivery Schedule:</span>
+              <span className="text-brand-gold font-bold">{customer.deliveryTime || 'ASAP (~20-30 mins)'}</span>
+            </div>
+          )}
           {customer.tableNumber && (
             <div className="flex justify-between pt-1 border-t-2 border-white/5">
               <span className="text-gray-500 font-bold uppercase tracking-wider">Table Number:</span>
@@ -616,7 +628,7 @@ function OrderTracker({
         <div className="flex items-center gap-2 text-[10px] text-gray-400 leading-normal bg-[#141414] p-3.5 rounded-2xl border border-white/5">
           <ShieldCheck className="w-5 h-5 text-brand-red flex-shrink-0" />
           <span>
-            We value your order experience. If you need any immediate assistance, feel free to contact Curvada's kitchen support directly at <strong>0922-383-7377</strong>.
+            We value your order experience. If you need any immediate assistance, feel free to contact Curvada's kitchen support directly at <strong>09568247699</strong>.
           </span>
         </div>
 

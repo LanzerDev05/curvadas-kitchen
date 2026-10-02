@@ -13,7 +13,9 @@ import {
   CheckCircle2, 
   ShieldAlert,
   PhoneCall,
-  Map as MapIcon
+  Map as MapIcon,
+  Clock,
+  Calendar
 } from 'lucide-react';
 import MapPickerModal from './MapPickerModal';
 
@@ -24,6 +26,25 @@ interface CheckoutModalProps {
   onSubmitOrder: (customer: CustomerInfo, paymentMethod: 'cod' | 'ewallet' | 'card') => void;
   loggedInCustomer: CustomerInfo | null;
 }
+
+const getDefaultFulfillmentDateTime = (offsetMinutes = 20) => {
+  const d = new Date(Date.now() + offsetMinutes * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const formatFulfillmentDateTimeDisplay = (isoStr: string, isDelivery = false) => {
+  if (!isoStr) return isDelivery ? 'ASAP (~20-30 mins)' : 'ASAP (~15-20 mins)';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return isoStr;
+  const isToday = d.toDateString() === new Date().toDateString();
+  const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  if (isToday) {
+    return `Today, ${timeStr}`;
+  }
+  const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return `${dateStr}, ${timeStr}`;
+};
 
 export default function CheckoutModal({
   isOpen,
@@ -38,6 +59,9 @@ export default function CheckoutModal({
   const [address, setAddress] = useState(() => localStorage.getItem('curvada_cust_address') || '');
   const [orderType, setOrderType] = useState<'delivery' | 'pickup'>(() => (localStorage.getItem('curvada_cust_ordertype') as 'delivery' | 'pickup') || 'delivery');
   const [tableNumber, setTableNumber] = useState(() => localStorage.getItem('curvada_cust_tablenumber') || '');
+  const [scheduleType, setScheduleType] = useState<'asap' | 'scheduled'>(() => (localStorage.getItem('curvada_cust_scheduletype') as 'asap' | 'scheduled') || 'asap');
+  const [pickupDateTime, setPickupDateTime] = useState(() => localStorage.getItem('curvada_cust_pickuptime_iso') || getDefaultFulfillmentDateTime(15));
+  const [deliveryDateTime, setDeliveryDateTime] = useState(() => localStorage.getItem('curvada_cust_deliverytime_iso') || getDefaultFulfillmentDateTime(30));
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'ewallet' | 'card'>(() => (localStorage.getItem('curvada_cust_paymentmethod') as 'cod' | 'ewallet' | 'card') || 'cod');
 
   // GPS & Map Geolocation state
@@ -295,6 +319,9 @@ export default function CheckoutModal({
     setTimeout(() => {
       setIsProcessing(false);
       
+      const scheduledPickupStr = scheduleType === 'scheduled' ? formatFulfillmentDateTimeDisplay(pickupDateTime, false) : 'ASAP (~15-20 mins)';
+      const scheduledDeliveryStr = scheduleType === 'scheduled' ? formatFulfillmentDateTimeDisplay(deliveryDateTime, true) : 'ASAP (~20-30 mins)';
+
       const customer: CustomerInfo = {
         name: name.trim(),
         phone: cleanPhone,
@@ -302,6 +329,9 @@ export default function CheckoutModal({
         address: orderType === 'delivery' ? address.trim() : 'Curvada Kitchen Main HQ (Store Pickup)',
         orderType,
         tableNumber: orderType === 'pickup' && tableNumber ? tableNumber : undefined,
+        pickupTime: orderType === 'pickup' ? scheduledPickupStr : undefined,
+        deliveryTime: orderType === 'delivery' ? scheduledDeliveryStr : undefined,
+        scheduleType,
         latitude,
         longitude,
         locationAccuracy,
@@ -315,7 +345,10 @@ export default function CheckoutModal({
         localStorage.setItem('curvada_cust_address', address);
       }
       localStorage.setItem('curvada_cust_ordertype', orderType);
+      localStorage.setItem('curvada_cust_scheduletype', scheduleType);
       localStorage.setItem('curvada_cust_tablenumber', tableNumber || '');
+      localStorage.setItem('curvada_cust_pickuptime_iso', pickupDateTime || '');
+      localStorage.setItem('curvada_cust_deliverytime_iso', deliveryDateTime || '');
       localStorage.setItem('curvada_cust_paymentmethod', paymentMethod);
 
       onSubmitOrder(customer, paymentMethod);
@@ -599,9 +632,82 @@ export default function CheckoutModal({
                 {locationSuccessMsg && !latitude && (
                   <p className="text-[10px] text-emerald-400 font-semibold">{locationSuccessMsg}</p>
                 )}
+                {/* Delivery Scheduling / Timing Preference (ASAP vs Scheduled) */}
+                <div className="p-3.5 bg-[#141413] border border-white/5 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-brand-red" />
+                      Delivery Timing Preference
+                    </span>
+                    <span className="text-[10px] font-black text-brand-gold bg-brand-gold/10 px-2 py-0.5 rounded-md border border-brand-gold/20 font-mono">
+                      {scheduleType === 'asap' ? '⚡ ASAP (20-30 mins)' : formatFulfillmentDateTimeDisplay(deliveryDateTime, true)}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setScheduleType('asap')}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        scheduleType === 'asap'
+                          ? 'bg-brand-red border-red-500 text-white shadow-md'
+                          : 'bg-[#1e1e1d] border-white/5 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <span>⚡ Deliver ASAP</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScheduleType('scheduled')}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        scheduleType === 'scheduled'
+                          ? 'bg-brand-gold border-brand-gold text-black shadow-md'
+                          : 'bg-[#1e1e1d] border-white/5 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>📅 Schedule Delivery</span>
+                    </button>
+                  </div>
+
+                  {scheduleType === 'scheduled' && (
+                    <div className="space-y-2 pt-2 border-t border-white/5 animate-fade-in">
+                      <div className="flex gap-1.5 flex-wrap">
+                        {[
+                          { label: '+30 mins', mins: 30 },
+                          { label: '+45 mins', mins: 45 },
+                          { label: '+1 hour', mins: 60 },
+                          { label: '+2 hours', mins: 120 },
+                          { label: '+3 hours', mins: 180 },
+                        ].map((preset) => (
+                          <button
+                            key={preset.mins}
+                            type="button"
+                            onClick={() => setDeliveryDateTime(getDefaultFulfillmentDateTime(preset.mins))}
+                            className="px-2 py-1 rounded-lg text-[9.5px] font-bold uppercase transition-all bg-[#181818] border border-white/5 hover:border-brand-gold/40 text-gray-400 hover:text-white cursor-pointer"
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="relative">
+                        <input
+                          type="datetime-local"
+                          value={deliveryDateTime}
+                          onChange={(e) => setDeliveryDateTime(e.target.value)}
+                          className="w-full bg-[#181818] text-white rounded-xl p-2.5 border-2 border-white/5 focus:border-brand-gold focus:outline-none transition-all font-mono font-bold text-xs cursor-pointer"
+                        />
+                      </div>
+                      <p className="text-[9px] text-gray-500">
+                        🛵 Our kitchen and rider will prepare and dispatch your food to arrive precisely by this time.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
-              <div className="p-4 bg-[#0D0D0C] border-2 border-white/5 rounded-2xl space-y-3 shadow-inner">
+              <div className="p-4 bg-[#0D0D0C] border-2 border-white/5 rounded-2xl space-y-3.5 shadow-inner">
                 <div className="flex items-start gap-2 text-xs text-gray-400 leading-relaxed">
                   <Store className="w-4 h-4 text-brand-red mt-0.5 flex-shrink-0" />
                   <div>
@@ -611,15 +717,91 @@ export default function CheckoutModal({
                   </div>
                 </div>
 
-                <div className="space-y-1.5 pt-2 border-t-2 border-white/5">
+                {/* Pickup Timing Preference (ASAP vs Scheduled) */}
+                <div className="p-3 bg-[#141413] border border-white/5 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-brand-red" />
+                      Pickup Timing Preference
+                    </span>
+                    <span className="text-[10px] font-black text-brand-gold bg-brand-gold/10 px-2 py-0.5 rounded-md border border-brand-gold/20 font-mono">
+                      {scheduleType === 'asap' ? '⚡ Ready in 10-15 mins' : formatFulfillmentDateTimeDisplay(pickupDateTime, false)}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setScheduleType('asap')}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        scheduleType === 'asap'
+                          ? 'bg-brand-red border-red-500 text-white shadow-md'
+                          : 'bg-[#1e1e1d] border-white/5 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <span>⚡ ASAP (~15 mins)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScheduleType('scheduled')}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        scheduleType === 'scheduled'
+                          ? 'bg-brand-gold border-brand-gold text-black shadow-md'
+                          : 'bg-[#1e1e1d] border-white/5 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>📅 Schedule Pickup</span>
+                    </button>
+                  </div>
+
+                  {scheduleType === 'scheduled' && (
+                    <div className="space-y-2 pt-2 border-t border-white/5 animate-fade-in">
+                      {/* Quick offset buttons */}
+                      <div className="flex gap-1.5 flex-wrap">
+                        {[
+                          { label: '+15m (ASAP)', mins: 15 },
+                          { label: '+30m', mins: 30 },
+                          { label: '+45m', mins: 45 },
+                          { label: '+1 hr', mins: 60 },
+                          { label: '+2 hrs', mins: 120 },
+                        ].map((preset) => (
+                          <button
+                            key={preset.mins}
+                            type="button"
+                            onClick={() => setPickupDateTime(getDefaultFulfillmentDateTime(preset.mins))}
+                            className="px-2 py-1 rounded-lg text-[9.5px] font-bold uppercase transition-all bg-[#181818] border border-white/5 hover:border-brand-gold/40 text-gray-400 hover:text-white cursor-pointer"
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Native DateTime-local picker */}
+                      <div className="relative">
+                        <input
+                          type="datetime-local"
+                          value={pickupDateTime}
+                          onChange={(e) => setPickupDateTime(e.target.value)}
+                          className="w-full bg-[#181818] text-white rounded-xl p-2.5 border-2 border-white/5 focus:border-brand-gold focus:outline-none transition-all font-mono font-bold text-xs cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
                   <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider block">Dine-In Table Number (Optional)</label>
                   <input
                     type="text"
                     placeholder="E.g. Table 5"
                     value={tableNumber}
                     onChange={(e) => setTableNumber(e.target.value)}
-                    className="w-48 bg-[#181818] text-white rounded-xl p-3 border-2 border-white/5 focus:border-brand-red focus:outline-none transition-all placeholder:text-gray-600 font-semibold text-sm"
+                    className="w-full bg-[#181818] text-white rounded-xl p-3 border-2 border-white/5 focus:border-brand-red focus:outline-none transition-all placeholder:text-gray-600 font-semibold text-sm"
                   />
+                  <p className="text-[9px] text-gray-500">
+                    💡 Leave blank if picking up to-go at counter.
+                  </p>
                 </div>
               </div>
             )}

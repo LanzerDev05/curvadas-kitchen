@@ -652,13 +652,18 @@ class BluetoothPrinterService {
       addBytes(0x1b, 0x61, 0x01); // Center
       addBytes(0x1d, 0x21, 0x11); // Double width & height
       addLine('** KITCHEN KOT **');
+      
+      // Large Prominent Queue Number for Kitchen Crew
+      const qNum = String(order.queueNumber || (parseInt(order.id.replace(/\D/g, '').slice(-2), 10) || 1)).padStart(2, '0');
+      addLine(`QUEUE #${qNum}`);
       addBytes(0x1d, 0x21, 0x00); // Normal size
+      
       addLine("CURVADA'S KITCHEN");
       addBytes(0x1b, 0x45, 0x01); // Bold ON
       addLine(`TICKET #${order.id.slice(0, 8).toUpperCase()}`);
       addBytes(0x1b, 0x45, 0x00); // Bold OFF
       addLine(`${new Date(order.timestamp).toLocaleTimeString()} - ${new Date(order.timestamp).toLocaleDateString()}`);
-      addLine(this.divider('-'));
+      addLine(this.divider('='));
 
       addBytes(0x1b, 0x61, 0x00); // Left align
       if (order.customer.tableNumber) {
@@ -667,6 +672,15 @@ class BluetoothPrinterService {
         addBytes(0x1b, 0x45, 0x00);
       } else {
         addLine(`ORDER TYPE: ${order.customer.orderType.toUpperCase()}`);
+      }
+      if (order.customer.orderType === 'pickup') {
+        addBytes(0x1b, 0x45, 0x01);
+        addLine(`TARGET PICKUP: ${order.customer.pickupTime || 'ASAP (~15-20 MINS)'}`);
+        addBytes(0x1b, 0x45, 0x00);
+      } else if (order.customer.orderType === 'delivery') {
+        addBytes(0x1b, 0x45, 0x01);
+        addLine(`TARGET DELIVERY: ${order.customer.deliveryTime || 'ASAP (~20-30 MINS)'}`);
+        addBytes(0x1b, 0x45, 0x00);
       }
       if (order.orderSource && order.orderSource !== 'online') {
         const sourceLabel = order.orderSource === 'walkin' ? 'WALK-IN (COUNTER)' : 'MESSENGER ORDER';
@@ -678,7 +692,7 @@ class BluetoothPrinterService {
       addLine(this.divider('-'));
 
       addBytes(0x1b, 0x45, 0x01); // Bold ON
-      addLine('PREPARATION ITEMS:');
+      addLine('PREPARATION ITEMS & COOKING NOTES:');
       addBytes(0x1b, 0x45, 0x00); // Bold OFF
 
       order.items.forEach((item) => {
@@ -697,14 +711,26 @@ class BluetoothPrinterService {
             }
 
             const choiceName = rawChoiceName.replace(/\s*\(Upgrade\)/gi, '').trim();
+            const lowerTitle = optTitle.toLowerCase();
+            const lowerChoice = choiceName.toLowerCase();
 
-            const isExtra = optTitle.toLowerCase().includes('extra') || choiceName.toLowerCase().includes('extra');
-            const isRice = optTitle.toLowerCase().includes('rice');
+            const isEgg = lowerTitle.includes('egg') || lowerChoice.includes('egg') || lowerChoice.includes('sunny') || lowerChoice.includes('scrambled') || lowerChoice.includes('well done');
+            const isExtra = lowerTitle.includes('extra') || lowerChoice.includes('extra');
+            const isRice = lowerTitle.includes('rice');
             const isRiceUpgrade = isRice && !isExtra && choicePrice > 0;
-            const isDrink = optTitle.toLowerCase().includes('drink');
+            const isDrink = lowerTitle.includes('drink');
+            const isCooking = lowerTitle.includes('cook') || lowerTitle.includes('prep') || lowerTitle.includes('spicy') || lowerTitle.includes('doneness');
 
             const optPrice = choicePrice > 0 ? ` (+P${choicePrice.toFixed(2)})` : '';
-            if (isRiceUpgrade) {
+            if (isEgg) {
+              addBytes(0x1b, 0x45, 0x01);
+              addLine(`   >> [EGG PREP]: ${choiceName.toUpperCase()}`);
+              addBytes(0x1b, 0x45, 0x00);
+            } else if (isCooking) {
+              addBytes(0x1b, 0x45, 0x01);
+              addLine(`   >> [COOKING]: ${choiceName.toUpperCase()}`);
+              addBytes(0x1b, 0x45, 0x00);
+            } else if (isRiceUpgrade) {
               addLine(`   > [RICE UPGRADE] ${choiceName}${optPrice}`);
             } else if (isExtra) {
               addLine(`   > [EXTRA SIDE] ${choiceName}${optPrice}`);
@@ -720,7 +746,8 @@ class BluetoothPrinterService {
 
         if (item.specialInstructions) {
           addBytes(0x1b, 0x45, 0x01);
-          addLine(`   * NOTE: "${item.specialInstructions}"`);
+          addLine(`   *** COOKING INSTRUCTION: ***`);
+          addLine(`   "${item.specialInstructions.toUpperCase()}"`);
           addBytes(0x1b, 0x45, 0x00);
         }
       });
@@ -737,10 +764,12 @@ class BluetoothPrinterService {
       addLine("CURVADA'S KITCHEN");
       addBytes(0x1b, 0x45, 0x00); // Bold OFF
       addLine('Colo, Dinalupihan, Bataan');
-      addLine('0922-383-7377');
+      addLine('09568247699');
       addLine('');
+      
+      const qNum = String(order.queueNumber || (parseInt(order.id.replace(/\D/g, '').slice(-2), 10) || 1)).padStart(2, '0');
       addBytes(0x1b, 0x45, 0x01); // Bold ON
-      addLine(`RECEIPT #${order.id.slice(0, 8).toUpperCase()}`);
+      addLine(`QUEUE #${qNum}  •  RECEIPT #${order.id.slice(0, 8).toUpperCase()}`);
       addBytes(0x1b, 0x45, 0x00); // Bold OFF
       addLine(new Date(order.timestamp).toLocaleString('en-US'));
       addLine(this.divider('-'));
@@ -753,6 +782,11 @@ class BluetoothPrinterService {
         addLine(`Dine-In Table: #${order.customer.tableNumber}`);
       }
       addLine(`Order Type: ${order.customer.orderType.toUpperCase()}`);
+      if (order.customer.orderType === 'pickup') {
+        addLine(`Pickup Time: ${order.customer.pickupTime || 'ASAP (~15-20 mins)'}`);
+      } else if (order.customer.orderType === 'delivery') {
+        addLine(`Delivery Time: ${order.customer.deliveryTime || 'ASAP (~20-30 mins)'}`);
+      }
       if (order.orderSource && order.orderSource !== 'online') {
         const sourceLabel = order.orderSource === 'walkin' ? 'Walk-In / Over-the-Counter' : 'Facebook Messenger';
         addLine(`Channel: ${sourceLabel}`);
@@ -841,8 +875,7 @@ class BluetoothPrinterService {
       addBytes(0x1b, 0x45, 0x00); // Bold OFF
       addLine('Please order again');
       addLine('Enjoy your food!');
-      addLine('0922-383-7377');
-      addLine('www.curvadaskitchen.ph');
+      addLine('09568247699');
     }
 
     // Line feeds before cut

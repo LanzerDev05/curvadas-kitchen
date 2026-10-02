@@ -146,8 +146,14 @@ export default function ReceiptModal({
                   <div className="text-center border-b-2 border-dashed border-gray-400 pb-3 space-y-1">
                     <h2 className="text-base font-black uppercase tracking-tight">CURVADA'S KITCHEN</h2>
                     <p className="text-[9px] text-gray-500">Colo, Dinalupihan, Bataan</p>
-                    <p className="text-[9px] text-gray-500 font-medium">0922-383-7377</p>
+                    <p className="text-[9px] text-gray-500 font-medium">09568247699</p>
                     <div className="pt-1">
+                      <div className="flex items-center justify-between bg-gray-100 px-2.5 py-1 rounded-lg text-[11px] font-black my-1 border border-gray-300">
+                        <span className="text-gray-600">QUEUE PRIORITY:</span>
+                        <span className="text-black font-mono text-sm font-black">
+                          #{String(order.queueNumber || (parseInt(order.id.replace(/\D/g, '').slice(-2), 10) || 1)).padStart(2, '0')}
+                        </span>
+                      </div>
                       <p className="text-[11px] font-black">RECEIPT #{order.id.slice(0, 8).toUpperCase()}</p>
                       <p className="text-[9px] text-gray-600">{new Date(order.timestamp).toLocaleString()}</p>
                     </div>
@@ -162,6 +168,16 @@ export default function ReceiptModal({
                       </p>
                     )}
                     <p><strong>Order Type:</strong> {order.customer.orderType.toUpperCase()}</p>
+                    {order.customer.orderType === 'pickup' && (
+                      <p className="font-bold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                        <strong>⏰ Pickup Time:</strong> {order.customer.pickupTime || 'ASAP (~15-20 mins)'}
+                      </p>
+                    )}
+                    {order.customer.orderType === 'delivery' && (
+                      <p className="font-bold text-red-900 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
+                        <strong>🛵 Delivery Time:</strong> {order.customer.deliveryTime || 'ASAP (~20-30 mins)'}
+                      </p>
+                    )}
                     {order.orderSource && order.orderSource !== 'online' && (
                       <p>
                         <strong>Channel:</strong>{' '}
@@ -197,22 +213,24 @@ export default function ReceiptModal({
                               const rawChoiceName = typeof opt.choice === 'string' ? opt.choice : (opt.choice?.name || 'Option');
                               const choicePrice = opt.choice && typeof opt.choice.price === 'number' ? opt.choice.price : 0;
 
-                              // Skip zero-cost "None" or "No Extra..." options
                               if (choicePrice === 0 && (rawChoiceName.toLowerCase().startsWith('no ') || rawChoiceName.toLowerCase() === 'none')) {
                                 return null;
                               }
 
-                              // Strip redundant "(Upgrade)" suffix
                               const choiceName = rawChoiceName.replace(/\s*\(Upgrade\)/gi, '').trim();
+                              const lowerTitle = optTitle.toLowerCase();
+                              const lowerChoice = choiceName.toLowerCase();
 
-                              const isExtra = optTitle.toLowerCase().includes('extra') || choiceName.toLowerCase().includes('extra');
-                              const isRice = optTitle.toLowerCase().includes('rice');
+                              const isEgg = lowerTitle.includes('egg') || lowerChoice.includes('egg') || lowerChoice.includes('sunny') || lowerChoice.includes('scrambled') || lowerChoice.includes('well done');
+                              const isExtra = lowerTitle.includes('extra') || lowerChoice.includes('extra');
+                              const isRice = lowerTitle.includes('rice');
                               const isRiceUpgrade = isRice && !isExtra && choicePrice > 0;
-
-                              const isDrink = optTitle.toLowerCase().includes('drink');
+                              const isDrink = lowerTitle.includes('drink');
 
                               let label = choiceName;
-                              if (isRiceUpgrade) {
+                              if (isEgg) {
+                                label = `Egg Prep: ${choiceName}`;
+                              } else if (isRiceUpgrade) {
                                 label = `Rice Upgrade: ${choiceName}`;
                               } else if (isExtra) {
                                 label = `Extra: ${choiceName}`;
@@ -283,19 +301,25 @@ export default function ReceiptModal({
                     <p className="font-bold text-gray-700">Maraming Salamat po!</p>
                     <p>Please order again</p>
                     <p>Enjoy your food!</p>
-                    <p className="font-medium text-gray-600">0922-383-7377</p>
-                    <p>www.curvadaskitchen.ph</p>
+                    <p className="font-medium text-gray-600">09568247699</p>
                   </div>
                 </>
               ) : (
                 /* KITCHEN ORDER TICKET (KOT) */
                 <>
-                  <div className="text-center border-b-2 border-black pb-2 space-y-1">
+                  <div className="text-center border-b-2 border-black pb-2 space-y-1.5">
                     <h2 className="text-lg font-black uppercase tracking-tight">** KITCHEN KOT **</h2>
                     <p className="text-[11px] font-bold">CURVADA'S KITCHEN</p>
-                    <div className="bg-black text-white py-1 px-2 rounded font-black text-xs inline-block mt-1">
-                      TICKET #{order.id.slice(0, 8).toUpperCase()}
+                    
+                    {/* Big Prominent Queue Number Badge for Kitchen Staff */}
+                    <div className="bg-black text-white py-1.5 px-3 rounded-xl font-black flex items-center justify-between my-1">
+                      <span className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">QUEUE PRIO:</span>
+                      <span className="text-brand-gold text-xl font-black font-mono tracking-wider">
+                        #{String(order.queueNumber || (parseInt(order.id.replace(/\D/g, '').slice(-2), 10) || 1)).padStart(2, '0')}
+                      </span>
+                      <span className="text-[9px] text-gray-300 font-mono">#{order.id.slice(0, 8).toUpperCase()}</span>
                     </div>
+
                     <p className="text-[9px] text-gray-700">{new Date(order.timestamp).toLocaleTimeString()} - {new Date(order.timestamp).toLocaleDateString()}</p>
                   </div>
 
@@ -310,50 +334,76 @@ export default function ReceiptModal({
                       </div>
                     )}
                     <p><strong>Customer:</strong> {order.customer.name}</p>
+                    {order.customer.orderType === 'pickup' && (
+                      <div className="bg-amber-100 border-2 border-amber-500 text-amber-950 text-[11px] font-black px-2 py-1 rounded text-center uppercase">
+                        ⏰ TARGET PICKUP: {order.customer.pickupTime || 'ASAP (~15-20 MINS)'}
+                      </div>
+                    )}
+                    {order.customer.orderType === 'delivery' && (
+                      <div className="bg-red-100 border-2 border-red-500 text-red-950 text-[11px] font-black px-2 py-1 rounded text-center uppercase">
+                        🛵 TARGET DELIVERY: {order.customer.deliveryTime || 'ASAP (~20-30 MINS)'}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="border-b-2 border-black pb-3 space-y-2">
-                    <p className="font-black text-[10px] uppercase">PREPARATION ITEMS:</p>
+                  <div className="border-b-2 border-black pb-3 space-y-2.5">
+                    <p className="font-black text-[10px] uppercase tracking-wider text-gray-800">PREPARATION ITEMS & COOKING NOTES:</p>
                     {order.items.map((item, idx) => (
-                      <div key={idx} className="space-y-0.5 border-b border-gray-200 pb-1.5">
+                      <div key={idx} className="space-y-1 border-b border-gray-300 pb-2">
                         <div className="flex items-start gap-2">
-                          <span className="font-black text-sm bg-black text-white px-1.5 py-0.2 rounded">
+                          <span className="font-black text-sm bg-black text-white px-2 py-0.5 rounded">
                             {item.quantity}x
                           </span>
-                          <span className="font-black text-xs flex-1">
+                          <span className="font-black text-sm flex-1 text-black">
                             {item.menuItem.name}
                           </span>
                         </div>
+
+                        {/* Options & Egg / Doneness Instructions */}
                         {item.selectedOptions && item.selectedOptions.length > 0 && (
-                          <div className="pl-6 space-y-0.5 text-[10px] text-gray-800 font-semibold">
+                          <div className="pl-6 space-y-1 text-[10px] font-semibold">
                             {item.selectedOptions.map((opt: any, optIdx: number) => {
                               const optTitle = opt.optionTitle || 'Option';
-                              const choiceName = typeof opt.choice === 'string' ? opt.choice : (opt.choice?.name || '');
+                              const rawChoiceName = typeof opt.choice === 'string' ? opt.choice : (opt.choice?.name || '');
                               const choicePrice = opt.choice && typeof opt.choice.price === 'number' ? opt.choice.price : 0;
 
-                              // Skip zero-cost "None" or "No Extra..." options
-                              if (choicePrice === 0 && (choiceName.toLowerCase().startsWith('no ') || choiceName.toLowerCase() === 'none')) {
+                              if (choicePrice === 0 && (rawChoiceName.toLowerCase().startsWith('no ') || rawChoiceName.toLowerCase() === 'none')) {
                                 return null;
                               }
 
-                              const isExtra = optTitle.toLowerCase().includes('extra') || choiceName.toLowerCase().includes('extra');
-                              const isRice = optTitle.toLowerCase().includes('rice');
+                              const choiceName = rawChoiceName.replace(/\s*\(Upgrade\)/gi, '').trim();
+                              const lowerTitle = optTitle.toLowerCase();
+                              const lowerChoice = choiceName.toLowerCase();
+
+                              const isEgg = lowerTitle.includes('egg') || lowerChoice.includes('egg') || lowerChoice.includes('sunny') || lowerChoice.includes('scrambled') || lowerChoice.includes('well done');
+                              const isExtra = lowerTitle.includes('extra') || lowerChoice.includes('extra');
+                              const isRice = lowerTitle.includes('rice');
                               const isRiceUpgrade = isRice && !isExtra && choicePrice > 0;
+                              const isDrink = lowerTitle.includes('drink');
+                              const isCooking = lowerTitle.includes('cook') || lowerTitle.includes('prep') || lowerTitle.includes('spicy') || lowerTitle.includes('doneness');
 
                               return (
-                                <p key={optIdx} className="flex items-center gap-1.5">
+                                <p key={optIdx} className="flex items-center gap-1.5 flex-wrap">
                                   <span className="text-gray-500">└</span>
-                                  {isRiceUpgrade ? (
-                                    <span className="font-black text-amber-900 bg-amber-100 px-1 rounded">
-                                      [RICE UPGRADE] {choiceName}
+                                  {isEgg ? (
+                                    <span className="font-black text-amber-950 bg-amber-200 border border-amber-400 px-1.5 py-0.5 rounded text-[10px] uppercase">
+                                      🍳 [EGG PREP]: {choiceName}
+                                    </span>
+                                  ) : isCooking ? (
+                                    <span className="font-black text-rose-950 bg-rose-100 border border-rose-300 px-1.5 py-0.5 rounded text-[10px] uppercase">
+                                      👨‍🍳 [COOKING]: {choiceName}
+                                    </span>
+                                  ) : isRiceUpgrade ? (
+                                    <span className="font-black text-emerald-950 bg-emerald-100 px-1.5 py-0.5 rounded">
+                                      🍚 [RICE UPGRADE]: {choiceName}
                                     </span>
                                   ) : isExtra ? (
-                                    <span className="font-black text-blue-900 bg-blue-100 px-1 rounded">
-                                      [EXTRA SIDE] {choiceName}
+                                    <span className="font-black text-blue-900 bg-blue-100 px-1.5 py-0.5 rounded">
+                                      [EXTRA SIDE]: {choiceName}
                                     </span>
-                                  ) : optTitle.toLowerCase().includes('drink') ? (
-                                    <span className="font-black text-sky-900 bg-sky-100 px-1 rounded">
-                                      [DRINK] {choiceName}
+                                  ) : isDrink ? (
+                                    <span className="font-black text-sky-900 bg-sky-100 px-1.5 py-0.5 rounded">
+                                      [DRINK]: {choiceName}
                                     </span>
                                   ) : isRice ? (
                                     <span><strong>[RICE]:</strong> {choiceName}</span>
@@ -370,10 +420,12 @@ export default function ReceiptModal({
                             })}
                           </div>
                         )}
+
+                        {/* Special Kitchen Cooking Instruction */}
                         {item.specialInstructions && (
-                          <p className="text-[10px] pl-6 font-bold text-red-600 uppercase">
-                            ⚠️ "{item.specialInstructions}"
-                          </p>
+                          <div className="mt-1 ml-6 p-1.5 bg-red-100 border-2 border-red-500 rounded-lg text-red-900 text-[10.5px] font-black uppercase">
+                            🔥 COOKING INSTRUCTION: "{item.specialInstructions}"
+                          </div>
                         )}
                       </div>
                     ))}
@@ -381,7 +433,7 @@ export default function ReceiptModal({
 
                   <div className="flex justify-between items-center text-xs font-bold pt-1">
                     <span>TOTAL ITEMS:</span>
-                    <span>{totalItemsCount}</span>
+                    <span className="font-black text-sm">{totalItemsCount}</span>
                   </div>
 
                   <div className="text-center pt-2 border-t border-black text-[10px] font-bold">
