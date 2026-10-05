@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0 --mode development",
+    "dev:all": "concurrently -n \"BE,FE\" -c \"cyan.bold,green.bold\" \"npm --prefix backend run dev\" \"npm run dev\"",
+    "dev:be": "npm --prefix backend run dev",
+    "dev:fe": "npm run dev",
     "dev:stg": "vite --port=3000 --host=0.0.0.0 --mode staging",
     "dev:prod": "vite --port=3000 --host=0.0.0.0 --mode production",
     "build": "vite build --mode production",
@@ -37,6 +40,7 @@
     "@types/leaflet": "^1.9.22",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.5",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
