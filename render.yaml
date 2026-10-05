@@ -1,13 +1,40 @@
 services:
   # ==============================================================================
-  # 🍛 Curvada's Kitchen — 1 Unified Web Service (Backend API + Web App + WebSocket)
+  # 1. 🧪 Curvada's Kitchen — Staging Service (Branch: staging)
   # ==============================================================================
   - type: web
-    name: curvadas-kitchen
+    name: curvadas-kitchen-staging
     runtime: node
+    branch: staging
     plan: starter
-    buildCommand: npm install && npm run build && cd backend && npm install && npm run build
-    startCommand: cd backend && npm start
+    buildCommand: npm install && npm run build:stg && cd backend && npm install && npm run build
+    startCommand: cd backend && npm run start:stg
+    envVars:
+      - key: NODE_ENV
+        value: staging
+      - key: APP_ENV
+        value: stg
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        value: mongodb+srv://mem_pigeon_admin:mempigeon_2025@pigeon-cluster.breyojk.mongodb.net/curvadas_kitchen_stg?retryWrites=true&w=majority&appName=pigeon-cluster
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CORS_ORIGIN
+        value: '*'
+
+  # ==============================================================================
+  # 2. 🚀 Curvada's Kitchen — Production Service (Branch: main)
+  # ==============================================================================
+  - type: web
+    name: curvadas-kitchen-prod
+    runtime: node
+    branch: main
+    plan: starter
+    buildCommand: npm install && npm run build:prod && cd backend && npm install && npm run build
+    startCommand: cd backend && npm run start
     envVars:
       - key: NODE_ENV
         value: production
@@ -16,7 +43,7 @@ services:
       - key: PORT
         value: 10000
       - key: MONGODB_URI
-        sync: false # Set in Render Dashboard
+        sync: false # Set securely in Render Dashboard (e.g. mongodb+srv://.../curvadas_kitchen)
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN

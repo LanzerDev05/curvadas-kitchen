@@ -29,11 +29,11 @@ flowchart LR
     end
 ```
 
-| Environment | Purpose | Branch | Backend Env File | Frontend Env File | Database |
-|---|---|---|---|---|---|
-| **Development** (`dev`) | Active daily feature development | `develop` | `backend/.env.dev` | `.env.development` | `curvadas_kitchen_dev` |
-| **Staging** (`stg`) | QA testing, client preview, pre-release | `staging` | `backend/.env.stg` | `.env.staging` | `curvadas_kitchen_stg` |
-| **Production** (`prod`) | Live store operations & customer orders | `main` | `backend/.env.prod` | `.env.production` | `curvadas_kitchen` |
+| Environment | Purpose | Branch | Backend Env File | Frontend Env File | Render Service Name | Database |
+|---|---|---|---|---|---|---|
+| **Development** (`dev`) | Active daily feature development | `develop` | `backend/.env.dev` | `.env.development` | Localhost (`:3000` & `:5000`) | `curvadas_kitchen_dev` |
+| **Staging** (`stg`) | QA testing, client preview, pre-release | `staging` | `backend/.env.stg` | `.env.staging` | `curvadas-kitchen-staging` | `curvadas_kitchen_stg` |
+| **Production** (`prod`) | Live store operations & customer orders | `main` | `backend/.env.prod` | `.env.production` | `curvadas-kitchen-prod` | `curvadas_kitchen` |
 
 ---
 
