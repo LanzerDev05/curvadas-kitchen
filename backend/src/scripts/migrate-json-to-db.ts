@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
 import { ENV } from '../config/env';
 import { connectDatabase } from '../config/database';
 
@@ -14,32 +15,68 @@ import { StaffShiftModel } from '../features/staff/infrastructure/models/StaffMo
 import { ZReadModel, TableModel } from '../features/pos/infrastructure/models/PosModels';
 import { SettingModel } from '../features/settings/presentation/routes/settingsRoutes';
 
+dotenv.config({ path: path.resolve(process.cwd(), '../.env.local') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+
+const fetchFromUpstashRedis = async (): Promise<any | null> => {
+  const url = process.env.UPSTASH_REDIS_REST_URL || 'https://kind-macaque-177882.upstash.io';
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || 'gQAAAAAAArbaAAIgcDIwYzY4ZmY2NzgwY2M0Y2RjODA4YzQzOWFiYzExNTM3ZA';
+
+  if (!url || !token) return null;
+
+  try {
+    console.log(`🌐 Pulling latest live data directly from Upstash Redis (${url})...`);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(['GET', 'curvada_db']),
+    });
+
+    if (res.ok) {
+      const json: any = await res.json();
+      if (json && json.result) {
+        console.log('✅ Successfully retrieved live curvada_db snapshot from Upstash Redis!');
+        return JSON.parse(json.result);
+      }
+    }
+  } catch (err: any) {
+    console.warn('⚠️ Upstash Redis direct fetch failed, falling back to local file.', err.message);
+  }
+  return null;
+};
+
 const runMigration = async () => {
-  console.log('🔄 Starting Curvada JSON -> MongoDB Migration...');
+  console.log('🔄 Starting Curvada Upstash Redis/JSON -> MongoDB Migration...');
 
   await connectDatabase();
 
-  const legacyPaths = [
-    path.resolve(process.cwd(), '../.data/db.json'),
-    path.resolve(process.cwd(), '.data/db.json'),
-    path.resolve(process.cwd(), '../db.json'),
-  ];
+  let db: any = await fetchFromUpstashRedis();
 
-  let rawData = '';
-  for (const p of legacyPaths) {
-    if (fs.existsSync(p)) {
-      console.log(`📄 Found source legacy database file at: ${p}`);
-      rawData = fs.readFileSync(p, 'utf-8');
-      break;
+  if (!db) {
+    const legacyPaths = [
+      path.resolve(process.cwd(), '../.data/db.json'),
+      path.resolve(process.cwd(), '.data/db.json'),
+      path.resolve(process.cwd(), '../db.json'),
+    ];
+
+    let rawData = '';
+    for (const p of legacyPaths) {
+      if (fs.existsSync(p)) {
+        console.log(`📄 Found source local database file at: ${p}`);
+        rawData = fs.readFileSync(p, 'utf-8');
+        break;
+      }
     }
-  }
 
-  if (!rawData) {
-    console.error('❌ Could not find .data/db.json or db.json. Exiting migration.');
-    process.exit(1);
+    if (!rawData) {
+      console.error('❌ Could not find Upstash Redis data or local db.json. Exiting migration.');
+      process.exit(1);
+    }
+    db = JSON.parse(rawData);
   }
-
-  const db = JSON.parse(rawData);
 
   // 1. Users
   if (db.users && Array.isArray(db.users)) {
@@ -307,7 +344,7 @@ const runMigration = async () => {
     await SettingModel.findOneAndUpdate({}, { $set: db.settings }, { upsert: true });
   }
 
-  console.log('✅ Curvada JSON -> MongoDB Migration successfully finished!');
+  console.log('✅ Curvada Upstash Redis -> MongoDB Migration successfully finished!');
   await mongoose.disconnect();
   process.exit(0);
 };

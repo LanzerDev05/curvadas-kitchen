@@ -17,7 +17,7 @@ services:
       - key: PORT
         value: 10000
       - key: MONGODB_URI
-        value: mongodb+srv://mem_pigeon_admin:mempigeon_2025@pigeon-cluster.breyojk.mongodb.net/curvadas_kitchen_stg?retryWrites=true&w=majority&appName=pigeon-cluster
+        value: mongodb://lancejomer09_db_user:3zADz5SpXb47O2eP@ac-jmky1sd-shard-00-00.cj9fy1d.mongodb.net:27017,ac-jmky1sd-shard-00-01.cj9fy1d.mongodb.net:27017,ac-jmky1sd-shard-00-02.cj9fy1d.mongodb.net:27017/curvadas_kitchen_stg?ssl=true&replicaSet=atlas-sqq432-shard-0&authSource=admin&appName=Curvadaskitchen
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
@@ -43,7 +43,7 @@ services:
       - key: PORT
         value: 10000
       - key: MONGODB_URI
-        sync: false # Set securely in Render Dashboard (e.g. mongodb+srv://.../curvadas_kitchen)
+        value: mongodb://lancejomer09_db_user:3zADz5SpXb47O2eP@ac-jmky1sd-shard-00-00.cj9fy1d.mongodb.net:27017,ac-jmky1sd-shard-00-01.cj9fy1d.mongodb.net:27017,ac-jmky1sd-shard-00-02.cj9fy1d.mongodb.net:27017/curvadas_kitchen?ssl=true&replicaSet=atlas-sqq432-shard-0&authSource=admin&appName=Curvadaskitchen
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
