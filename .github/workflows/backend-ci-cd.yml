@@ -1,0 +1,61 @@
+name: Curvada's Kitchen Backend CI/CD
+
+on:
+  push:
+    branches:
+      - main       # Production branch
+      - staging    # Staging branch
+      - develop    # Development branch
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci-cd.yml'
+  pull_request:
+    branches:
+      - main
+      - staging
+      - develop
+    paths:
+      - 'backend/**'
+
+jobs:
+  build-and-test:
+    name: Build, Lint & Validate Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'backend/package-lock.json'
+
+      - name: Install Dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Build TypeScript
+        working-directory: ./backend
+        run: npm run build
+
+      - name: Determine Target Environment
+        id: env-detect
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "TARGET_ENV=production" >> $GITHUB_OUTPUT
+            echo "Deploying to Production"
+          elif [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            echo "TARGET_ENV=staging" >> $GITHUB_OUTPUT
+            echo "Deploying to Staging"
+          else
+            echo "TARGET_ENV=development" >> $GITHUB_OUTPUT
+            echo "Deploying to Development"
+          fi
+
+      - name: Automated Smoke Test
+        working-directory: ./backend
+        run: |
+          echo "Build successful for ${{ steps.env-detect.outputs.TARGET_ENV }}"

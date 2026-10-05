@@ -220,6 +220,62 @@ apiRouter.post('/orders/confirm', async (req: Request, res: Response) => {
   }
 });
 
+// 4.5. Update / Edit Existing Order
+apiRouter.post('/orders/update', async (req: Request, res: Response) => {
+  try {
+    const { order, stockLevels, ingredientsInventory } = req.body;
+    if (!order || !order.id) {
+      res.status(400).json({ error: 'Missing order or order.id' });
+      return;
+    }
+
+    const db = await readDB();
+    const index = db.orders.findIndex((o: Order) => o.id === order.id);
+    if (index !== -1) {
+      db.orders[index] = { ...db.orders[index], ...order };
+    } else {
+      db.orders.unshift(order);
+    }
+
+    if (stockLevels) {
+      db.stockLevels = stockLevels;
+    }
+    if (ingredientsInventory) {
+      db.ingredientsInventory = ingredientsInventory;
+    }
+
+    await writeDB(db);
+    res.json({ success: true, db });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4.6. Delete Order
+apiRouter.post('/orders/delete', async (req: Request, res: Response) => {
+  try {
+    const { orderId, stockLevels, ingredientsInventory } = req.body;
+    if (!orderId) {
+      res.status(400).json({ error: 'Missing orderId' });
+      return;
+    }
+
+    const db = await readDB();
+    db.orders = db.orders.filter((o: Order) => o.id !== orderId);
+    if (stockLevels) {
+      db.stockLevels = stockLevels;
+    }
+    if (ingredientsInventory) {
+      db.ingredientsInventory = ingredientsInventory;
+    }
+
+    await writeDB(db);
+    res.json({ success: true, db });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 5. Add Menu Item
 apiRouter.post('/menu/add', async (req: Request, res: Response) => {
   try {
@@ -286,16 +342,41 @@ apiRouter.post('/menu/delete', async (req: Request, res: Response) => {
 });
 
 // 8. Update Inventory Stock Levels
+// 8. Update Inventory Stock Levels & FIFO Batches
 apiRouter.post('/inventory/update', async (req: Request, res: Response) => {
   try {
-    const { ingredientsInventory } = req.body;
-    if (!ingredientsInventory) {
-      res.status(400).json({ error: 'Missing ingredientsInventory' });
+    const { ingredientsInventory, stockBatches } = req.body;
+    if (!ingredientsInventory && !stockBatches) {
+      res.status(400).json({ error: 'Missing ingredientsInventory or stockBatches' });
       return;
     }
 
     const db = await readDB();
-    db.ingredientsInventory = ingredientsInventory;
+    if (ingredientsInventory) {
+      db.ingredientsInventory = ingredientsInventory;
+    }
+    if (stockBatches) {
+      db.stockBatches = stockBatches;
+    }
+
+    await writeDB(db);
+    res.json({ success: true, db });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 8.5. Update Stock Batches
+apiRouter.post('/batches/update', async (req: Request, res: Response) => {
+  try {
+    const { stockBatches } = req.body;
+    if (!stockBatches || !Array.isArray(stockBatches)) {
+      res.status(400).json({ error: 'Missing or invalid stockBatches array' });
+      return;
+    }
+
+    const db = await readDB();
+    db.stockBatches = stockBatches;
 
     await writeDB(db);
     res.json({ success: true, db });

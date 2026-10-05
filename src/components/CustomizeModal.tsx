@@ -102,13 +102,16 @@ export default function CustomizeModal({
     return groups;
   }, [item, availableDrinks]);
 
-  // Auto-select first choice of each option category on load
+  // Auto-select default choice of each option category on load
   useEffect(() => {
     if (normalizedOptionGroups.length > 0) {
-      const defaults: SelectedOption[] = normalizedOptionGroups.map((opt) => ({
-        optionTitle: opt.title,
-        choice: opt.choices[0], // first option is default
-      }));
+      const defaults: SelectedOption[] = normalizedOptionGroups.map((opt) => {
+        const defaultChoice = opt.choices.find((c) => c.isDefault) || opt.choices[0];
+        return {
+          optionTitle: opt.title,
+          choice: defaultChoice,
+        };
+      });
       setSelectedOptions(defaults);
     } else {
       setSelectedOptions([]);

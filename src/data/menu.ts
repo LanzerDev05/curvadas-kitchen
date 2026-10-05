@@ -133,5 +133,72 @@ export const MENU_ITEMS: MenuItem[] = [
         ]
       }
     ]
+  },
+  {
+    id: 'silog-lumpiang-shanghai',
+    name: 'Crispy Lumpiang Shanghai (3 pcs)',
+    description: 'Golden crispy pork spring rolls prepared with fresh ground pork, carrots, and savory aromatics, paired with sweet chili sauce and steamed rice. Choose between Classic Regular or Spicy Dynamite (Cheese & Green Chili).',
+    price: 89,
+    category: 'silog',
+    estimatedPrepTime: 10,
+    image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=600',
+    popular: true,
+    isAvailable: true,
+    batchYieldUnit: 'pcs',
+    batchYieldGrams: 94,
+    servingSizeUnit: 'pcs',
+    servingSizeGrams: 3,
+    totalBatchCost: 479,
+    targetMarginPercent: 55,
+    includeRice: true,
+    ricePortionGrams: 150,
+    riceCostPerGram: 0.04,
+    ingredients: ['Ground Pork', 'Lumpia Wrappers', 'Finely Minced Carrots', 'White Onions', 'Garlic', 'Chicken Powder', 'Egg', 'Cooking Oil'],
+    recipeRequirements: [
+      { name: 'Ground Pork Meat', amount: 32 },
+      { name: 'Lumpia Wrappers', amount: 3 },
+      { name: 'Minced Carrots', amount: 5 },
+      { name: 'Steamed Rice', amount: 150 }
+    ],
+    batchIngredients: [
+      { name: 'Ground Pork (1kg stock • ₱340)', batchAmount: 1, unit: 'kg', cost: 340 },
+      { name: 'Lumpia Wrappers (100 pcs pack)', batchAmount: 1, unit: 'pcs', cost: 50 },
+      { name: 'Carrots (2pcs stock • ₱30/pcs)', batchAmount: 2, unit: 'pcs', cost: 60 },
+      { name: 'Chicken Powder (100g stock)', batchAmount: 15, unit: 'g', cost: 9 },
+      { name: 'Cooking Oil (Deep Fry)', batchAmount: 200, unit: 'ml', cost: 20 }
+    ],
+    customizableOptions: [
+      {
+        title: 'Flavor Selection',
+        choices: [
+          { id: 'flavor-regular', name: 'Regular (Original Pork)', price: 0 },
+          { id: 'flavor-dynamite', name: 'Dynamite (Cheese & Green Chili)', price: 15 }
+        ]
+      },
+      {
+        title: 'Rice (Included with Meal)',
+        choices: [
+          { id: 'shanghai-rice-plain', name: 'Plain Steamed Rice', price: 0 },
+          { id: 'shanghai-rice-garlic', name: 'Garlic Fried Rice', price: 15 },
+          { id: 'shanghai-rice-java', name: 'Java Rice', price: 20 }
+        ]
+      },
+      {
+        title: 'Extra Rice (Add-on)',
+        choices: [
+          { id: 'shanghai-extra-rice-none', name: 'No Extra Rice', price: 0 },
+          { id: 'shanghai-extra-rice-plain', name: '+1 Extra Plain Rice', price: 15 },
+          { id: 'shanghai-extra-rice-garlic', name: '+1 Extra Garlic Rice', price: 20 }
+        ]
+      },
+      {
+        title: 'Extra Shanghai Rolls',
+        choices: [
+          { id: 'extra-rolls-none', name: 'No Extra Rolls', price: 0 },
+          { id: 'extra-rolls-2-reg', name: '+2 pcs Regular Shanghai', price: 35 },
+          { id: 'extra-rolls-2-dyn', name: '+2 pcs Dynamite Shanghai', price: 45 }
+        ]
+      }
+    ]
   }
 ];

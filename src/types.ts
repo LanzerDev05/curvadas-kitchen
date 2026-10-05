@@ -1,5 +1,23 @@
 export type Category = 'bento' | 'silog' | 'rice-bowl' | 'drinks';
 
+export interface StockBatch {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  batchNumber: string; // e.g. "LOT-20261001-01"
+  receivedDate: string; // ISO date / timestamp (used for FIFO sorting - oldest first)
+  expiryDate?: string; // ISO date (for spoilage / expiration tracking)
+  initialQuantity: number; // Original received quantity
+  remainingQuantity: number; // Remaining stock available in this batch
+  unit: string; // 'g', 'kg', 'pcs', 'ml', 'cans', etc.
+  costPerUnit: number; // Unit purchase price for this batch (e.g. ₱0.25/g)
+  packCost?: number; // Total cost paid for the pack / purchase
+  supplierName?: string;
+  invoiceNumber?: string;
+  notes?: string;
+  status: 'active' | 'depleted' | 'expired' | 'discarded';
+}
+
 export interface IngredientStock {
   id: string;
   name: string;
@@ -15,12 +33,51 @@ export interface IngredientStock {
     contact: string;
     email: string;
   };
+  batches?: StockBatch[]; // FIFO batch history & current active lots
+}
+
+export interface FIFOConsumptionLayer {
+  batchId: string;
+  batchNumber: string;
+  receivedDate: string;
+  costPerUnit: number;
+  quantityUsed: number;
+  layerCost: number;
+}
+
+export interface FIFODishCostResult {
+  totalCost: number;
+  profit: number;
+  marginPercent: number;
+  baseCost: number;
+  costVariancePercent?: number; // % change compared to base/reference cost
+  isMarginSqueezed?: boolean;
+  layers: {
+    ingredientName: string;
+    amountRequired: number;
+    unit: string;
+    totalIngredientCost: number;
+    effectiveUnitCost: number;
+    batchesUsed: FIFOConsumptionLayer[];
+  }[];
+}
+
+export interface StockLossReport {
+  totalExpiredLossCost: number;
+  totalSpoilageLossCost: number;
+  totalVarianceLossCost: number;
+  totalCombinedLossCost: number;
+  expiredBatchesCount: number;
+  expiringSoonBatchesCount: number;
+  activeBatchesCount: number;
+  depletedBatchesCount: number;
 }
 
 export interface MenuOption {
   id: string;
   name: string;
   price: number;
+  isDefault?: boolean;
 }
 
 export interface MenuItem {
@@ -186,6 +243,48 @@ export interface SpoilageRecord {
   reason: 'expired' | 'spilled' | 'damaged' | 'quality_defect';
   timestamp: string;
   loggedBy: string;
+}
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: 'Head Chef' | 'Line Cook' | 'Kitchen Crew' | 'Cashier' | 'Dispatcher' | 'Rider' | 'Store Manager';
+  stationTask: string;
+  isOnDuty: boolean;
+  isDefaultLeadChef?: boolean;
+  hourlyRate: number;
+  phone?: string;
+  clockInTime?: string;
+}
+
+export interface StaffAdvance {
+  id: string;
+  staffId: string;
+  staffName: string;
+  amount: number;
+  reason: string;
+  date: string;
+  isDeducted: boolean;
+}
+
+export interface PayrollRecord {
+  id: string;
+  staffId: string;
+  staffName: string;
+  role: string;
+  periodStart: string;
+  periodEnd: string;
+  hourlyRate: number;
+  regularHours: number;
+  overtimeHours: number;
+  grossPay: number;
+  bonusTips: number;
+  cashAdvanceDeduction: number;
+  otherDeductions: number;
+  netPay: number;
+  status: 'paid' | 'pending';
+  paidAt?: string;
+  notes?: string;
 }
 
 export interface StaffShift {

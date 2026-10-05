@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 import { MENU_ITEMS } from '../data/menu';
-import { MenuItem, IngredientStock, Order, GroupOrderSession, UserAccount, PromoVoucher, SpoilageRecord, StaffShift, ZReadAudit } from '../types';
+import { MenuItem, IngredientStock, Order, GroupOrderSession, UserAccount, PromoVoucher, SpoilageRecord, StaffShift, ZReadAudit, StockBatch } from '../types';
 
 // Ensure environment variables from .env.local and .env are loaded
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
@@ -49,6 +49,7 @@ export interface DatabaseSchema {
   spoilageLogs: SpoilageRecord[];
   staffShifts: StaffShift[];
   zReadAudits: ZReadAudit[];
+  stockBatches?: StockBatch[];
   settings: {
     salesPace: number;
     electricityBaseRate: number;
@@ -150,13 +151,18 @@ const generateDefaultDB = (): DatabaseSchema => {
     { id: 'ing-12', name: 'Purified Filtered Water', quantity: 10000, unit: 'g', lowStockAlert: 2000, costPerUnit: 0.01 },
     { id: 'ing-13', name: 'Crushed Ice', quantity: 5000, unit: 'g', lowStockAlert: 1000, costPerUnit: 0.02 },
     { id: 'ing-14', name: 'Paper Bowl', quantity: 500, unit: 'pcs', lowStockAlert: 50, costPerUnit: 2.50 },
-    { id: 'ing-15', name: 'Utensils (Spoon & Fork)', quantity: 500, unit: 'pcs', lowStockAlert: 50, costPerUnit: 1.50 }
+    { id: 'ing-15', name: 'Utensils (Spoon & Fork)', quantity: 500, unit: 'pcs', lowStockAlert: 50, costPerUnit: 1.50 },
+    { id: 'ing-16', name: 'Ground Pork Meat', quantity: 5000, unit: 'g', lowStockAlert: 1000, costPerUnit: 0.34 },
+    { id: 'ing-17', name: 'Lumpia Wrappers', quantity: 500, unit: 'pcs', lowStockAlert: 50, costPerUnit: 0.50 },
+    { id: 'ing-18', name: 'Quickmelt/Cheddar Cheese', quantity: 1000, unit: 'g', lowStockAlert: 200, costPerUnit: 0.35 },
+    { id: 'ing-19', name: 'Green Chili (Siling Haba)', quantity: 500, unit: 'g', lowStockAlert: 100, costPerUnit: 0.25 }
   ];
 
   const seedStockLevels: Record<string, number> = {
     'silog-tapsilog': 25,
     'bento-chicken-katsu': 20,
-    'drink-red-tea': 50
+    'drink-red-tea': 50,
+    'silog-lumpiang-shanghai': 30
   };
 
   return {
@@ -172,6 +178,7 @@ const generateDefaultDB = (): DatabaseSchema => {
     spoilageLogs: [],
     staffShifts: [],
     zReadAudits: [],
+    stockBatches: [],
     settings: {
       salesPace: 18,
       electricityBaseRate: 150,
@@ -195,6 +202,27 @@ const generateDefaultDB = (): DatabaseSchema => {
   };
 };
 
+const sanitizeAndMergeDB = (parsed: DatabaseSchema, defaultDB: DatabaseSchema): DatabaseSchema => {
+  if (!parsed.menuItems || !Array.isArray(parsed.menuItems)) {
+    parsed.menuItems = defaultDB.menuItems;
+  }
+
+  if (!parsed.ingredientsInventory || !Array.isArray(parsed.ingredientsInventory)) {
+    parsed.ingredientsInventory = defaultDB.ingredientsInventory;
+  }
+
+  if (!parsed.stockLevels || Object.keys(parsed.stockLevels).length === 0) {
+    parsed.stockLevels = defaultDB.stockLevels;
+  }
+
+  if (!parsed.users || !Array.isArray(parsed.users)) parsed.users = defaultDB.users;
+  if (!parsed.promoVouchers) parsed.promoVouchers = defaultDB.promoVouchers;
+  if (!parsed.spoilageLogs) parsed.spoilageLogs = [];
+  if (!parsed.staffShifts) parsed.staffShifts = [];
+  if (!parsed.zReadAudits) parsed.zReadAudits = [];
+  return parsed;
+};
+
 export const readDB = async (): Promise<DatabaseSchema> => {
   const defaultDB = generateDefaultDB();
 
@@ -209,16 +237,9 @@ export const readDB = async (): Promise<DatabaseSchema> => {
       }
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
       const parsed = JSON.parse(raw) as DatabaseSchema;
-      if (!parsed.menuItems || parsed.menuItems.length === 0) parsed.menuItems = defaultDB.menuItems;
-      if (!parsed.ingredientsInventory || parsed.ingredientsInventory.length === 0) parsed.ingredientsInventory = defaultDB.ingredientsInventory;
-      if (!parsed.stockLevels || Object.keys(parsed.stockLevels).length === 0) parsed.stockLevels = defaultDB.stockLevels;
-      if (!parsed.users || !Array.isArray(parsed.users)) parsed.users = defaultDB.users;
-      if (!parsed.promoVouchers) parsed.promoVouchers = defaultDB.promoVouchers;
-      if (!parsed.spoilageLogs) parsed.spoilageLogs = [];
-      if (!parsed.staffShifts) parsed.staffShifts = [];
-      if (!parsed.zReadAudits) parsed.zReadAudits = [];
-      localCache = parsed;
-      return parsed;
+      const merged = sanitizeAndMergeDB(parsed, defaultDB);
+      localCache = merged;
+      return merged;
     } catch (e) {
       return localCache || defaultDB;
     }
@@ -243,21 +264,14 @@ export const readDB = async (): Promise<DatabaseSchema> => {
         const json = (await res.json()) as any;
         if (json && json.result) {
           const parsed = JSON.parse(json.result) as DatabaseSchema;
-          if (!parsed.menuItems || parsed.menuItems.length === 0) parsed.menuItems = defaultDB.menuItems;
-          if (!parsed.ingredientsInventory || parsed.ingredientsInventory.length === 0) parsed.ingredientsInventory = defaultDB.ingredientsInventory;
-          if (!parsed.stockLevels || Object.keys(parsed.stockLevels).length === 0) parsed.stockLevels = defaultDB.stockLevels;
-          if (!parsed.users || !Array.isArray(parsed.users)) parsed.users = defaultDB.users;
-          if (!parsed.promoVouchers) parsed.promoVouchers = defaultDB.promoVouchers;
-          if (!parsed.spoilageLogs) parsed.spoilageLogs = [];
-          if (!parsed.staffShifts) parsed.staffShifts = [];
-          if (!parsed.zReadAudits) parsed.zReadAudits = [];
-          localCache = parsed;
+          const merged = sanitizeAndMergeDB(parsed, defaultDB);
+          localCache = merged;
           // Persist latest to local file for fast offline resilience
           try {
             ensureDbDir();
-            fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
+            fs.writeFileSync(DB_FILE, JSON.stringify(merged, null, 2), 'utf-8');
           } catch (e) {}
-          return parsed;
+          return merged;
         }
       }
     } catch (err: any) {

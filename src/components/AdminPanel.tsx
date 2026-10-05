@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Order, OrderStatus, MenuItem, Category, MenuOption, IngredientStock, SelectedOption } from '../types';
+import { Order, OrderStatus, MenuItem, Category, MenuOption, IngredientStock, SelectedOption, StockBatch, StaffMember, StaffAdvance, PayrollRecord } from '../types';
 import { 
   ChefHat, 
   TrendingUp, 
@@ -8,6 +8,8 @@ import {
   Ban, 
   ArrowRight, 
   Eye, 
+  Layers,
+  Package,
   ToggleLeft, 
   ToggleRight, 
   X, 
@@ -21,6 +23,11 @@ import {
   FilePlus,
   RefreshCw,
   Calendar,
+  Users,
+  UserCheck,
+  Briefcase,
+  FileText,
+  Receipt,
   Zap,
   TrendingDown,
   ShoppingCart,
@@ -61,11 +68,23 @@ import {
   PhoneCall,
   MessageSquare,
   Navigation,
-  ShieldAlert
+  ShieldAlert,
+  GripVertical,
+  ChevronUp,
+  ChevronDown,
+  Star,
+  MapPin,
+  ExternalLink,
+  AlertCircle,
+  CheckCircle2,
+  Map
 } from 'lucide-react';
 import ReceiptModal from './ReceiptModal';
 import BluetoothPrinterModal from './BluetoothPrinterModal';
 import CustomizeModal from './CustomizeModal';
+import EditOrderModal from './EditOrderModal';
+import { DailyBreakdownModal, DailyStockAuditModal } from './DailySalesModals';
+import FifoStockModal from './FifoStockModal';
 import { bluetoothPrinter, PrinterStatus } from '../services/bluetoothPrinter';
 
 
@@ -99,6 +118,12 @@ interface AdminPanelProps {
   onStartItemCooking?: (orderId: string, itemId: string) => void;
   onManualPlaceOrder?: (order: Order) => void;
   onUpdateConfirmationCallStatus?: (orderId: string, callStatus: 'pending' | 'confirmed' | 'unreachable' | 'rejected', isBogusRisk?: boolean) => void;
+  onEditOrder?: (order: Order, syncStock?: boolean) => void;
+  onDeleteOrder?: (orderId: string) => void;
+  stockBatches?: StockBatch[];
+  onAddStockBatch?: (batch: StockBatch) => void;
+  onUpdateStockBatch?: (batchId: string, updates: Partial<StockBatch>) => void;
+  onDeleteStockBatch?: (batchId: string) => void;
 }
 
 const IMAGE_PRESETS = [
@@ -109,6 +134,17 @@ const IMAGE_PRESETS = [
   { name: 'Dynamic Rice Bowl', url: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&q=80&w=600' },
   { name: 'Chilled Ice Tea / Drinks', url: 'https://images.unsplash.com/photo-1497534446932-c925b458314e?auto=format&fit=crop&q=80&w=600' },
 ];
+
+export const isRelevantOptionChoice = (opt: any): boolean => {
+  if (!opt) return false;
+  const rawName = typeof opt.choice === 'string' ? opt.choice : (opt.choice?.name || '');
+  const price = opt.choice && typeof opt.choice.price === 'number' ? opt.choice.price : 0;
+  const clean = rawName.toLowerCase().trim();
+  if (price === 0 && (clean.startsWith('no ') || clean === 'none' || clean === 'no' || clean.startsWith('no-') || clean.includes('no extra') || clean.includes('no drink') || clean.includes('no egg'))) {
+    return false;
+  }
+  return true;
+};
 
 interface DetailedServings {
   servings: number | null;
@@ -1057,6 +1093,12 @@ function AdminPanel({
   onStartItemCooking,
   onManualPlaceOrder,
   onUpdateConfirmationCallStatus,
+  onEditOrder,
+  onDeleteOrder,
+  stockBatches = [],
+  onAddStockBatch,
+  onUpdateStockBatch,
+  onDeleteStockBatch,
 }: AdminPanelProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1116,8 +1158,104 @@ function AdminPanel({
   const [spoilageReason, setSpoilageReason] = useState<'expired' | 'spilled' | 'damaged' | 'quality_defect'>('expired');
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [staffClockName, setStaffClockName] = useState('');
-  const [staffClockHourly, setStaffClockHourly] = useState(75);
+  const [staffClockRole, setStaffClockRole] = useState<'Head Chef' | 'Line Cook' | 'Kitchen Crew' | 'Cashier' | 'Dispatcher' | 'Rider' | 'Store Manager'>('Head Chef');
+  const [staffClockStation, setStaffClockStation] = useState('Main Hot Line & Grilling');
+  const [staffClockHourly, setStaffClockHourly] = useState(85);
+  const [staffClockPhone, setStaffClockPhone] = useState('');
   const [activeShifts, setActiveShifts] = useState<{ id: string; staffName: string; clockIn: string; hourlyRate: number }[]>([]);
+  
+  // Staff Roster & On-Duty Station State
+  const DEFAULT_STAFF_ROSTER: StaffMember[] = [
+    {
+      id: 'staff-1',
+      name: 'Chef Ronald',
+      role: 'Head Chef',
+      stationTask: 'Main Hot Line & Grilling',
+      isOnDuty: true,
+      isDefaultLeadChef: true,
+      hourlyRate: 85,
+      phone: '09171234567',
+      clockInTime: new Date(Date.now() - 3600000 * 3).toISOString()
+    },
+    {
+      id: 'staff-2',
+      name: 'Chef Marco',
+      role: 'Line Cook',
+      stationTask: 'Rice, Egg & Fryer Prep',
+      isOnDuty: true,
+      isDefaultLeadChef: false,
+      hourlyRate: 75,
+      phone: '09172345678',
+      clockInTime: new Date(Date.now() - 3600000 * 2.5).toISOString()
+    },
+    {
+      id: 'staff-3',
+      name: 'Maria Santos',
+      role: 'Cashier',
+      stationTask: 'POS Counter & Anti-Bogus Call Verification',
+      isOnDuty: true,
+      isDefaultLeadChef: false,
+      hourlyRate: 75,
+      phone: '09173456789',
+      clockInTime: new Date(Date.now() - 3600000 * 3.5).toISOString()
+    },
+    {
+      id: 'staff-4',
+      name: 'Alex Cruz',
+      role: 'Dispatcher',
+      stationTask: 'Order Packaging & Rider Dispatch',
+      isOnDuty: false,
+      isDefaultLeadChef: false,
+      hourlyRate: 70,
+      phone: '09174567890'
+    },
+    {
+      id: 'staff-5',
+      name: 'Kuya Jojo',
+      role: 'Rider',
+      stationTask: 'GPS Courier & Delivery Transit',
+      isOnDuty: false,
+      isDefaultLeadChef: false,
+      hourlyRate: 70,
+      phone: '09175678901'
+    }
+  ];
+
+  const [staffRoster, setStaffRoster] = useState<StaffMember[]>(() => {
+    try {
+      const saved = localStorage.getItem('curvadas_staff_roster');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to load staff roster', e);
+    }
+    return DEFAULT_STAFF_ROSTER;
+  });
+
+  const saveStaffRoster = (updated: StaffMember[]) => {
+    setStaffRoster(updated);
+    try {
+      localStorage.setItem('curvadas_staff_roster', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save staff roster', e);
+    }
+  };
+
+  const onDutyStaff = useMemo(() => staffRoster.filter(s => s.isOnDuty), [staffRoster]);
+  const onDutyChefs = useMemo(() => {
+    const chefs = onDutyStaff.filter(s => s.role === 'Head Chef' || s.role === 'Line Cook' || s.role === 'Kitchen Crew');
+    return chefs.length > 0 ? chefs : onDutyStaff;
+  }, [onDutyStaff]);
+
+  const defaultLeadChef = useMemo(() => {
+    return onDutyChefs.find(s => s.isDefaultLeadChef) || onDutyChefs[0] || null;
+  }, [onDutyChefs]);
+
+  const defaultLeadChefName = defaultLeadChef ? defaultLeadChef.name : 'Kitchen Team';
+  const [staffSubTab, setStaffSubTab] = useState<'attendance' | 'payroll' | 'shift_logs'>('attendance');
+
   const [showZReadModal, setShowZReadModal] = useState(false);
   const [zReadCashCount, setZReadCashCount] = useState(0);
 
@@ -1161,6 +1299,27 @@ function AdminPanel({
   const [posSelectedOptions, setPosSelectedOptions] = useState<SelectedOption[]>([]);
   const [posSpecialInstructions, setPosSpecialInstructions] = useState('');
   const [posMobileTab, setPosMobileTab] = useState<'catalog' | 'ticket'>('catalog');
+  const [posOrderDate, setPosOrderDate] = useState<string>(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
+  const [posOrderStatus, setPosOrderStatus] = useState<OrderStatus>('delivered');
+
+  // Order History Archive State
+  const [archivePeriod, setArchivePeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'custom' | 'all'>('all');
+  const [archiveCustomDate, setArchiveCustomDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
+  const [archiveStatusFilter, setArchiveStatusFilter] = useState<'all' | 'delivered' | 'cancelled'>('all');
+
+  // Daily Sales & Stock Reconciliation states
+  const [showDailyBreakdownModal, setShowDailyBreakdownModal] = useState<boolean>(false);
+  const [showDailyStockAuditModal, setShowDailyStockAuditModal] = useState<boolean>(false);
+  const [selectedDailyAuditDate, setSelectedDailyAuditDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [isEditOrderModalOpen, setIsEditOrderModalOpen] = useState<boolean>(false);
+  const [isFifoModalOpen, setIsFifoModalOpen] = useState<boolean>(false);
+  const [selectedFifoIngredientId, setSelectedFifoIngredientId] = useState<string>('all');
 
   // Financial Tracker Internal Sub-Tabs & Filter States
   const [financeSubTab, setFinanceSubTab] = useState<'overview' | 'overheads' | 'timeline' | 'daily-ledger'>('overview');
@@ -1187,11 +1346,156 @@ function AdminPanel({
     { id: 'sp-3', ingredientId: 'ing-rice', ingredientName: 'Sinag Garlic Rice Grain', amount: 2, unit: 'kg', reason: 'spilled', loggedBy: 'Kitchen Staff', timestamp: new Date(Date.now() - 3600000 * 60).toISOString(), estLossCost: 120 },
   ]);
 
-  const [completedShifts, setCompletedShifts] = useState<Array<{ id: string; staffName: string; clockIn: string; clockOut: string; totalHours: number; hourlyRate: number; totalEarned: number }>>([
-    { id: 'cs-1', staffName: 'Chef Ronald', clockIn: new Date(Date.now() - 3600000 * 9).toISOString(), clockOut: new Date(Date.now() - 3600000 * 1).toISOString(), totalHours: 8, hourlyRate: 75, totalEarned: 600 },
-    { id: 'cs-2', staffName: 'Maria Santos (Cashier)', clockIn: new Date(Date.now() - 3600000 * 18).toISOString(), clockOut: new Date(Date.now() - 3600000 * 10).toISOString(), totalHours: 8, hourlyRate: 75, totalEarned: 600 },
-    { id: 'cs-3', staffName: 'Juan Dela Cruz', clockIn: new Date(Date.now() - 3600000 * 34).toISOString(), clockOut: new Date(Date.now() - 3600000 * 26).toISOString(), totalHours: 8, hourlyRate: 75, totalEarned: 600 },
-  ]);
+  const [completedShifts, setCompletedShifts] = useState<Array<{ id: string; staffName: string; clockIn: string; clockOut: string; totalHours: number; hourlyRate: number; totalEarned: number }>>(() => {
+    try {
+      const saved = localStorage.getItem('curvadas_completed_shifts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to load completed shifts', e);
+    }
+    return [
+      { id: 'cs-1', staffName: 'Chef Ronald', clockIn: new Date(Date.now() - 3600000 * 9).toISOString(), clockOut: new Date(Date.now() - 3600000 * 1).toISOString(), totalHours: 8, hourlyRate: 85, totalEarned: 680 },
+      { id: 'cs-2', staffName: 'Chef Marco', clockIn: new Date(Date.now() - 3600000 * 18).toISOString(), clockOut: new Date(Date.now() - 3600000 * 10).toISOString(), totalHours: 8, hourlyRate: 75, totalEarned: 600 },
+      { id: 'cs-3', staffName: 'Maria Santos', clockIn: new Date(Date.now() - 3600000 * 34).toISOString(), clockOut: new Date(Date.now() - 3600000 * 26).toISOString(), totalHours: 8, hourlyRate: 75, totalEarned: 600 },
+      { id: 'cs-4', staffName: 'Chef Ronald', clockIn: new Date(Date.now() - 86400000 * 2).toISOString(), clockOut: new Date(Date.now() - 86400000 * 2 + 3600000 * 9).toISOString(), totalHours: 9, hourlyRate: 85, totalEarned: 765 },
+      { id: 'cs-5', staffName: 'Chef Marco', clockIn: new Date(Date.now() - 86400000 * 2).toISOString(), clockOut: new Date(Date.now() - 86400000 * 2 + 3600000 * 8).toISOString(), totalHours: 8, hourlyRate: 75, totalEarned: 600 },
+    ];
+  });
+
+  const saveCompletedShifts = (updated: typeof completedShifts) => {
+    setCompletedShifts(updated);
+    try {
+      localStorage.setItem('curvadas_completed_shifts', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save completed shifts', e);
+    }
+  };
+
+  // Staff Advances & Bonuses (Vale & Tips)
+  const [staffAdvances, setStaffAdvances] = useState<StaffAdvance[]>(() => {
+    try {
+      const saved = localStorage.getItem('curvadas_staff_advances');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to load staff advances', e);
+    }
+    return [
+      { id: 'adv-1', staffId: 'staff-2', staffName: 'Chef Marco', amount: 300, reason: 'Emergency Rice & Fare Vale', date: new Date(Date.now() - 86400000).toISOString().split('T')[0], isDeducted: true },
+      { id: 'adv-2', staffId: 'staff-1', staffName: 'Chef Ronald', amount: 500, reason: 'Personal Cash Advance', date: new Date(Date.now() - 86400000 * 3).toISOString().split('T')[0], isDeducted: true }
+    ];
+  });
+
+  const saveStaffAdvances = (updated: StaffAdvance[]) => {
+    setStaffAdvances(updated);
+    try {
+      localStorage.setItem('curvadas_staff_advances', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save staff advances', e);
+    }
+  };
+
+  // Payroll Period & Payslip State
+  const [payrollPeriod, setPayrollPeriod] = useState<'today' | 'week' | 'semi_monthly' | 'month' | 'all'>('week');
+  const [viewingPayslip, setViewingPayslip] = useState<PayrollRecord | null>(null);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [advanceStaffId, setAdvanceStaffId] = useState('');
+  const [advanceAmount, setAdvanceAmount] = useState<number>(300);
+  const [advanceReason, setAdvanceReason] = useState('Emergency Cash Advance (Vale)');
+  const [advanceType, setAdvanceType] = useState<'advance' | 'bonus'>('advance');
+  const [releasedPayrollIds, setReleasedPayrollIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('curvadas_released_payrolls');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+
+  const saveReleasedPayrolls = (ids: string[]) => {
+    setReleasedPayrollIds(ids);
+    try {
+      localStorage.setItem('curvadas_released_payrolls', JSON.stringify(ids));
+    } catch (e) {}
+  };
+
+  // Filter completed shifts by payroll period
+  const filteredCompletedShifts = useMemo(() => {
+    const now = Date.now();
+    return completedShifts.filter(sh => {
+      const shiftTime = new Date(sh.clockIn).getTime();
+      const diffMs = now - shiftTime;
+      if (payrollPeriod === 'today') return diffMs <= 86400000;
+      if (payrollPeriod === 'week') return diffMs <= 7 * 86400000;
+      if (payrollPeriod === 'semi_monthly') return diffMs <= 15 * 86400000;
+      if (payrollPeriod === 'month') return diffMs <= 30 * 86400000;
+      return true;
+    });
+  }, [completedShifts, payrollPeriod]);
+
+  // Compute detailed payroll matrix per staff member
+  const staffPayrollMatrix = useMemo(() => {
+    return staffRoster.map(staff => {
+      const staffShifts = filteredCompletedShifts.filter(sh => 
+        sh.staffName.toLowerCase().trim() === staff.name.toLowerCase().trim() ||
+        sh.staffName.toLowerCase().includes(staff.name.toLowerCase().split(' ')[0])
+      );
+
+      const totalHours = staffShifts.reduce((s, sh) => s + sh.totalHours, 0);
+      const regularHours = staffShifts.reduce((s, sh) => s + Math.min(8, sh.totalHours), 0);
+      const overtimeHours = staffShifts.reduce((s, sh) => s + Math.max(0, sh.totalHours - 8), 0);
+      
+      const regularPay = regularHours * staff.hourlyRate;
+      const overtimePay = overtimeHours * (staff.hourlyRate * 1.25);
+      const grossPay = regularPay + overtimePay;
+
+      // Filter staff advances & bonuses
+      const staffAdvList = staffAdvances.filter(a => a.staffId === staff.id || a.staffName.toLowerCase().trim() === staff.name.toLowerCase().trim());
+      const totalAdvances = staffAdvList.filter(a => a.isDeducted).reduce((s, a) => s + a.amount, 0);
+      const bonusTips = staff.isOnDuty ? 150 : 0; // Daily/period tip subsidy for active staff
+
+      const netPay = Math.max(0, grossPay + bonusTips - totalAdvances);
+      const recordId = `pr-${staff.id}-${payrollPeriod}`;
+      const isPaid = releasedPayrollIds.includes(recordId);
+
+      const record: PayrollRecord = {
+        id: recordId,
+        staffId: staff.id,
+        staffName: staff.name,
+        role: staff.role,
+        periodStart: new Date(Date.now() - (payrollPeriod === 'today' ? 86400000 : payrollPeriod === 'week' ? 7 * 86400000 : 15 * 86400000)).toISOString().split('T')[0],
+        periodEnd: new Date().toISOString().split('T')[0],
+        hourlyRate: staff.hourlyRate,
+        regularHours,
+        overtimeHours,
+        grossPay,
+        bonusTips,
+        cashAdvanceDeduction: totalAdvances,
+        otherDeductions: 0,
+        netPay,
+        status: isPaid ? 'paid' : 'pending',
+        paidAt: isPaid ? new Date().toISOString() : undefined
+      };
+
+      return {
+        staff,
+        shiftsCount: staffShifts.length,
+        totalHours,
+        regularHours,
+        overtimeHours,
+        grossPay,
+        bonusTips,
+        advances: totalAdvances,
+        netPay,
+        isPaid,
+        record
+      };
+    });
+  }, [staffRoster, filteredCompletedShifts, staffAdvances, payrollPeriod, releasedPayrollIds]);
 
   const [zReadReports, setZReadReports] = useState<Array<{ id: string; date: string; grossSales: number; cashSales: number; ewalletSales: number; cardSales: number; countedCash: number; variance: number; closedBy: string }>>([
     { id: 'zr-1', date: new Date(Date.now() - 86400000).toISOString().split('T')[0], grossSales: 14250, cashSales: 8500, ewalletSales: 4250, cardSales: 1500, countedCash: 8500, variance: 0, closedBy: 'Manager' },
@@ -1613,24 +1917,44 @@ function AdminPanel({
           )}
         </div>
 
-        {/* Prepared By Staff / Chef Tag (Clean compact box) */}
+        {/* Prepared By Staff / Chef Tag (Clean compact box with On-Duty Auto Selection) */}
         <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-[#121211] border border-white/5 rounded-xl text-[9px]">
-          <span className="text-gray-400 font-bold uppercase tracking-wider">Chef:</span>
+          <div className="flex items-center gap-1.5">
+            <ChefHat className="w-3.5 h-3.5 text-brand-gold flex-shrink-0" />
+            <span className="text-gray-400 font-bold uppercase tracking-wider">Chef:</span>
+          </div>
           {onSetCookedBy ? (
-            <input
-              type="text"
-              placeholder="Assign Chef..."
-              defaultValue={order.cookedBy || ''}
-              onBlur={(e) => onSetCookedBy(order.id, e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  onSetCookedBy(order.id, (e.target as HTMLInputElement).value);
+            <select
+              value={order.cookedBy || defaultLeadChefName}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '__custom__') {
+                  const custom = prompt('Enter custom chef/staff name:', order.cookedBy || '');
+                  if (custom && custom.trim()) {
+                    onSetCookedBy(order.id, custom.trim());
+                  }
+                } else {
+                  onSetCookedBy(order.id, val);
                 }
               }}
-              className="bg-black/40 border border-white/10 rounded-lg px-2 py-0.5 text-[9px] text-white focus:outline-none focus:border-brand-gold w-32 font-semibold text-right"
-            />
+              className="bg-black/60 border border-brand-gold/30 hover:border-brand-gold rounded-lg px-2 py-0.5 text-[9px] text-brand-gold font-bold focus:outline-none focus:border-brand-gold cursor-pointer max-w-[170px] truncate transition-all"
+              title="Assigned Cook / Prep Staff (Defaults to on-duty Lead Chef)"
+            >
+              {onDutyChefs.map((chef) => (
+                <option key={chef.id} value={chef.name} className="bg-[#181818] text-white">
+                  👨‍🍳 {chef.name} {chef.isDefaultLeadChef ? '⭐ (Lead)' : ''} {chef.stationTask ? `• ${chef.stationTask}` : ''}
+                </option>
+              ))}
+              {onDutyChefs.length === 0 && (
+                <option value="Kitchen Team" className="bg-[#181818] text-white">👨‍🍳 Kitchen Team</option>
+              )}
+              {order.cookedBy && !onDutyChefs.some(c => c.name === order.cookedBy) && (
+                <option value={order.cookedBy} className="bg-[#181818] text-amber-300">👨‍🍳 {order.cookedBy} (Custom)</option>
+              )}
+              <option value="__custom__" className="bg-[#181818] text-gray-400">➕ Type custom name...</option>
+            </select>
           ) : (
-            <span className="font-bold text-brand-gold">{order.cookedBy || 'Kitchen Team'}</span>
+            <span className="font-bold text-brand-gold">👨‍🍳 {order.cookedBy || defaultLeadChefName}</span>
           )}
         </div>
 
@@ -1652,9 +1976,9 @@ function AdminPanel({
                     </div>
 
                     {/* Selected Options / Add-ons / Rice display */}
-                    {item.selectedOptions && item.selectedOptions.length > 0 && (
+                    {item.selectedOptions && item.selectedOptions.filter(isRelevantOptionChoice).length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {item.selectedOptions.map((opt, optIdx) => (
+                        {item.selectedOptions.filter(isRelevantOptionChoice).map((opt, optIdx) => (
                           <span
                             key={optIdx}
                             className={`text-[9px] px-1.5 py-0.5 rounded font-bold border leading-none ${
@@ -1816,28 +2140,87 @@ function AdminPanel({
         {/* Action button */}
         <div className="pt-2 border-t border-white/5 flex flex-col gap-1.5">
           <div className="flex gap-1.5 w-full">
-            {order.status === 'pending' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onUpdateOrderStatus(order.id, 'preparing')}
-                  className="flex-1 py-2 rounded-xl bg-brand-gold hover:opacity-90 text-black text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer"
-                >
-                  Accept & Prep
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm('Cancel this order?')) {
-                      onUpdateOrderStatus(order.id, 'cancelled');
-                    }
-                  }}
-                  className="px-2 py-2 rounded-xl border border-brand-red/30 hover:bg-brand-red/5 text-brand-red text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer"
-                >
-                  Reject
-                </button>
-              </>
-            )}
+            {order.status === 'pending' && (() => {
+              const isCodUnconfirmed = order.paymentMethod === 'cod' && order.confirmationCallStatus !== 'confirmed';
+              const isFakeOrBogus = order.confirmationCallStatus === 'rejected' || order.isBogusRisk;
+
+              if (isFakeOrBogus) {
+                return (
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Cancel and report order #${order.id.slice(0, 8)} as a Bogus / Fake order?`)) {
+                          onUpdateOrderStatus(order.id, 'cancelled');
+                          onUpdateConfirmationCallStatus?.(order.id, 'rejected', true);
+                        }
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white text-[9.5px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-red-500/20 flex items-center justify-center gap-1.5 animate-pulse"
+                      title="Cancel and report this order as Bogus / Fake"
+                    >
+                      <Ban className="w-3.5 h-3.5" />
+                      <span>Cancel & Report Bogus</span>
+                    </button>
+                  </div>
+                );
+              }
+
+              if (isCodUnconfirmed) {
+                return (
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <div className="flex gap-1.5 w-full">
+                      <button
+                        type="button"
+                        disabled
+                        className="flex-1 py-2 rounded-xl bg-[#1c1c1a] border border-white/10 text-gray-500 text-[9px] font-black uppercase tracking-wider cursor-not-allowed flex items-center justify-center gap-1.5 opacity-70"
+                        title="Customer must be verified via Call/SMS and marked '✓ OK' before you can accept and prep to prevent bogus orders."
+                      >
+                        <Lock className="w-3 h-3 text-amber-400" />
+                        <span>Confirm First to Accept</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm('Cancel this unconfirmed order?')) {
+                            onUpdateOrderStatus(order.id, 'cancelled');
+                          }
+                        }}
+                        className="px-2.5 py-2 rounded-xl border border-brand-red/30 hover:bg-brand-red/10 text-brand-red text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                        title="Cancel Order"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                    <p className="text-[8px] text-amber-300/80 font-semibold text-center flex items-center justify-center gap-1">
+                      <span>⚠️ Tap 'Call' / 'SMS' to confirm number, then tap '✓ OK'</span>
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onUpdateOrderStatus(order.id, 'preparing')}
+                    className="flex-1 py-2 rounded-xl bg-brand-gold hover:opacity-90 text-black text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-brand-gold/10"
+                  >
+                    Accept & Prep
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Cancel this order?')) {
+                        onUpdateOrderStatus(order.id, 'cancelled');
+                      }
+                    }}
+                    className="px-2 py-2 rounded-xl border border-brand-red/30 hover:bg-brand-red/5 text-brand-red text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    Reject
+                  </button>
+                </>
+              );
+            })()}
 
             {order.status === 'preparing' && (
               <div className="flex flex-col gap-1.5 w-full">
@@ -2453,6 +2836,8 @@ function AdminPanel({
         const d = new Date(order.timestamp);
         const now = new Date();
         if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth()) return false;
+      } else if (archivePeriod === 'custom') {
+        if (!order.timestamp || !order.timestamp.startsWith(archiveCustomDate)) return false;
       }
 
       // 2. Status filter
@@ -2483,7 +2868,7 @@ function AdminPanel({
     return (
       <div className="space-y-6 text-left animate-fade-in">
         {/* Full Screen Header Banner */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121211] border border-white/5 p-6 rounded-[2rem] shadow-xl">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#121211] border border-white/5 p-6 rounded-[2rem] shadow-xl">
           <div>
             <div className="flex items-center gap-2">
               <span className="bg-brand-gold/10 text-brand-gold font-bold px-3 py-1 rounded-full uppercase text-[10px] tracking-wider border border-brand-gold/20 flex items-center gap-1">
@@ -2492,10 +2877,10 @@ function AdminPanel({
               <span className="text-xs text-gray-400 font-bold">Historical Archive & Inspection</span>
             </div>
             <h2 className="font-display font-black text-white text-xl md:text-2xl mt-1.5 flex items-center gap-2">
-              Order History & Sales Archive
+              Order History & Sales Reconciliation
             </h2>
             <p className="text-gray-400 text-xs mt-0.5">
-              Inspect historical customer receipts, view payment breakdown, and search past order logs
+              Reconcile actual total sales, balance cash, audit ingredient stock usage, and record or edit manual orders.
             </p>
           </div>
 
@@ -2503,13 +2888,74 @@ function AdminPanel({
             <button
               type="button"
               onClick={() => {
+                const targetDate = archivePeriod === 'custom' ? archiveCustomDate : new Date().toISOString().split('T')[0];
+                setSelectedDailyAuditDate(targetDate);
+                setShowDailyBreakdownModal(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-400 text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+              title="View comprehensive sales per day breakdown table"
+            >
+              📊 Daily Sales Breakdown
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const targetDate = archivePeriod === 'custom' ? archiveCustomDate : new Date().toISOString().split('T')[0];
+                setSelectedDailyAuditDate(targetDate);
+                setShowDailyStockAuditModal(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/40 text-blue-400 text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+              title="Audit actual ingredient stock consumption for the day"
+            >
+              🔍 Daily Stock Audit
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFifoModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-400 text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+              title="View FIFO batch layers, cost drift & loss intelligence"
+            >
+              📦 FIFO Batches & Loss ({stockBatches.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPosCart([]);
+                setPosCustomerName('');
+                setPosCustomerPhone('');
+                setPosTableNumber('');
+                setPosDeliveryAddress('');
+                setPosAmountTendered('');
+                setPosPaymentMethod('cod');
+                setPosOrderType('pickup');
+                setPosOrderSource('walkin');
+                const now = new Date();
+                const pad = (n: number) => String(n).padStart(2, '0');
+                const defaultDateStr = archivePeriod === 'custom'
+                  ? `${archiveCustomDate}T${pad(now.getHours())}:${pad(now.getMinutes())}`
+                  : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                setPosOrderDate(defaultDateStr);
+                setPosOrderStatus('delivered');
+                setShowManualOrderModal(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-brand-red hover:bg-red-600 text-white text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-brand-red/20"
+            >
+              <Plus className="w-4 h-4" /> Record Manual / Past Order
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 setChefTab('orders');
                 if (loginRole === 'admin') navigate('/portal/admin');
                 else navigate('/portal/kitchen');
               }}
-              className="px-4 py-2 rounded-xl bg-brand-gold hover:opacity-90 text-black text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+              className="px-3.5 py-2 rounded-xl bg-brand-gold hover:opacity-90 text-black text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
             >
-              ← Back to Active Order Queue
+              ← Active Queue
             </button>
           </div>
         </div>
@@ -2519,21 +2965,49 @@ function AdminPanel({
           <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
             
             {/* Period Filters */}
-            <div className="flex items-center gap-1 bg-[#0D0D0C] p-1.5 rounded-2xl border border-white/10 w-full lg:w-auto overflow-x-auto">
-              {(['all', 'today', 'yesterday', 'week', 'month'] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setArchivePeriod(p)}
-                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-                    archivePeriod === p
-                      ? 'bg-brand-gold text-black shadow-md'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  {p === 'all' ? 'All Time' : p === 'today' ? 'Today' : p === 'yesterday' ? 'Yesterday' : p === 'week' ? 'Last 7 Days' : 'This Month'}
-                </button>
-              ))}
+            <div className="flex items-center gap-1.5 flex-wrap w-full lg:w-auto">
+              <div className="flex items-center gap-1 bg-[#0D0D0C] p-1.5 rounded-2xl border border-white/10 overflow-x-auto">
+                {(['all', 'today', 'yesterday', 'week', 'month', 'custom'] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setArchivePeriod(p);
+                      if (p === 'today') {
+                        const t = new Date().toISOString().split('T')[0];
+                        setSelectedDailyAuditDate(t);
+                      } else if (p === 'yesterday') {
+                        const y = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+                        setSelectedDailyAuditDate(y);
+                      }
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+                      archivePeriod === p
+                        ? 'bg-brand-gold text-black shadow-md'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    {p === 'all' ? 'All Time' : p === 'today' ? 'Today' : p === 'yesterday' ? 'Yesterday' : p === 'week' ? 'Last 7 Days' : p === 'month' ? 'This Month' : '📅 Specific Date'}
+                  </button>
+                ))}
+              </div>
+
+              {archivePeriod === 'custom' && (
+                <div className="flex items-center gap-2 bg-[#0D0D0C] p-1.5 rounded-2xl border border-brand-gold/40 animate-fade-in">
+                  <span className="text-[10px] text-brand-gold font-bold uppercase pl-2 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5" /> Date:
+                  </span>
+                  <input
+                    type="date"
+                    value={archiveCustomDate}
+                    onChange={(e) => {
+                      setArchiveCustomDate(e.target.value);
+                      setSelectedDailyAuditDate(e.target.value);
+                    }}
+                    className="bg-[#181818] border border-white/10 text-white font-mono font-bold text-xs rounded-xl px-2.5 py-1 focus:outline-none focus:border-brand-gold cursor-pointer"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Status & Search */}
@@ -2672,9 +3146,9 @@ function AdminPanel({
                           <div>
                             <strong className="text-brand-red font-bold">{i.quantity}x</strong> {i.menuItem.name}
                           </div>
-                          {i.selectedOptions && i.selectedOptions.length > 0 && (
+                          {i.selectedOptions && i.selectedOptions.filter(isRelevantOptionChoice).length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-0.5">
-                              {i.selectedOptions.map((opt, optIdx) => (
+                              {i.selectedOptions.filter(isRelevantOptionChoice).map((opt, optIdx) => (
                                 <span key={optIdx} className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${opt.choice.price > 0 ? 'text-amber-300' : 'text-gray-400'}`}>
                                   + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
                                 </span>
@@ -2690,7 +3164,17 @@ function AdminPanel({
                     <span className="font-mono text-brand-gold font-extrabold text-base lg:text-lg">
                       ₱{order.totalAmount.toFixed(2)}
                     </span>
-                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingOrder(order);
+                          setIsEditOrderModalOpen(true);
+                        }}
+                        className="px-3 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        title="Edit Order, Items, Date/Time & Totals"
+                      >
+                        <Edit className="w-3.5 h-3.5" /> Edit
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -2705,11 +3189,24 @@ function AdminPanel({
                       <button
                         type="button"
                         onClick={() => setViewingOrderDetails(order)}
-                        className="px-4 py-2 rounded-xl bg-[#181818] hover:bg-[#222222] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        className="px-3 py-2 rounded-xl bg-[#181818] hover:bg-[#222222] border border-white/10 hover:border-brand-gold text-gray-300 hover:text-white text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                       >
-                        <Eye className="w-3.5 h-3.5 text-brand-gold" /> Inspect Details
+                        <Eye className="w-3.5 h-3.5 text-brand-gold" /> Inspect
                       </button>
-                    </div>
+                      {onDeleteOrder && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to permanently delete Order #${order.id.slice(0, 8)}? This will restore any deducted stocks if applicable.`)) {
+                              onDeleteOrder(order.id);
+                            }
+                          }}
+                          className="px-2.5 py-2 rounded-xl bg-brand-red/10 hover:bg-brand-red/20 border border-brand-red/30 text-brand-red text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                          title="Delete / Void Order"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                   </div>
                 </div>
               ))}
@@ -3059,9 +3556,9 @@ function AdminPanel({
                                         <span className={isCooked ? 'line-through text-gray-400' : ''}>
                                           <strong className="text-brand-red mr-1">{item.quantity}x</strong> {item.menuItem.name}
                                         </span>
-                                        {item.selectedOptions && item.selectedOptions.length > 0 && (
+                                        {item.selectedOptions && item.selectedOptions.filter(isRelevantOptionChoice).length > 0 && (
                                           <div className="flex flex-wrap gap-1 mt-0.5">
-                                            {item.selectedOptions.map((opt, optIdx) => (
+                                            {item.selectedOptions.filter(isRelevantOptionChoice).map((opt, optIdx) => (
                                               <span key={optIdx} className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${opt.choice.price > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-white/10 text-gray-300'}`}>
                                                 + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
                                               </span>
@@ -3208,22 +3705,39 @@ function AdminPanel({
                                 </div>
                                 
                                 <div className="flex items-center gap-1.5 text-[9px] flex-shrink-0">
-                                  <span className="text-gray-500 font-bold uppercase">Chef:</span>
+                                  <span className="text-gray-500 font-bold uppercase flex items-center gap-1">
+                                    <ChefHat className="w-3 h-3 text-brand-gold" />
+                                    Chef:
+                                  </span>
                                   {onSetCookedBy ? (
-                                    <input
-                                      type="text"
-                                      placeholder="Assign..."
-                                      defaultValue={order.cookedBy || ''}
-                                      onBlur={(e) => onSetCookedBy(order.id, e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          onSetCookedBy(order.id, (e.target as HTMLInputElement).value);
+                                    <select
+                                      value={order.cookedBy || defaultLeadChefName}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val === '__custom__') {
+                                          const custom = prompt('Enter custom chef name:', order.cookedBy || '');
+                                          if (custom && custom.trim()) onSetCookedBy(order.id, custom.trim());
+                                        } else {
+                                          onSetCookedBy(order.id, val);
                                         }
                                       }}
-                                      className="bg-[#0D0D0C] border border-white/10 rounded px-2 py-0.5 text-[9px] text-white focus:outline-none focus:border-brand-gold w-24 font-semibold"
-                                    />
+                                      className="bg-[#0D0D0C] border border-brand-gold/30 hover:border-brand-gold rounded px-2 py-0.5 text-[9px] text-brand-gold font-bold focus:outline-none focus:border-brand-gold cursor-pointer max-w-[140px] truncate"
+                                    >
+                                      {onDutyChefs.map((chef) => (
+                                        <option key={chef.id} value={chef.name} className="bg-[#181818] text-white">
+                                          👨‍🍳 {chef.name} {chef.isDefaultLeadChef ? '⭐' : ''}
+                                        </option>
+                                      ))}
+                                      {onDutyChefs.length === 0 && (
+                                        <option value="Kitchen Team" className="bg-[#181818] text-white">👨‍🍳 Kitchen Team</option>
+                                      )}
+                                      {order.cookedBy && !onDutyChefs.some(c => c.name === order.cookedBy) && (
+                                        <option value={order.cookedBy} className="bg-[#181818] text-amber-300">👨‍🍳 {order.cookedBy}</option>
+                                      )}
+                                      <option value="__custom__" className="bg-[#181818] text-gray-400">➕ Custom...</option>
+                                    </select>
                                   ) : (
-                                    <span className="font-bold text-brand-gold">{order.cookedBy || 'Kitchen Team'}</span>
+                                    <span className="font-bold text-brand-gold">👨‍🍳 {order.cookedBy || defaultLeadChefName}</span>
                                   )}
                                 </div>
                               </div>
@@ -3231,28 +3745,78 @@ function AdminPanel({
 
                             {/* Action Trigger Buttons based on Current Status */}
                             <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end justify-start">
-                              {order.status === 'pending' && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => onUpdateOrderStatus(order.id, 'preparing')}
-                                    className="py-2 px-4 rounded-xl bg-brand-gold hover:opacity-90 text-black font-black uppercase tracking-wider text-[10px] shadow-lg shadow-brand-gold/5 cursor-pointer"
-                                  >
-                                    👨‍🍳 Accept & Prep
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (confirm('Cancel this order?')) {
-                                        onUpdateOrderStatus(order.id, 'cancelled');
-                                      }
-                                    }}
-                                    className="py-2 px-3 rounded-xl border border-brand-red/30 text-brand-red font-bold uppercase tracking-wider text-[10px] hover:bg-brand-red/5 cursor-pointer"
-                                  >
-                                    Cancel
-                                  </button>
-                                </>
-                              )}
+                              {order.status === 'pending' && (() => {
+                                const isCodUnconfirmed = order.paymentMethod === 'cod' && order.confirmationCallStatus !== 'confirmed';
+                                const isFakeOrBogus = order.confirmationCallStatus === 'rejected' || order.isBogusRisk;
+
+                                if (isFakeOrBogus) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (confirm(`Cancel and report order #${order.id.slice(0, 8)} as a Bogus / Fake order?`)) {
+                                          onUpdateOrderStatus(order.id, 'cancelled');
+                                          onUpdateConfirmationCallStatus?.(order.id, 'rejected', true);
+                                        }
+                                      }}
+                                      className="py-2 px-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-black uppercase tracking-wider text-[10px] shadow-lg shadow-red-500/20 cursor-pointer flex items-center gap-1 animate-pulse"
+                                    >
+                                      <Ban className="w-3.5 h-3.5" />
+                                      Cancel Bogus Order
+                                    </button>
+                                  );
+                                }
+
+                                if (isCodUnconfirmed) {
+                                  return (
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        disabled
+                                        className="py-2 px-3 rounded-xl bg-[#1c1c1a] border border-white/10 text-gray-500 font-black uppercase tracking-wider text-[10px] cursor-not-allowed opacity-70 flex items-center gap-1"
+                                        title="Confirm customer phone/identity via Call/SMS & tap '✓ Confirm' to unlock Accept & Prep"
+                                      >
+                                        <Lock className="w-3 h-3 text-amber-400" />
+                                        Verify First
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (confirm('Cancel this unconfirmed order?')) {
+                                            onUpdateOrderStatus(order.id, 'cancelled');
+                                          }
+                                        }}
+                                        className="py-2 px-2.5 rounded-xl border border-brand-red/30 text-brand-red font-bold uppercase tracking-wider text-[10px] hover:bg-brand-red/5 cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => onUpdateOrderStatus(order.id, 'preparing')}
+                                      className="py-2 px-4 rounded-xl bg-brand-gold hover:opacity-90 text-black font-black uppercase tracking-wider text-[10px] shadow-lg shadow-brand-gold/5 cursor-pointer"
+                                    >
+                                      👨‍🍳 Accept & Prep
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (confirm('Cancel this order?')) {
+                                          onUpdateOrderStatus(order.id, 'cancelled');
+                                        }
+                                      }}
+                                      className="py-2 px-3 rounded-xl border border-brand-red/30 text-brand-red font-bold uppercase tracking-wider text-[10px] hover:bg-brand-red/5 cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </>
+                                );
+                              })()}
                               
                               {order.status === 'preparing' && (
                                 <>
@@ -3464,11 +4028,6 @@ function AdminPanel({
   // Order Queue search & status filters
   const [filterStatus, setFilterStatus] = useState<'active' | 'completed' | 'all'>('active');
   const [viewingOrderDetails, setViewingOrderDetails] = useState<Order | null>(null);
-
-  // Order History Archive State
-  const [archivePeriod, setArchivePeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all'>('all');
-  const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
-  const [archiveStatusFilter, setArchiveStatusFilter] = useState<'all' | 'delivered' | 'cancelled'>('all');
 
   // Stock View state
   const [stockViewMode, setStockViewMode] = useState<'ingredients' | 'recipes'>('ingredients');
@@ -3827,8 +4386,42 @@ function AdminPanel({
   const [formCustomOptions, setFormCustomOptions] = useState<{
     id: string;
     title: string;
-    choices: { id: string; name: string; price: number }[];
+    choices: { id: string; name: string; price: number; isDefault?: boolean }[];
   }[]>([]);
+  const [draggedGroupIdx, setDraggedGroupIdx] = useState<number | null>(null);
+  const [draggedChoice, setDraggedChoice] = useState<{ optIdx: number; choiceIdx: number } | null>(null);
+
+  const moveOptionGroup = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= formCustomOptions.length) return;
+    const updated = [...formCustomOptions];
+    const [moved] = updated.splice(fromIdx, 1);
+    updated.splice(toIdx, 0, moved);
+    setFormCustomOptions(updated);
+  };
+
+  const moveChoice = (optIdx: number, fromIdx: number, toIdx: number) => {
+    const group = formCustomOptions[optIdx];
+    if (!group || toIdx < 0 || toIdx >= group.choices.length) return;
+    const updatedChoices = [...group.choices];
+    const [moved] = updatedChoices.splice(fromIdx, 1);
+    updatedChoices.splice(toIdx, 0, moved);
+    const updatedGroups = [...formCustomOptions];
+    updatedGroups[optIdx] = { ...group, choices: updatedChoices };
+    setFormCustomOptions(updatedGroups);
+  };
+
+  const toggleDefaultChoice = (optIdx: number, choiceIdx: number) => {
+    const updated = [...formCustomOptions];
+    const group = updated[optIdx];
+    if (!group) return;
+    const isCurrentlyDefault = Boolean(group.choices[choiceIdx]?.isDefault);
+    const updatedChoices = group.choices.map((c, i) => ({
+      ...c,
+      isDefault: isCurrentlyDefault ? false : i === choiceIdx
+    }));
+    updated[optIdx] = { ...group, choices: updatedChoices };
+    setFormCustomOptions(updated);
+  };
   const [formRecipeRequirements, setFormRecipeRequirements] = useState<{ name: string; amount: number | '' }[]>([]);
   const [formBatchIngredients, setFormBatchIngredients] = useState<Array<{ name: string; batchAmount: number; unit: string; cost?: number }>>([]);
   const [formGarnishes, setFormGarnishes] = useState<Array<{ name: string; amount: number; unit?: string; costPerUnit?: number; selected: boolean }>>([]);
@@ -4213,33 +4806,25 @@ function AdminPanel({
     for (const r of reqs) {
       if (!r || !r.name) continue;
       const key = r.name.trim().toLowerCase();
-      let amt = Number(r.amount) || 0;
-      if (isPackagingRequirement(r.name)) {
-        amt = Math.max(1, Math.round(amt) || 1);
-      }
+      const amt = Number(r.amount) || 0;
       if (map.has(key)) {
         const existing = map.get(key)!;
         if (isPackagingRequirement(r.name)) {
           existing.amount = 1;
         } else {
-          existing.amount = Number((existing.amount + amt).toFixed(1));
+          existing.amount = Number((existing.amount + amt).toFixed(3));
         }
       } else {
-        map.set(key, { name: r.name.trim(), amount: amt });
+        map.set(key, { name: r.name.trim(), amount: isPackagingRequirement(r.name) ? (amt > 0 ? amt : 1) : amt });
       }
     }
-    return Array.from(map.values()).map(item => {
-      if (isPackagingRequirement(item.name)) return { name: item.name, amount: 1 };
-      if (item.name.toLowerCase().includes('/pc') || item.name.toLowerCase().includes('egg') || item.name.toLowerCase().includes('laurel')) {
-        return { name: item.name, amount: Math.max(1, Math.round(item.amount)) };
-      }
-      if (item.amount > 0 && item.amount < 1) {
-        return {
-          name: item.name,
-          amount: recipeAllowDecimals ? Math.max(0.1, Number(item.amount.toFixed(1))) : 1
-        };
-      }
-      return item;
+    return (Array.from(map.values()) as Array<{ name: string; amount: number }>).map(item => {
+      if (isPackagingRequirement(item.name)) return { name: item.name, amount: Number(item.amount) || 1 };
+      const amt = Number(item.amount) || 0;
+      return {
+        name: item.name,
+        amount: amt >= 1 ? (amt % 1 === 0 ? amt : Number(amt.toFixed(2))) : Number(amt.toFixed(3))
+      };
     });
   };
 
@@ -4398,11 +4983,7 @@ function AdminPanel({
       const stored = localStorage.getItem('curvada_saved_recipe_templates');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // If stored templates exist but do not have lumpiang shanghai, prepend it
-          if (!parsed.some((t: SavedRecipeTemplate) => t.id === 'template-lumpiang-shanghai')) {
-            return [DEFAULT_RECIPE_TEMPLATES[0], ...parsed];
-          }
+        if (Array.isArray(parsed)) {
           return parsed;
         }
       }
@@ -4423,6 +5004,19 @@ function AdminPanel({
     } catch (e) {
       console.error('Failed to save templates to storage', e);
     }
+  };
+
+  const handleDeleteRecipeTemplate = (templateIdWithPrefix: string) => {
+    const rawId = templateIdWithPrefix.replace(/^template:/, '');
+    const target = savedRecipeTemplates.find(t => t.id === rawId);
+    if (!target) return;
+    if (!window.confirm(`Are you sure you want to permanently delete "${target.name}" from your saved recipe vault?`)) {
+      return;
+    }
+    const updated = savedRecipeTemplates.filter(t => t.id !== rawId);
+    saveRecipeTemplates(updated);
+    setSelectedRecipeToLoad('');
+    handleOpenFreshBatchCalculator();
   };
 
   const handleSaveCurrentBatchAsTemplate = (nameToSave?: string) => {
@@ -4471,8 +5065,9 @@ function AdminPanel({
     // Calculate portion amounts for viand ingredients
     const scaledReqs = standaloneIngredients.map(item => {
       const invMatch = (ingredientsInventory || []).find(inv => inv.name.toLowerCase() === item.name.toLowerCase());
-      const unit = (item.unit || invMatch?.unit || 'g').toLowerCase();
-      const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
+      const invUnit = (invMatch?.unit || item.unit || 'g').toLowerCase();
+      const inputUnit = (item.unit || invUnit).toLowerCase();
+      const isCountable = inputUnit === 'pcs' || inputUnit === 'cans' || inputUnit === 'pc' || inputUnit === 'pack';
       const rawAmt = Number(item.batchAmount) || 0;
       
       let finalAmt: number;
@@ -4480,10 +5075,12 @@ function AdminPanel({
         finalAmt = 0;
       } else if (isCountable) {
         const scaled = (rawAmt / batchWeightG) * servingG;
-        finalAmt = rawAmt <= 1 ? 1 : Math.max(1, Math.round(scaled));
+        finalAmt = Number(scaled.toFixed(3));
       } else {
-        const scaled = (rawAmt / batchWeightG) * servingG;
-        finalAmt = recipeAllowDecimals ? Math.max(0.1, Number(scaled.toFixed(1))) : Math.max(1, Math.round(scaled));
+        // Convert to base units (grams for weight, ml for volume)
+        const baseAmount = getBaseEquivalentUnits(rawAmt, inputUnit);
+        const scaledBase = (baseAmount / batchWeightG) * servingG;
+        finalAmt = Number(scaledBase.toFixed(2));
       }
 
       return {
@@ -4824,14 +5421,29 @@ function AdminPanel({
           const inv = ingredientsInventory.find(i => i.name.toLowerCase() === r.name.toLowerCase());
           const unit = inv?.unit || 'g';
           const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
-          const batchAmount = isCountable 
-            ? Math.max(1, Math.round(Number(r.amount) * multiplier))
-            : Number((Number(r.amount) * multiplier).toFixed(1));
-          const cost = computeInventoryIngredientCost(r.name, batchAmount, unit);
+          const rawAmt = Number(r.amount) || 0;
+          let batchAmount: number;
+          let finalUnit = unit;
+          if (isCountable) {
+            const scaled = rawAmt * multiplier;
+            batchAmount = scaled >= 1 ? (scaled % 1 === 0 ? scaled : Number(scaled.toFixed(1))) : Number(scaled.toFixed(2));
+          } else if (unit === 'kg') {
+            const batchGrams = rawAmt * multiplier;
+            if (batchGrams >= 1000) {
+              batchAmount = Number((batchGrams / 1000).toFixed(2));
+              finalUnit = 'kg';
+            } else {
+              batchAmount = Number(batchGrams.toFixed(1));
+              finalUnit = 'g';
+            }
+          } else {
+            batchAmount = Number((rawAmt * multiplier).toFixed(1));
+          }
+          const cost = computeInventoryIngredientCost(r.name, batchAmount, finalUnit);
           return {
             name: r.name,
             batchAmount,
-            unit,
+            unit: finalUnit,
             cost
           };
         });
@@ -4998,14 +5610,29 @@ function AdminPanel({
           const inv = ingredientsInventory.find(i => i.name.toLowerCase() === r.name.toLowerCase());
           const unit = inv?.unit || 'g';
           const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
-          const batchAmount = isCountable 
-            ? Math.max(1, Math.round(Number(r.amount) * multiplier))
-            : Number((Number(r.amount) * multiplier).toFixed(1));
-          const cost = computeInventoryIngredientCost(r.name, batchAmount, unit);
+          const rawAmt = Number(r.amount) || 0;
+          let batchAmount: number;
+          let finalUnit = unit;
+          if (isCountable) {
+            const scaled = rawAmt * multiplier;
+            batchAmount = scaled >= 1 ? (scaled % 1 === 0 ? scaled : Number(scaled.toFixed(1))) : Number(scaled.toFixed(2));
+          } else if (unit === 'kg') {
+            const batchGrams = rawAmt * multiplier;
+            if (batchGrams >= 1000) {
+              batchAmount = Number((batchGrams / 1000).toFixed(2));
+              finalUnit = 'kg';
+            } else {
+              batchAmount = Number(batchGrams.toFixed(1));
+              finalUnit = 'g';
+            }
+          } else {
+            batchAmount = Number((rawAmt * multiplier).toFixed(1));
+          }
+          const cost = computeInventoryIngredientCost(r.name, batchAmount, finalUnit);
           return {
             name: r.name,
             batchAmount,
-            unit,
+            unit: finalUnit,
             cost
           };
         });
@@ -5808,14 +6435,15 @@ function AdminPanel({
     setFormCustomOptions(item.customizableOptions && item.customizableOptions.length > 0 ? item.customizableOptions.map(co => ({
       id: 'opt-' + Math.random().toString(36).substr(2, 4),
       title: co.title,
-      choices: co.choices.map(c => {
+      choices: co.choices.map((c, idx) => {
         const isRiceGroup = co.title.toLowerCase().includes('rice');
         const isPlain = isRiceGroup && c.name.toLowerCase().includes('plain');
         const isGarlic = isRiceGroup && c.name.toLowerCase().includes('garlic') && !c.name.toLowerCase().includes('double');
         return {
           id: c.id || 'ch-' + Math.random().toString(36).substr(2, 4),
           name: isPlain ? 'Plain Rice' : isGarlic ? 'Garlic Rice' : c.name,
-          price: (isPlain || isGarlic) && c.price < 0 ? 0 : c.price
+          price: (isPlain || isGarlic) && c.price < 0 ? 0 : c.price,
+          isDefault: c.isDefault !== undefined ? c.isDefault : idx === 0
         };
       })
     })) : (
@@ -5825,19 +6453,19 @@ function AdminPanel({
               id: 'opt-' + Math.random().toString(36).substr(2, 4),
               title: 'Rice (Included with Meal)',
               choices: [
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0 },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0 },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20 },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0, isDefault: true },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0, isDefault: false },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20, isDefault: false },
               ]
             },
             {
               id: 'opt-' + Math.random().toString(36).substr(2, 4),
               title: 'Extra Rice (Add-on)',
               choices: [
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'No Extra Rice', price: 0 },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Plain Rice', price: 15 },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Garlic Rice', price: 20 },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Java Rice', price: 25 },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'No Extra Rice', price: 0, isDefault: true },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Plain Rice', price: 15, isDefault: false },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Garlic Rice', price: 20, isDefault: false },
+                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Java Rice', price: 25, isDefault: false },
               ]
             }
           ]
@@ -5915,14 +6543,29 @@ function AdminPanel({
           const inv = ingredientsInventory.find(i => i.name.toLowerCase() === r.name.toLowerCase());
           const unit = inv?.unit || 'g';
           const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
-          const batchAmount = isCountable 
-            ? Math.max(1, Math.round(Number(r.amount) * multiplier))
-            : Number((Number(r.amount) * multiplier).toFixed(1));
-          const cost = computeInventoryIngredientCost(r.name, batchAmount, unit);
+          const rawAmt = Number(r.amount) || 0;
+          let batchAmount: number;
+          let finalUnit = unit;
+          if (isCountable) {
+            const scaled = rawAmt * multiplier;
+            batchAmount = scaled >= 1 ? (scaled % 1 === 0 ? scaled : Number(scaled.toFixed(1))) : Number(scaled.toFixed(2));
+          } else if (unit === 'kg') {
+            const batchGrams = rawAmt * multiplier;
+            if (batchGrams >= 1000) {
+              batchAmount = Number((batchGrams / 1000).toFixed(2));
+              finalUnit = 'kg';
+            } else {
+              batchAmount = Number(batchGrams.toFixed(1));
+              finalUnit = 'g';
+            }
+          } else {
+            batchAmount = Number((rawAmt * multiplier).toFixed(1));
+          }
+          const cost = computeInventoryIngredientCost(r.name, batchAmount, finalUnit);
           return {
             name: r.name,
             batchAmount,
-            unit,
+            unit: finalUnit,
             cost
           };
         });
@@ -6071,10 +6714,11 @@ function AdminPanel({
       .map((co) => ({
         title: co.title.trim(),
         choices: co.choices
-          .map((c) => ({
+          .map((c, cIdx) => ({
             id: c.id || `choice-${Math.random().toString(36).substr(2, 4)}`,
             name: c.name.trim(),
-            price: Number(c.price) || 0
+            price: Number(c.price) || 0,
+            isDefault: Boolean(c.isDefault) || (!co.choices.some(ch => ch.isDefault) && cIdx === 0)
           }))
           .filter((c) => c.name.length > 0)
       }))
@@ -6328,6 +6972,15 @@ function AdminPanel({
               }`}
             >
               🍽️ Dish Recipes Availability ({menuItems.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFifoModalOpen(true)}
+              className="ml-auto mb-2 px-3.5 py-1.5 rounded-xl bg-brand-gold/15 hover:bg-brand-gold/25 border border-brand-gold/40 text-brand-gold text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Open Smart FIFO Multi-Lot Inventory & Loss Intelligence Engine"
+            >
+              📦 FIFO Batches & Cost Losses ({stockBatches.length})
             </button>
           </div>
 
@@ -8154,167 +8807,225 @@ function AdminPanel({
                       );
                     }
 
-                    return (
-                      <div
-                        key={ing.id}
-                        className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between ${
-                          isOutOfStock
-                            ? 'bg-[#0D0D0C] border-brand-red/25 opacity-80'
-                            : isLow
-                            ? 'bg-[#1e1a11] border-brand-gold/30'
-                            : 'bg-[#0D0D0C] border-white/5 hover:border-white/10'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex justify-between items-start gap-2">
-                            <div>
-                              <span className="font-display font-bold text-white text-sm block leading-tight">{ing.name}</span>
-                              <div className="flex items-center justify-between mt-1.5">
-                                <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">
-                                  🥣 Used in {affectedDishesCount} recipe{affectedDishesCount === 1 ? '' : 's'}
-                                </span>
-                                <span className="text-[10px] font-mono text-brand-gold font-extrabold bg-brand-gold/10 px-2 py-0.5 rounded-lg border border-brand-gold/10" title="Unit Cost">
-                                  ₱{(ing.costPerUnit !== undefined ? ing.costPerUnit : (ing.unit === 'pcs' ? 15.00 : ing.unit === 'cans' ? 45.00 : ing.unit === 'ml' ? 0.08 : ing.unit === 'kg' ? 150.00 : 0.05)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/{ing.unit}
-                                </span>
+                    return (() => {
+                      const ingBatches = stockBatches.filter(
+                        (b) => b.ingredientId === ing.id || b.ingredientName.toLowerCase().trim() === ing.name.toLowerCase().trim()
+                      );
+                      const activeBatches = ingBatches
+                        .filter((b) => (b.status === 'active' || !b.status) && b.remainingQuantity > 0)
+                        .sort((a, b) => new Date(a.receivedDate).getTime() - new Date(b.receivedDate).getTime());
+                      const firstOutBatch = activeBatches[0];
+                      const nearestExpiry = activeBatches
+                        .filter((b) => b.expiryDate)
+                        .sort((a, b) => (a.expiryDate! > b.expiryDate! ? 1 : -1))[0]?.expiryDate;
+
+                      return (
+                        <div
+                          key={ing.id}
+                          className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between ${
+                            isOutOfStock
+                              ? 'bg-[#0D0D0C] border-brand-red/25 opacity-80'
+                              : isLow
+                              ? 'bg-[#1e1a11] border-brand-gold/30'
+                              : 'bg-[#0D0D0C] border-white/5 hover:border-white/10'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex justify-between items-start gap-2">
+                              <div>
+                                <span className="font-display font-bold text-white text-sm block leading-tight">{ing.name}</span>
+                                <div className="flex items-center justify-between mt-1.5 gap-2 flex-wrap">
+                                  <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">
+                                    🥣 Used in {affectedDishesCount} recipe{affectedDishesCount === 1 ? '' : 's'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedFifoIngredientId(ing.id);
+                                      setIsFifoModalOpen(true);
+                                    }}
+                                    className="text-[10px] font-mono text-brand-gold hover:text-white font-extrabold bg-brand-gold/10 hover:bg-brand-gold/20 px-2 py-0.5 rounded-lg border border-brand-gold/20 transition-all cursor-pointer flex items-center gap-1"
+                                    title="Click to view all FIFO lots, costs & expiry dates"
+                                  >
+                                    <span>₱{(firstOutBatch ? firstOutBatch.costPerUnit : (ing.costPerUnit !== undefined ? ing.costPerUnit : (ing.unit === 'pcs' ? 15.00 : ing.unit === 'cans' ? 45.00 : ing.unit === 'ml' ? 0.08 : ing.unit === 'kg' ? 150.00 : 0.05))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/{ing.unit}</span>
+                                    <span className="text-[9px] opacity-70">📦</span>
+                                  </button>
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center gap-1">
+                                {/* View FIFO Details Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedFifoIngredientId(ing.id);
+                                    setIsFifoModalOpen(true);
+                                  }}
+                                  className="p-1.5 text-brand-gold hover:text-white hover:bg-brand-gold/20 bg-brand-gold/10 rounded-lg transition-all flex items-center gap-0.5 cursor-pointer"
+                                  title="View All Details (FIFO Stock Batches, Dates & Valuation)"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  {activeBatches.length > 0 && (
+                                    <span className="text-[8.5px] font-black font-mono pl-0.5">{activeBatches.length}</span>
+                                  )}
+                                </button>
+
+                                {/* Edit Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingIngredientId(ing.id);
+                                    setEditIngredientName(ing.name);
+                                    setEditIngredientQuantity(ing.quantity);
+                                    setEditIngredientUnit(ing.unit);
+                                    setEditIngredientLowStock(ing.lowStockAlert);
+                                    const rawCost = ing.costPerUnit !== undefined ? ing.costPerUnit : (ing.unit === 'pcs' ? 15.00 : ing.unit === 'cans' ? 45.00 : ing.unit === 'ml' ? 0.08 : ing.unit === 'kg' ? 150.00 : 0.05);
+                                    setEditIngredientCostPerUnit(Number(rawCost.toFixed(2)));
+                                    setEditIngredientPacksCount(
+                                      ing.packCount !== undefined && ing.packCount > 0 
+                                        ? String(ing.packCount) 
+                                        : (ing.quantity > 0 && ing.quantity <= 100 ? String(ing.quantity) : '1')
+                                    );
+                                    setEditIngredientPackSize(ing.packSize !== undefined && ing.packSize > 0 ? String(ing.packSize) : '');
+                                    setEditIngredientPackCost(ing.packCost !== undefined && ing.packCost > 0 ? String(Number(ing.packCost).toFixed(2)) : '');
+                                  }}
+                                  className="p-1.5 text-gray-500 hover:text-brand-gold hover:bg-brand-gold/5 rounded-lg transition-all"
+                                  title="Edit Material Details"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Actions (Delete Raw Material) */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Remove ingredient "${ing.name}" from inventory tracking?`)) {
+                                      onDeleteIngredient(ing.id);
+                                    }
+                                  }}
+                                  className="p-1.5 text-gray-500 hover:text-brand-red hover:bg-brand-red/5 rounded-lg transition-all"
+                                  title="Delete Material"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
-                            
-                            <div className="flex items-center gap-1">
-                              {/* Edit Button */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingIngredientId(ing.id);
-                                  setEditIngredientName(ing.name);
-                                  setEditIngredientQuantity(ing.quantity);
-                                  setEditIngredientUnit(ing.unit);
-                                  setEditIngredientLowStock(ing.lowStockAlert);
-                                  const rawCost = ing.costPerUnit !== undefined ? ing.costPerUnit : (ing.unit === 'pcs' ? 15.00 : ing.unit === 'cans' ? 45.00 : ing.unit === 'ml' ? 0.08 : ing.unit === 'kg' ? 150.00 : 0.05);
-                                  setEditIngredientCostPerUnit(Number(rawCost.toFixed(2)));
-                                  setEditIngredientPacksCount(
-                                    ing.packCount !== undefined && ing.packCount > 0 
-                                      ? String(ing.packCount) 
-                                      : (ing.quantity > 0 && ing.quantity <= 100 ? String(ing.quantity) : '1')
-                                  );
-                                  setEditIngredientPackSize(ing.packSize !== undefined && ing.packSize > 0 ? String(ing.packSize) : '');
-                                  setEditIngredientPackCost(ing.packCost !== undefined && ing.packCost > 0 ? String(Number(ing.packCost).toFixed(2)) : '');
-                                }}
-                                className="p-1.5 text-gray-500 hover:text-brand-gold hover:bg-brand-gold/5 rounded-lg transition-all"
-                                title="Edit Material Details"
-                              >
-                                <Edit className="w-3.5 h-3.5" />
-                              </button>
 
-                              {/* Actions (Delete Raw Material) */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (confirm(`Remove ingredient "${ing.name}" from inventory tracking?`)) {
-                                    onDeleteIngredient(ing.id);
-                                  }
-                                }}
-                                className="p-1.5 text-gray-500 hover:text-brand-red hover:bg-brand-red/5 rounded-lg transition-all"
-                                title="Delete Material"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                            {/* Stat indicators */}
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {isOutOfStock ? (
+                                <span className="text-[8px] bg-brand-red/10 border border-brand-red/20 text-brand-red font-black px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+                                  🚨 Out of Stock
+                                </span>
+                              ) : isLow ? (
+                                <span className="text-[8px] bg-brand-gold/15 border border-brand-gold/25 text-brand-gold font-black px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+                                  ⚠️ Low Stock Alert (&lt;{ing.lowStockAlert}{ing.unit})
+                                </span>
+                              ) : (
+                                <span className="text-[8px] bg-green-500/10 border border-green-500/20 text-green-400 font-black px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+                                  ✓ Healthy Stock
+                                </span>
+                              )}
                             </div>
-                          </div>
 
-                          {/* Stat indicators */}
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {isOutOfStock ? (
-                              <span className="text-[8px] bg-brand-red/10 border border-brand-red/20 text-brand-red font-black px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
-                                🚨 Out of Stock
-                              </span>
-                            ) : isLow ? (
-                              <span className="text-[8px] bg-brand-gold/15 border border-brand-gold/25 text-brand-gold font-black px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
-                                ⚠️ Low Stock Alert (&lt;{ing.lowStockAlert}{ing.unit})
-                              </span>
-                            ) : (
-                              <span className="text-[8px] bg-green-500/10 border border-green-500/20 text-green-400 font-black px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
-                                ✓ Healthy Stock
-                              </span>
-                            )}
-                          </div>
-
-                           {/* Mini Forecast Info on Individual Card */}
-                           {fItem && (
-                             <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1 text-[10px]">
-                               <div className="flex justify-between text-gray-400 font-medium">
-                                 <span>Est. Usage:</span>
-                                 <span className="font-mono text-white font-bold">
-                                   {fItem.dailyRate > 0 ? `~${fItem.dailyRate.toFixed(1)}${ing.unit}/day` : `~0 ${ing.unit}/day`}
-                                 </span>
-                               </div>
-                               <div className="flex justify-between text-gray-400 font-medium">
-                                 <span>Stock Lifespan:</span>
-                                 {fItem.quantity <= fItem.lowStockAlert ? (
-                                   <span className="text-brand-gold font-bold text-right flex items-center gap-1">
-                                     ⚠️ Low Stock Alert (&le; {fItem.lowStockAlert}{ing.unit})
+                             {/* Mini Forecast Info on Individual Card */}
+                             {fItem && (
+                               <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1 text-[10px]">
+                                 <div className="flex justify-between text-gray-400 font-medium">
+                                   <span>Est. Usage:</span>
+                                   <span className="font-mono text-white font-bold">
+                                     {fItem.dailyRate > 0 ? `~${fItem.dailyRate.toFixed(1)}${ing.unit}/day` : `~0 ${ing.unit}/day`}
                                    </span>
-                                 ) : fItem.daysOfStockLeft <= 0 ? (
-                                   <span className="text-brand-red font-black uppercase">Depleted 🚨</span>
-                                 ) : fItem.daysOfStockLeft <= forecastPeriodDays ? (
-                                   <span className="text-brand-gold font-bold text-right">⚠️ {fItem.daysOfStockLeft.toFixed(1)} days left</span>
-                                 ) : (
-                                   <span className="text-green-400 font-bold text-right">
-                                     {fItem.daysOfStockLeft === Infinity ? '✓ Safe (No demand)' : `✓ ${fItem.daysOfStockLeft.toFixed(1)} days`}
-                                   </span>
-                                 )}
-                               </div>
-                               {fItem.recommendedRestock > 0 && (() => {
-                                 const isInBuyList = (restockBuyList[ing.id] || 0) > 0;
-                                 return (
-                                   <div className="mt-2 flex flex-col gap-1 bg-brand-gold/5 border border-brand-gold/15 p-1.5 rounded-xl text-[9px] text-brand-gold font-bold">
-                                     <div className="flex items-center justify-between">
-                                       <span>Suggested Restock:</span>
-                                       <span className="font-mono font-black text-[10px]">+{fItem.recommendedRestock}{ing.unit}</span>
+                                 </div>
+                                 <div className="flex justify-between text-gray-400 font-medium">
+                                   <span>Stock Lifespan:</span>
+                                   {fItem.quantity <= fItem.lowStockAlert ? (
+                                     <span className="text-brand-gold font-bold text-right flex items-center gap-1">
+                                       ⚠️ Low Stock Alert (&le; {fItem.lowStockAlert}{ing.unit})
+                                     </span>
+                                   ) : fItem.daysOfStockLeft <= 0 ? (
+                                     <span className="text-brand-red font-black uppercase">Depleted 🚨</span>
+                                   ) : fItem.daysOfStockLeft <= forecastPeriodDays ? (
+                                     <span className="text-brand-gold font-bold text-right">⚠️ {fItem.daysOfStockLeft.toFixed(1)} days left</span>
+                                   ) : (
+                                     <span className="text-green-400 font-bold text-right">
+                                       {fItem.daysOfStockLeft === Infinity ? '✓ Safe (No demand)' : `✓ ${fItem.daysOfStockLeft.toFixed(1)} days`}
+                                     </span>
+                                   )}
+                                 </div>
+                                 {fItem.recommendedRestock > 0 && (() => {
+                                   const isInBuyList = (restockBuyList[ing.id] || 0) > 0;
+                                   return (
+                                     <div className="mt-2 flex flex-col gap-1 bg-brand-gold/5 border border-brand-gold/15 p-1.5 rounded-xl text-[9px] text-brand-gold font-bold">
+                                       <div className="flex items-center justify-between">
+                                         <span>Suggested Restock:</span>
+                                         <span className="font-mono font-black text-[10px]">+{fItem.recommendedRestock}{ing.unit}</span>
+                                       </div>
+                                       <button
+                                         type="button"
+                                         onClick={() => {
+                                           if (isInBuyList) {
+                                             const updated = { ...restockBuyList };
+                                             delete updated[ing.id];
+                                             saveRestockBuyList(updated);
+                                           } else {
+                                             saveRestockBuyList({
+                                               ...restockBuyList,
+                                               [ing.id]: fItem.recommendedRestock
+                                             });
+                                           }
+                                         }}
+                                         className={`mt-1 w-full py-1 rounded font-black uppercase text-[8px] tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer border ${
+                                           isInBuyList
+                                             ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500 hover:text-black'
+                                             : 'bg-[#121211] border-brand-gold/20 text-brand-gold hover:bg-brand-gold hover:text-black'
+                                         }`}
+                                       >
+                                         {isInBuyList ? '✓ Added to Buy List' : '🛒 Add to Buy List'}
+                                       </button>
                                      </div>
-                                     <button
-                                       type="button"
-                                       onClick={() => {
-                                         if (isInBuyList) {
-                                           const updated = { ...restockBuyList };
-                                           delete updated[ing.id];
-                                           saveRestockBuyList(updated);
-                                         } else {
-                                           saveRestockBuyList({
-                                             ...restockBuyList,
-                                             [ing.id]: fItem.recommendedRestock
-                                           });
-                                         }
-                                       }}
-                                       className={`mt-1 w-full py-1 rounded font-black uppercase text-[8px] tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer border ${
-                                         isInBuyList
-                                           ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500 hover:text-black'
-                                           : 'bg-[#121211] border-brand-gold/20 text-brand-gold hover:bg-brand-gold hover:text-black'
-                                       }`}
-                                     >
-                                       {isInBuyList ? '✓ Added to Buy List' : '🛒 Add to Buy List'}
-                                     </button>
-                                   </div>
-                                 );
-                               })()}
-                             </div>
-                           )}
-                        </div>
+                                   );
+                                 })()}
+                               </div>
+                             )}
 
-                        {/* Stock level display (edit via Edit form) */}
-                        <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-gray-500 font-medium">Stock:</span>
-                            <span className="font-mono font-bold text-xs text-white bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
-                              {ing.quantity} <span className="text-[9px] text-gray-500 font-bold uppercase">{ing.unit}</span>
+                            {/* View All Details & FIFO Lots Action Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedFifoIngredientId(ing.id);
+                                setIsFifoModalOpen(true);
+                              }}
+                              className="mt-2.5 w-full py-1.5 px-2.5 bg-gradient-to-r from-amber-500/10 via-brand-gold/10 to-amber-500/5 hover:from-amber-500/20 hover:to-brand-gold/20 border border-brand-gold/30 hover:border-brand-gold/60 text-brand-gold hover:text-white rounded-xl text-[9.5px] font-black uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer shadow-sm group"
+                              title="View all FIFO batch lots, intake dates, expiry dates, and costing layers"
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <Layers className="w-3.5 h-3.5 text-brand-gold group-hover:scale-110 transition-transform" />
+                                <span>FIFO Batches & Dates</span>
+                              </span>
+                              <span className="font-mono text-[9px] bg-black/40 border border-brand-gold/30 px-2 py-0.5 rounded-lg text-white font-bold flex items-center gap-1">
+                                <span>{activeBatches.length} lot{activeBatches.length === 1 ? '' : 's'}</span>
+                                {nearestExpiry ? <span className="text-amber-300">• ⏳ {nearestExpiry}</span> : ''}
+                              </span>
+                            </button>
+                          </div>
+
+                          {/* Stock level display (edit via Edit form) */}
+                          <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-gray-500 font-medium">Stock:</span>
+                              <span className="font-mono font-bold text-xs text-white bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
+                                {ing.quantity} <span className="text-[9px] text-gray-500 font-bold uppercase">{ing.unit}</span>
+                              </span>
+                            </div>
+
+                            <span className="text-[10px] text-gray-500 font-medium">
+                              Alert: {ing.lowStockAlert} {ing.unit}
                             </span>
                           </div>
-
-                          <span className="text-[10px] text-gray-500 font-medium">
-                            Alert: {ing.lowStockAlert} {ing.unit}
-                          </span>
                         </div>
-                      </div>
-                    );
+                      );
+                    })();
                   })}
                 </div>
               )
@@ -10507,184 +11218,664 @@ function AdminPanel({
         </div>
       )}
 
-      {/* --- TAB PANEL: STAFF SHIFT ATTENDANCE & TIMECARD --- */}
+      {/* --- TAB PANEL: STAFF SHIFT ATTENDANCE, ON-DUTY ROSTER & PAYROLL COMMAND CENTER --- */}
       {chefTab === 'shifts' && (
         <div className="space-y-6 animate-fade-in text-left">
           <div className="bg-[#121211] border border-white/5 rounded-[2rem] p-6 shadow-xl space-y-6">
             
+            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
               <div>
                 <span className="text-xs bg-brand-gold/10 text-brand-gold font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider text-[9px] inline-block mb-1">
-                  ⏱️ Workplace Operations
+                  ⏱️ Workplace Operations & Kitchen Command
                 </span>
                 <h3 className="font-display font-black text-white text-xl flex items-center gap-2">
-                  ⏱️ Staff Shift Attendance & Live Payroll Timecard
+                  👥 Staff Operations, Attendance & Payroll
                 </h3>
                 <p className="text-gray-400 text-xs mt-0.5">
-                  Clock in/out staff shifts, monitor live working hours, and review daily labor costs.
+                  Manage duty rosters, station task assignments, lead chef auto-selection, shift timecards, and employee payroll payouts.
                 </p>
               </div>
-            </div>
 
-            {/* Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3">
-                <div className="p-3 bg-brand-gold/10 text-brand-gold rounded-xl">
-                  <Clock className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-[10px] text-gray-500 uppercase font-bold block">Currently Clocked In</span>
-                  <span className="text-white font-extrabold text-lg">{activeShifts.length} Staff On Duty</span>
-                </div>
-              </div>
-
-              <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3">
-                <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl">
-                  <Calendar className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-[10px] text-gray-500 uppercase font-bold block">Completed Shift Hours</span>
-                  <span className="text-white font-extrabold text-lg">{completedShifts.reduce((s, sh) => s + sh.totalHours, 0)} Hours</span>
-                </div>
-              </div>
-
-              <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3">
-                <div className="p-3 bg-green-500/10 text-green-400 rounded-xl">
-                  <DollarSign className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-[10px] text-gray-500 uppercase font-bold block">Est. Labor Expense</span>
-                  <span className="text-white font-extrabold text-lg">₱{completedShifts.reduce((s, sh) => s + sh.totalEarned, 0).toFixed(2)}</span>
-                </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  {onDutyStaff.length} Staff On Duty Today
+                </span>
               </div>
             </div>
 
-            {/* Clock-In Form & Active Staff */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              
-              <div className="lg:col-span-5 bg-[#181818] border border-white/5 rounded-2xl p-5 space-y-4">
-                <h4 className="font-bold text-white text-sm uppercase flex items-center gap-1.5">
-                  <Plus className="w-4 h-4 text-brand-gold" /> Clock In Staff Member
-                </h4>
+            {/* Sub-Tab Navigation Bar */}
+            <div className="flex border-b border-white/5 gap-2 overflow-x-auto pb-3">
+              <button
+                type="button"
+                onClick={() => setStaffSubTab('attendance')}
+                className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+                  staffSubTab === 'attendance'
+                    ? 'bg-brand-gold text-black shadow-lg shadow-brand-gold/10'
+                    : 'bg-[#181818] text-gray-400 hover:text-white border border-white/5'
+                }`}
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>🟢 Attendance & Station Roster</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  staffSubTab === 'attendance' ? 'bg-black text-brand-gold' : 'bg-white/10 text-gray-300'
+                }`}>
+                  {onDutyStaff.length}
+                </span>
+              </button>
 
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!staffClockName.trim()) return;
-                    const newShift = {
-                      id: `sft-${Date.now()}`,
-                      staffName: staffClockName.trim(),
-                      clockIn: new Date().toISOString(),
-                      hourlyRate: staffClockHourly
-                    };
-                    setActiveShifts([newShift, ...activeShifts]);
-                    setStaffClockName('');
-                    alert(`Clocked in ${newShift.staffName}!`);
-                  }}
-                  className="space-y-3.5 text-xs"
-                >
-                  <div className="space-y-1">
-                    <label className="text-gray-400 font-bold uppercase block text-[10px]">Staff Member Name *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Chef Ronald"
-                      value={staffClockName}
-                      onChange={(e) => setStaffClockName(e.target.value)}
-                      className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-bold focus:outline-none"
-                    />
-                  </div>
+              <button
+                type="button"
+                onClick={() => setStaffSubTab('payroll')}
+                className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+                  staffSubTab === 'payroll'
+                    ? 'bg-brand-gold text-black shadow-lg shadow-brand-gold/10'
+                    : 'bg-[#181818] text-gray-400 hover:text-white border border-white/5'
+                }`}
+              >
+                <DollarSign className="w-4 h-4" />
+                <span>💰 Staff Payroll & Payslips</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  staffSubTab === 'payroll' ? 'bg-black text-brand-gold' : 'bg-white/10 text-gray-300'
+                }`}>
+                  ₱{staffPayrollMatrix.reduce((s, m) => s + m.netPay, 0).toFixed(0)}
+                </span>
+              </button>
 
-                  <div className="space-y-1">
-                    <label className="text-gray-400 font-bold uppercase block text-[10px]">Hourly Wage Rate (₱/hr)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      required
-                      value={staffClockHourly}
-                      onChange={(e) => setStaffClockHourly(Number(e.target.value))}
-                      className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-mono font-bold focus:outline-none"
-                    />
-                  </div>
+              <button
+                type="button"
+                onClick={() => setStaffSubTab('shift_logs')}
+                className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+                  staffSubTab === 'shift_logs'
+                    ? 'bg-brand-gold text-black shadow-lg shadow-brand-gold/10'
+                    : 'bg-[#181818] text-gray-400 hover:text-white border border-white/5'
+                }`}
+              >
+                <Clock className="w-4 h-4" />
+                <span>⏱️ Shift Logs & Timecards</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  staffSubTab === 'shift_logs' ? 'bg-black text-brand-gold' : 'bg-white/10 text-gray-300'
+                }`}>
+                  {filteredCompletedShifts.length}
+                </span>
+              </button>
+            </div>
 
-                  <button
-                    type="submit"
-                    className="w-full py-2.5 bg-brand-gold hover:opacity-90 text-black font-black uppercase text-xs rounded-xl shadow-md cursor-pointer transition-all"
-                  >
-                    ▶️ Clock In Staff Shift
-                  </button>
-                </form>
-              </div>
-
-              {/* Active & Completed Shifts */}
-              <div className="lg:col-span-7 space-y-4">
-                <h4 className="font-bold text-white text-sm uppercase">Active Duty Staff ({activeShifts.length})</h4>
-                
-                <div className="space-y-2">
-                  {activeShifts.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500 italic bg-[#0D0D0C] border border-white/5 rounded-2xl text-xs">
-                      No staff members currently clocked in.
+            {/* --- SUB-TAB 1: ATTENDANCE & STATION ROSTER --- */}
+            {staffSubTab === 'attendance' && (
+              <div className="space-y-6 animate-fade-in">
+                {/* Metrics */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                  <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3">
+                    <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                      <UserCheck className="w-5 h-5" />
                     </div>
-                  ) : (
-                    activeShifts.map((s) => (
-                      <div key={s.id} className="p-4 bg-[#0D0D0C] border border-white/5 rounded-2xl flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-white text-sm">{s.staffName}</p>
-                          <p className="text-[10px] text-gray-400 font-mono">Clock In: {new Date(s.clockIn).toLocaleTimeString()}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const clockOutTime = new Date().toISOString();
-                            const hrs = Math.max(1, Math.round((Date.now() - new Date(s.clockIn).getTime()) / (1000 * 3600)));
-                            const newCompleted = {
-                              id: s.id,
-                              staffName: s.staffName,
-                              clockIn: s.clockIn,
-                              clockOut: clockOutTime,
-                              totalHours: hrs,
-                              hourlyRate: s.hourlyRate,
-                              totalEarned: hrs * s.hourlyRate
-                            };
-                            setCompletedShifts([newCompleted, ...completedShifts]);
-                            setActiveShifts(activeShifts.filter(item => item.id !== s.id));
-                            alert(`Clocked out ${s.staffName}!`);
-                          }}
-                          className="px-3.5 py-1.5 bg-brand-red text-white font-black text-xs uppercase rounded-xl shadow-md cursor-pointer hover:bg-red-600 transition-all"
-                        >
-                          Clock Out Shift
-                        </button>
-                      </div>
-                    ))
-                  )}
+                    <div>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold block">Active On Duty</span>
+                      <span className="text-white font-extrabold text-lg">{onDutyStaff.length} / {staffRoster.length} Staff</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#181818] border border-brand-gold/20 rounded-2xl p-4 flex items-center gap-3 bg-brand-gold/5">
+                    <div className="p-3 bg-brand-gold/10 text-brand-gold rounded-xl">
+                      <ChefHat className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-brand-gold uppercase font-bold block">Lead Prep Chef (Auto)</span>
+                      <span className="text-white font-extrabold text-base truncate block max-w-[140px]">{defaultLeadChefName}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3">
+                    <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl">
+                      <Briefcase className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold block">Active Stations</span>
+                      <span className="text-white font-extrabold text-lg">{new Set(onDutyStaff.map(s => s.stationTask)).size} Stations</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex items-center gap-3">
+                    <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold block">Total Staff Roster</span>
+                      <span className="text-white font-extrabold text-lg">{staffRoster.length} Registered</span>
+                    </div>
+                  </div>
                 </div>
 
-                <h4 className="font-bold text-white text-sm uppercase pt-2">Completed Shift Logs</h4>
+                {/* Main Staff Command Board */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  
+                  {/* Left Column: Register New Staff Form */}
+                  <div className="lg:col-span-4 bg-[#181818] border border-white/5 rounded-2xl p-5 space-y-4">
+                    <h4 className="font-bold text-white text-sm uppercase flex items-center gap-1.5">
+                      <Plus className="w-4 h-4 text-brand-gold" /> Add Staff to Roster
+                    </h4>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!staffClockName.trim()) return;
+                        const newMember: StaffMember = {
+                          id: `staff-${Date.now()}`,
+                          name: staffClockName.trim(),
+                          role: staffClockRole,
+                          stationTask: staffClockStation.trim() || 'General Kitchen Duty',
+                          isOnDuty: true,
+                          isDefaultLeadChef: staffClockRole === 'Head Chef' && !staffRoster.some(s => s.isOnDuty && s.isDefaultLeadChef),
+                          hourlyRate: staffClockHourly,
+                          phone: staffClockPhone.trim() || undefined,
+                          clockInTime: new Date().toISOString()
+                        };
+                        const updated = [newMember, ...staffRoster];
+                        saveStaffRoster(updated);
+                        setStaffClockName('');
+                        setStaffClockPhone('');
+                        alert(`Added and clocked in ${newMember.name} as ${newMember.role}!`);
+                      }}
+                      className="space-y-3 text-xs"
+                    >
+                      <div className="space-y-1">
+                        <label className="text-gray-400 font-bold uppercase block text-[10px]">Staff Member Name *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Chef Ronald"
+                          value={staffClockName}
+                          onChange={(e) => setStaffClockName(e.target.value)}
+                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-bold focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-gray-400 font-bold uppercase block text-[10px]">Role / Position</label>
+                          <select
+                            value={staffClockRole}
+                            onChange={(e) => setStaffClockRole(e.target.value as any)}
+                            className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-bold focus:outline-none focus:border-brand-gold"
+                          >
+                            <option value="Head Chef">Head Chef</option>
+                            <option value="Line Cook">Line Cook</option>
+                            <option value="Kitchen Crew">Kitchen Crew</option>
+                            <option value="Cashier">Cashier</option>
+                            <option value="Dispatcher">Dispatcher</option>
+                            <option value="Rider">Rider</option>
+                            <option value="Store Manager">Store Manager</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-gray-400 font-bold uppercase block text-[10px]">Wage (₱/hr)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            required
+                            value={staffClockHourly}
+                            onChange={(e) => setStaffClockHourly(Number(e.target.value))}
+                            className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-mono font-bold focus:outline-none focus:border-brand-gold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-gray-400 font-bold uppercase block text-[10px]">Station & Task Assignment</label>
+                        <select
+                          value={staffClockStation}
+                          onChange={(e) => setStaffClockStation(e.target.value)}
+                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-semibold focus:outline-none focus:border-brand-gold"
+                        >
+                          <option value="Main Hot Line & Grilling">🔥 Main Hot Line & Grilling</option>
+                          <option value="Rice, Egg & Fryer Prep">🍳 Rice, Egg & Fryer Prep</option>
+                          <option value="Order Assembly & Dispatch">📦 Order Assembly & Dispatch</option>
+                          <option value="POS Counter & Anti-Bogus Call Verification">💻 POS Counter & Calls</option>
+                          <option value="GPS Courier & Delivery Transit">🛵 Delivery Courier</option>
+                          <option value="General Kitchen Duty">🥣 General Kitchen Duty</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-gray-400 font-bold uppercase block text-[10px]">Contact Phone (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 09171234567"
+                          value={staffClockPhone}
+                          onChange={(e) => setStaffClockPhone(e.target.value)}
+                          className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-brand-gold"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 bg-brand-gold hover:opacity-90 text-black font-black uppercase text-xs rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Staff & Set On Duty</span>
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Right Column: Interactive Staff Roster & Station Assignment Cards */}
+                  <div className="lg:col-span-8 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-white text-sm uppercase flex items-center gap-2">
+                        <Users className="w-4 h-4 text-brand-gold" />
+                        Staff Roster & Station Assignment ({staffRoster.length})
+                      </h4>
+                      <span className="text-[10px] text-gray-500 font-semibold">
+                        💡 Toggle 'On Duty' to activate chefs in the Order Prep Queue
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {staffRoster.map((staff) => {
+                        const isChefRole = staff.role === 'Head Chef' || staff.role === 'Line Cook' || staff.role === 'Kitchen Crew';
+
+                        return (
+                          <div
+                            key={staff.id}
+                            className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between gap-3 ${
+                              staff.isOnDuty
+                                ? 'bg-[#181818] border-emerald-500/40 shadow-lg shadow-emerald-500/5'
+                                : 'bg-[#141413] border-white/5 opacity-70 hover:opacity-90'
+                            }`}
+                          >
+                            <div>
+                              {/* Staff Header */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5">
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm border ${
+                                    staff.isOnDuty
+                                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                      : 'bg-white/5 text-gray-400 border-white/10'
+                                  }`}>
+                                    {staff.role === 'Head Chef' ? '👨‍🍳' : staff.role === 'Line Cook' ? '🍳' : staff.role === 'Cashier' ? '💻' : staff.role === 'Rider' ? '🛵' : '👤'}
+                                  </div>
+
+                                  <div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-bold text-white text-sm">{staff.name}</span>
+                                      {staff.isDefaultLeadChef && staff.isOnDuty && (
+                                        <span className="text-[8.5px] bg-brand-gold/20 text-brand-gold font-extrabold px-1.5 py-0.5 rounded border border-brand-gold/30">
+                                          ⭐ Lead Chef
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5 text-[10px]">
+                                      <span className="text-gray-400 font-semibold">{staff.role}</span>
+                                      <span className="text-white/20">•</span>
+                                      <span className="text-brand-gold font-mono font-bold">₱{staff.hourlyRate}/hr</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Delete Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Remove ${staff.name} from staff roster?`)) {
+                                      const updated = staffRoster.filter(s => s.id !== staff.id);
+                                      saveStaffRoster(updated);
+                                    }
+                                  }}
+                                  className="p-1 text-gray-500 hover:text-brand-red rounded-lg hover:bg-brand-red/10 transition-all cursor-pointer"
+                                  title="Delete staff member"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              {/* Station / Task Assignment Dropdown */}
+                              <div className="mt-3 pt-2.5 border-t border-white/5 space-y-1">
+                                <span className="text-[9px] text-gray-500 uppercase font-bold flex items-center gap-1">
+                                  <Briefcase className="w-3 h-3 text-brand-gold" />
+                                  Assigned Station / Task:
+                                </span>
+                                <select
+                                  value={staff.stationTask}
+                                  onChange={(e) => {
+                                    const newStation = e.target.value;
+                                    const updated = staffRoster.map(s => s.id === staff.id ? { ...s, stationTask: newStation } : s);
+                                    saveStaffRoster(updated);
+                                  }}
+                                  className="w-full bg-[#0D0D0C] border border-white/10 hover:border-brand-gold/40 rounded-xl p-1.5 text-white text-[10.5px] font-semibold focus:outline-none focus:border-brand-gold cursor-pointer"
+                                >
+                                  <option value="Main Hot Line & Grilling">🔥 Main Hot Line & Grilling</option>
+                                  <option value="Rice, Egg & Fryer Prep">🍳 Rice, Egg & Fryer Prep</option>
+                                  <option value="Order Assembly & Dispatch">📦 Order Assembly & Dispatch</option>
+                                  <option value="POS Counter & Anti-Bogus Call Verification">💻 POS Counter & Calls</option>
+                                  <option value="GPS Courier & Delivery Transit">🛵 Delivery Courier</option>
+                                  <option value="General Kitchen Duty">🥣 General Kitchen Duty</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Duty Status & Lead Actions */}
+                            <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newDuty = !staff.isOnDuty;
+                                  const updated = staffRoster.map(s => {
+                                    if (s.id === staff.id) {
+                                      return {
+                                        ...s,
+                                        isOnDuty: newDuty,
+                                        clockInTime: newDuty ? new Date().toISOString() : undefined,
+                                        isDefaultLeadChef: newDuty ? s.isDefaultLeadChef : false
+                                      };
+                                    }
+                                    return s;
+                                  });
+                                  saveStaffRoster(updated);
+                                }}
+                                className={`flex-1 py-1.5 px-2.5 rounded-xl text-[9.5px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+                                  staff.isOnDuty
+                                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500 hover:text-black'
+                                    : 'bg-white/5 text-gray-400 border-white/10 hover:bg-emerald-500/20 hover:text-emerald-400'
+                                }`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${staff.isOnDuty ? 'bg-emerald-400' : 'bg-gray-500'}`}></span>
+                                <span>{staff.isOnDuty ? '🟢 On Duty' : '⚪ Off Duty'}</span>
+                              </button>
+
+                              {isChefRole && staff.isOnDuty && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = staffRoster.map(s => ({
+                                      ...s,
+                                      isDefaultLeadChef: s.id === staff.id
+                                    }));
+                                    saveStaffRoster(updated);
+                                  }}
+                                  className={`py-1.5 px-2.5 rounded-xl text-[9px] font-black uppercase transition-all cursor-pointer border ${
+                                    staff.isDefaultLeadChef
+                                      ? 'bg-brand-gold text-black border-brand-gold font-extrabold shadow-sm'
+                                      : 'bg-brand-gold/10 text-brand-gold border-brand-gold/20 hover:bg-brand-gold/20'
+                                  }`}
+                                  title="Set as Default Auto-Assigned Prep Chef for all incoming orders"
+                                >
+                                  {staff.isDefaultLeadChef ? '⭐ Default Lead' : 'Set as Lead'}
+                                </button>
+                              )}
+                            </div>
+
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+            {/* --- SUB-TAB 2: PAYROLL & COMPENSATION --- */}
+            {staffSubTab === 'payroll' && (
+              <div className="space-y-6 animate-fade-in">
+                {/* Header & Period Switcher */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap bg-[#181818] p-4 rounded-2xl border border-white/5">
+                  <div>
+                    <h4 className="font-bold text-white text-sm uppercase flex items-center gap-2">
+                      <DollarSign className="w-4 h-4 text-brand-gold" />
+                      Staff Payroll & Compensation Ledger
+                    </h4>
+                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">
+                      Calculate hourly wages, overtime pay (1.25x), tips, and manage cash advance vale deductions.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex bg-[#0D0D0C] p-1 rounded-xl border border-white/10 text-[10px] font-bold">
+                      {(['today', 'week', 'semi_monthly', 'month', 'all'] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setPayrollPeriod(p)}
+                          className={`px-2.5 py-1 rounded-lg transition-all capitalize cursor-pointer ${
+                            payrollPeriod === p
+                              ? 'bg-brand-gold text-black font-black shadow-sm'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          {p === 'semi_monthly' ? '15-Day' : p === 'week' ? 'Weekly' : p}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdvanceStaffId(staffRoster[0]?.id || '');
+                        setShowAdvanceModal(true);
+                      }}
+                      className="px-3.5 py-1.5 bg-brand-gold hover:opacity-90 text-black rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Log Vale / Advance</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Payroll Summary Breakdown Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono">
+                  <div className="bg-[#181818] border border-white/5 p-4 rounded-2xl">
+                    <span className="text-[9.5px] text-gray-500 font-sans uppercase font-bold block">Gross Base Pay</span>
+                    <span className="text-white font-extrabold text-lg block mt-0.5">₱{staffPayrollMatrix.reduce((s, m) => s + m.grossPay, 0).toFixed(2)}</span>
+                  </div>
+
+                  <div className="bg-[#181818] border border-white/5 p-4 rounded-2xl">
+                    <span className="text-[9.5px] text-emerald-400/80 font-sans uppercase font-bold block">Tips & Subsidies</span>
+                    <span className="text-emerald-400 font-extrabold text-lg block mt-0.5">+₱{staffPayrollMatrix.reduce((s, m) => s + m.bonusTips, 0).toFixed(2)}</span>
+                  </div>
+
+                  <div className="bg-[#181818] border border-white/5 p-4 rounded-2xl">
+                    <span className="text-[9.5px] text-brand-red font-sans uppercase font-bold block">Vale / Deductions</span>
+                    <span className="text-brand-red font-extrabold text-lg block mt-0.5">-₱{staffPayrollMatrix.reduce((s, m) => s + m.advances, 0).toFixed(2)}</span>
+                  </div>
+
+                  <div className="bg-brand-gold/10 border border-brand-gold/30 p-4 rounded-2xl">
+                    <span className="text-[9.5px] text-brand-gold font-sans uppercase font-black block">Total Net Payout</span>
+                    <span className="text-brand-gold font-extrabold text-lg block mt-0.5">₱{staffPayrollMatrix.reduce((s, m) => s + m.netPay, 0).toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Staff Payroll Matrix Table */}
                 <div className="overflow-x-auto border border-white/5 rounded-2xl bg-[#0D0D0C]">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-white/5 text-gray-500 uppercase text-[9px] font-black">
-                        <th className="p-3">Staff Name</th>
-                        <th className="p-3">Hours Worked</th>
-                        <th className="p-3 text-right">Rate</th>
-                        <th className="p-3 text-right">Total Earned</th>
+                        <th className="p-3.5">Staff / Position</th>
+                        <th className="p-3.5 text-center">Rate</th>
+                        <th className="p-3.5 text-center">Hours (Reg + OT)</th>
+                        <th className="p-3.5 text-right">Gross Pay</th>
+                        <th className="p-3.5 text-right">Vale Deduct</th>
+                        <th className="p-3.5 text-right text-brand-gold font-black">Net Pay</th>
+                        <th className="p-3.5 text-center">Status</th>
+                        <th className="p-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/5 font-mono">
-                      {completedShifts.map((sh) => (
+                    <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                      {staffPayrollMatrix.map(({ staff, shiftsCount, totalHours, regularHours, overtimeHours, grossPay, bonusTips, advances, netPay, isPaid, record }) => (
+                        <tr key={staff.id} className="hover:bg-white/[0.02]">
+                          <td className="p-3.5 font-sans">
+                            <span className="font-bold text-white text-sm block">{staff.name}</span>
+                            <span className="text-[10px] text-gray-400 font-semibold">{staff.role} • {staff.stationTask}</span>
+                          </td>
+                          <td className="p-3.5 text-center text-gray-300">₱{staff.hourlyRate}/hr</td>
+                          <td className="p-3.5 text-center text-gray-300">
+                            <span className="font-bold text-white">{totalHours}h</span>
+                            {overtimeHours > 0 && (
+                              <span className="text-[9px] text-amber-400 font-bold ml-1 block font-sans">
+                                ({regularHours}h reg + {overtimeHours}h OT)
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-right text-gray-300">₱{grossPay.toFixed(2)}</td>
+                          <td className="p-3.5 text-right text-brand-red font-bold">{advances > 0 ? `-₱${advances.toFixed(2)}` : '₱0.00'}</td>
+                          <td className="p-3.5 text-right text-brand-gold font-black text-sm">₱{netPay.toFixed(2)}</td>
+                          <td className="p-3.5 text-center font-sans">
+                            <span className={`text-[8.5px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                              isPaid
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                            }`}>
+                              {isPaid ? '✓ Disbursed' : '⏳ Pending'}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-right font-sans">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setViewingPayslip(record)}
+                                className="px-2.5 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                title="View and Print Official Employee Payslip"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                <span>Payslip</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const id = record.id;
+                                  if (isPaid) {
+                                    saveReleasedPayrolls(releasedPayrollIds.filter(item => item !== id));
+                                  } else {
+                                    saveReleasedPayrolls([...releasedPayrollIds, id]);
+                                    alert(`Marked payroll for ${staff.name} (₱${netPay.toFixed(2)}) as Disbursed!`);
+                                  }
+                                }}
+                                className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer border ${
+                                  isPaid
+                                    ? 'bg-white/5 text-gray-400 border-white/10 hover:bg-red-500/20 hover:text-red-400'
+                                    : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500 hover:text-black'
+                                }`}
+                                title={isPaid ? 'Undo release' : 'Release Net Payout to Employee'}
+                              >
+                                {isPaid ? 'Paid ✓' : '💸 Release'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Cash Advances / Vale Records Breakdown */}
+                {staffAdvances.length > 0 && (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-gray-400 uppercase font-bold tracking-wider">
+                        Active Cash Advances & Vale Loans ({staffAdvances.length})
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      {staffAdvances.map((adv) => (
+                        <div key={adv.id} className="p-3 rounded-2xl bg-[#0D0D0C] border border-white/5 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-xs">{adv.staffName}</span>
+                              <span className="text-[9px] bg-red-500/10 text-brand-red font-mono font-bold px-2 py-0.5 rounded border border-red-500/20">
+                                -₱{adv.amount} Vale
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-gray-400 italic mt-0.5">{adv.reason} • {adv.date}</p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Remove this cash advance record for ${adv.staffName}?`)) {
+                                saveStaffAdvances(staffAdvances.filter(a => a.id !== adv.id));
+                              }
+                            }}
+                            className="p-1.5 text-gray-500 hover:text-brand-red rounded-lg transition-all cursor-pointer hover:bg-brand-red/10"
+                            title="Delete advance record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* --- SUB-TAB 3: SHIFT LOGS & TIMECARDS --- */}
+            {staffSubTab === 'shift_logs' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap bg-[#181818] p-4 rounded-2xl border border-white/5">
+                  <div>
+                    <h4 className="font-bold text-white text-sm uppercase flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-brand-gold" />
+                      Chronological Shift Timecards ({filteredCompletedShifts.length})
+                    </h4>
+                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">
+                      Detailed timestamps for staff clock-in and clock-out operations with rendered hours and earnings.
+                    </p>
+                  </div>
+
+                  <div className="flex bg-[#0D0D0C] p-1 rounded-xl border border-white/10 text-[10px] font-bold">
+                    {(['today', 'week', 'semi_monthly', 'month', 'all'] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setPayrollPeriod(p)}
+                        className={`px-2.5 py-1 rounded-lg transition-all capitalize cursor-pointer ${
+                          payrollPeriod === p
+                            ? 'bg-brand-gold text-black font-black shadow-sm'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {p === 'semi_monthly' ? '15-Day' : p === 'week' ? 'Weekly' : p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto border border-white/5 rounded-2xl bg-[#0D0D0C]">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-white/5 text-gray-500 uppercase text-[9px] font-black">
+                        <th className="p-3.5">Staff Name</th>
+                        <th className="p-3.5">Clock In</th>
+                        <th className="p-3.5">Clock Out</th>
+                        <th className="p-3.5 text-center">Total Hours</th>
+                        <th className="p-3.5 text-right">Hourly Rate</th>
+                        <th className="p-3.5 text-right text-emerald-400 font-black">Total Earned</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                      {filteredCompletedShifts.map((sh) => (
                         <tr key={sh.id} className="hover:bg-white/[0.02]">
-                          <td className="p-3 font-sans font-bold text-white">{sh.staffName}</td>
-                          <td className="p-3 text-gray-300">{sh.totalHours} hrs</td>
-                          <td className="p-3 text-right text-gray-400">₱{sh.hourlyRate}/hr</td>
-                          <td className="p-3 text-right text-green-400 font-bold">₱{sh.totalEarned.toFixed(2)}</td>
+                          <td className="p-3.5 font-sans font-bold text-white">{sh.staffName}</td>
+                          <td className="p-3.5 text-gray-300">
+                            {new Date(sh.clockIn).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} • {new Date(sh.clockIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="p-3.5 text-gray-300">
+                            {new Date(sh.clockOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="p-3.5 text-center text-gray-200 font-bold">{sh.totalHours} hrs</td>
+                          <td className="p-3.5 text-right text-gray-400">₱{sh.hourlyRate}/hr</td>
+                          <td className="p-3.5 text-right text-emerald-400 font-black text-sm">₱{sh.totalEarned.toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               </div>
-
-            </div>
+            )}
 
           </div>
         </div>
@@ -11011,12 +12202,14 @@ function AdminPanel({
                       const viandCost = viandItems.reduce((acc, req) => {
                         const { inv, u, cpu } = getInvCostPerUnit(req.name || '');
                         const portion = Number(req.amount) || 0;
-                        return acc + (u === 'kg' ? portion / 1000 : portion) * cpu;
+                        const factor = (u === 'kg' || u === 'l' || u === 'liter') ? portion / 1000 : portion;
+                        return acc + factor * cpu;
                       }, 0);
                       const riceCost = riceItems.reduce((acc, req) => {
                         const { inv, u, cpu } = getInvCostPerUnit(req.name || '');
                         const amt = Number(req.amount) || 0;
-                        return acc + (u === 'kg' ? amt / 1000 : amt) * cpu;
+                        const factor = (u === 'kg' || u === 'l' || u === 'liter') ? amt / 1000 : amt;
+                        return acc + factor * cpu;
                       }, 0);
                       const garnishCost = garnishItems.reduce((acc, g) => {
                         const { rate } = getGarnishEffectiveRate(g);
@@ -11033,8 +12226,13 @@ function AdminPanel({
                         const reqName = req.name || '';
                         const { inv, u, cpu } = getInvCostPerUnit(reqName);
                         const portion = Number(req.amount) || 0;
-                        const factor = u === 'kg' ? portion / 1000 : portion;
+                        const factor = (u === 'kg' || u === 'l' || u === 'liter') ? portion / 1000 : portion;
                         const cost = factor > 0 ? factor * cpu : 0;
+                        const displayPortion = (u === 'kg')
+                          ? `${portion >= 1 ? (portion % 1 === 0 ? portion : portion.toFixed(1)) : portion.toFixed(2)}g`
+                          : (u === 'l' || u === 'liter')
+                            ? `${portion >= 1 ? (portion % 1 === 0 ? portion : portion.toFixed(1)) : portion.toFixed(2)}ml`
+                            : `${portion >= 1 ? (portion % 1 === 0 ? portion : portion.toFixed(1)) : portion.toFixed(portion < 0.01 ? 3 : 2)} ${u}`;
                         return (
                           <div key={idx} className="flex items-center justify-between gap-2 py-1.5 border-b border-white/[0.04] last:border-0">
                             <div className="flex items-center gap-2 min-w-0">
@@ -11042,7 +12240,7 @@ function AdminPanel({
                               {!inv && <span className="text-[7.5px] text-brand-red/80 italic shrink-0">Unlinked</span>}
                             </div>
                             <div className="flex items-center gap-3 shrink-0 text-[8.5px] font-mono">
-                              <span className="text-gray-500 w-16 text-right">{u === 'kg' ? `${portion}g` : `${portion} ${u}`}</span>
+                              <span className="text-gray-500 w-16 text-right">{displayPortion}</span>
                               <span className="text-gray-400 w-20 text-right">
                                 ₱{cpu >= 1 ? cpu.toFixed(2) : cpu.toFixed(3)}/{u}
                               </span>
@@ -11456,41 +12654,93 @@ function AdminPanel({
                 ) : (
                   <div className="space-y-4">
                     {formCustomOptions.map((optGroup, optIdx) => (
-                      <div key={optGroup.id || optIdx} className="bg-[#121211] p-3 rounded-xl border border-white/5 space-y-3 relative">
-                        {/* Remove entire option group */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFormCustomOptions(formCustomOptions.filter((_, i) => i !== optIdx));
-                          }}
-                          className="absolute top-3 right-3 text-gray-500 hover:text-brand-red p-1 rounded-md hover:bg-brand-red/5 transition-all"
-                          title="Delete Option Group"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                      <div
+                        key={optGroup.id || optIdx}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', String(optIdx));
+                          setDraggedGroupIdx(optIdx);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (draggedGroupIdx !== null && draggedGroupIdx !== optIdx) {
+                            moveOptionGroup(draggedGroupIdx, optIdx);
+                          }
+                          setDraggedGroupIdx(null);
+                        }}
+                        className={`bg-[#121211] p-3 rounded-xl border transition-all space-y-3 relative ${
+                          draggedGroupIdx === optIdx ? 'border-brand-gold/60 opacity-60' : 'border-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        {/* Option Group Header & Controls */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-gray-400">
+                            <div className="cursor-grab active:cursor-grabbing p-1 hover:text-white rounded bg-white/5 border border-white/5" title="Drag to reorder option group priority">
+                              <GripVertical className="w-3.5 h-3.5 text-brand-gold" />
+                            </div>
+                            <span className="text-[9px] font-black font-mono uppercase bg-white/5 px-2 py-0.5 rounded text-gray-300">
+                              Option #{optIdx + 1}
+                            </span>
+                            <div className="flex items-center gap-0.5">
+                              <button
+                                type="button"
+                                disabled={optIdx === 0}
+                                onClick={() => moveOptionGroup(optIdx, optIdx - 1)}
+                                className="p-0.5 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer"
+                                title="Move Group Up"
+                              >
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={optIdx === formCustomOptions.length - 1}
+                                onClick={() => moveOptionGroup(optIdx, optIdx + 1)}
+                                className="p-0.5 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer"
+                                title="Move Group Down"
+                              >
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
 
-                        {/* Option Group Title */}
-                        <div className="space-y-1 w-[85%]">
+                          {/* Delete entire option group */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormCustomOptions(formCustomOptions.filter((_, i) => i !== optIdx));
+                            }}
+                            className="text-gray-500 hover:text-brand-red p-1 rounded-md hover:bg-brand-red/10 transition-all cursor-pointer"
+                            title="Delete Option Group"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Option Group Title Input */}
+                        <div className="space-y-1">
                           <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">Option Group Title *</label>
                           <input
                             type="text"
                             required
-                            placeholder="e.g. Rice, Egg Style, Sauce Choice"
+                            placeholder="e.g. Rice (Included with Meal), Flavor Selection, Egg Style"
                             value={optGroup.title}
                             onChange={(e) => {
                               const newOpts = [...formCustomOptions];
                               newOpts[optIdx].title = e.target.value;
                               setFormCustomOptions(newOpts);
                             }}
-                            className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-bold"
+                            className="w-full bg-[#0D0D0C] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-gold font-bold"
                           />
                         </div>
 
                         {/* Choice items inside the group */}
-                        <div className="space-y-2 pl-2 border-l-2 border-white/5">
+                        <div className="space-y-2 pl-2 border-l-2 border-brand-gold/30">
                           <div className="flex flex-wrap items-center justify-between gap-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wide">Choices & Variations</span>
+                              <span className="text-[8px] text-gray-400 uppercase font-bold tracking-wide">Choices & Variations</span>
                               {optGroup.title.toLowerCase().includes('rice') && (
                                 <div className="flex items-center gap-1">
                                   <button
@@ -11501,7 +12751,8 @@ function AdminPanel({
                                         newOpts[optIdx].choices.push({
                                           id: 'ch-' + Math.random().toString(36).substr(2, 4),
                                           name: 'Java Rice',
-                                          price: 20
+                                          price: 20,
+                                          isDefault: false
                                         });
                                         setFormCustomOptions(newOpts);
                                       }
@@ -11518,7 +12769,8 @@ function AdminPanel({
                                         newOpts[optIdx].choices.push({
                                           id: 'ch-' + Math.random().toString(36).substr(2, 4),
                                           name: 'Extra Rice',
-                                          price: 15
+                                          price: 15,
+                                          isDefault: false
                                         });
                                         setFormCustomOptions(newOpts);
                                       }
@@ -11534,40 +12786,91 @@ function AdminPanel({
                               type="button"
                               onClick={() => {
                                 const newOpts = [...formCustomOptions];
+                                const hasDefault = newOpts[optIdx].choices.some(c => c.isDefault);
                                 newOpts[optIdx].choices.push({
                                   id: 'ch-' + Math.random().toString(36).substr(2, 4),
                                   name: '',
-                                  price: 0
+                                  price: 0,
+                                  isDefault: !hasDefault && newOpts[optIdx].choices.length === 0
                                 });
                                 setFormCustomOptions(newOpts);
                               }}
-                              className="text-[8px] text-brand-gold hover:underline font-black uppercase tracking-wider cursor-pointer"
+                              className="text-[8px] text-brand-gold hover:underline font-black uppercase tracking-wider cursor-pointer flex items-center gap-1"
                             >
-                              + Add Choice
+                              <Plus className="w-2.5 h-2.5" /> Add Choice
                             </button>
                           </div>
 
                           <div className="space-y-1.5">
                             {optGroup.choices.map((choice, choiceIdx) => (
-                              <div key={choice.id || choiceIdx} className="flex items-center gap-2">
-                                {/* Choice Name */}
+                              <div
+                                key={choice.id || choiceIdx}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  setDraggedChoice({ optIdx, choiceIdx });
+                                }}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (draggedChoice && draggedChoice.optIdx === optIdx && draggedChoice.choiceIdx !== choiceIdx) {
+                                    moveChoice(optIdx, draggedChoice.choiceIdx, choiceIdx);
+                                  }
+                                  setDraggedChoice(null);
+                                }}
+                                className={`flex items-center gap-1.5 p-1.5 rounded-xl border transition-all bg-[#0D0D0C] ${
+                                  choice.isDefault ? 'border-brand-gold/40 bg-brand-gold/5' : 'border-white/5 hover:border-white/15'
+                                }`}
+                              >
+                                {/* Drag & Move Handle for Choice */}
+                                <div className="flex items-center gap-0.5 text-gray-500">
+                                  <div className="cursor-grab active:cursor-grabbing p-1 hover:text-white" title="Drag to reorder choice">
+                                    <GripVertical className="w-3 h-3 text-gray-400" />
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <button
+                                      type="button"
+                                      disabled={choiceIdx === 0}
+                                      onClick={() => moveChoice(optIdx, choiceIdx, choiceIdx - 1)}
+                                      className="text-gray-500 hover:text-white disabled:opacity-20 cursor-pointer"
+                                      title="Move Choice Up"
+                                    >
+                                      <ChevronUp className="w-2.5 h-2.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={choiceIdx === optGroup.choices.length - 1}
+                                      onClick={() => moveChoice(optIdx, choiceIdx, choiceIdx + 1)}
+                                      className="text-gray-500 hover:text-white disabled:opacity-20 cursor-pointer"
+                                      title="Move Choice Down"
+                                    >
+                                      <ChevronDown className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Choice Name Input */}
                                 <div className="flex-1">
                                   <input
                                     type="text"
                                     required
-                                    placeholder="e.g. Garlic Fried Rice, Large Size"
+                                    placeholder="e.g. Garlic Fried Rice, Large (22oz), Sunny-Side-Up"
                                     value={choice.name}
                                     onChange={(e) => {
                                       const newOpts = [...formCustomOptions];
                                       newOpts[optIdx].choices[choiceIdx].name = e.target.value;
                                       setFormCustomOptions(newOpts);
                                     }}
-                                    className="w-full bg-[#0D0D0C] border border-white/5 rounded-lg px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-brand-red font-semibold"
+                                    className="w-full bg-[#141413] border border-white/5 rounded-lg px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-brand-gold font-semibold"
                                   />
                                 </div>
 
                                 {/* Price Adjustment */}
-                                <div className="w-24">
+                                <div className="w-20 sm:w-24">
                                   <div className="relative">
                                     <span className="absolute left-2 top-1 text-[9px] text-gray-500 font-bold">₱</span>
                                     <input
@@ -11588,10 +12891,34 @@ function AdminPanel({
                                           setFormCustomOptions(newOpts);
                                         }
                                       }}
-                                      className="w-full bg-[#0D0D0C] border border-white/5 rounded-lg pl-5 pr-2 py-1 text-[11px] text-white focus:outline-none focus:border-brand-red font-mono font-bold"
+                                      className="w-full bg-[#141413] border border-white/5 rounded-lg pl-5 pr-2 py-1 text-[11px] text-white focus:outline-none focus:border-brand-gold font-mono font-bold"
                                     />
                                   </div>
                                 </div>
+
+                                {/* Default Pre-Selected Button Toggle */}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleDefaultChoice(optIdx, choiceIdx)}
+                                  className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shrink-0 border ${
+                                    choice.isDefault
+                                      ? 'bg-brand-gold text-black border-brand-gold shadow-md shadow-brand-gold/10'
+                                      : 'bg-[#181818] hover:bg-brand-gold/15 text-gray-400 hover:text-brand-gold border-white/5'
+                                  }`}
+                                  title={choice.isDefault ? "Default pre-selected option when customized" : "Click to mark as default choice"}
+                                >
+                                  {choice.isDefault ? (
+                                    <>
+                                      <Star className="w-2.5 h-2.5 fill-black text-black" />
+                                      <span>Default</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="w-2 h-2 rounded-full border border-gray-500 inline-block" />
+                                      <span>Set Default</span>
+                                    </>
+                                  )}
+                                </button>
 
                                 {/* Delete Choice */}
                                 <button
@@ -11600,12 +12927,16 @@ function AdminPanel({
                                   onClick={() => {
                                     const newOpts = [...formCustomOptions];
                                     newOpts[optIdx].choices = newOpts[optIdx].choices.filter((_, i) => i !== choiceIdx);
+                                    // If deleted was default, make the first one default
+                                    if (choice.isDefault && newOpts[optIdx].choices.length > 0) {
+                                      newOpts[optIdx].choices[0].isDefault = true;
+                                    }
                                     setFormCustomOptions(newOpts);
                                   }}
-                                  className="p-1 text-gray-500 hover:text-brand-red disabled:opacity-30 disabled:hover:text-gray-500"
+                                  className="p-1 text-gray-500 hover:text-brand-red disabled:opacity-30 disabled:hover:text-gray-500 cursor-pointer"
                                   title="Delete Choice"
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             ))}
@@ -11898,6 +13229,18 @@ function AdminPanel({
                       <RefreshCw className="w-3 h-3 text-blue-400" />
                       <span>🔄 Update This Saved Recipe</span>
                     </button>
+
+                    {selectedRecipeToLoad.startsWith('template:') && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRecipeTemplate(selectedRecipeToLoad)}
+                        className="px-3 py-1.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/40 font-black text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        title="Permanently delete this saved recipe template from your local vault"
+                      >
+                        <Trash2 className="w-3 h-3 text-red-400" />
+                        <span>🗑️ Delete Template</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -12436,11 +13779,35 @@ function AdminPanel({
                         const servingG = Math.max(1, Number(standaloneServingGrams) || 1);
                         const ingAmt = Number(ing.batchAmount) || 0;
                         const ingCost = Number(ing.cost) || 0;
-                        const isCountable = ing.unit === 'pcs' || ing.unit === 'cans' || ing.unit === 'pc' || ing.unit === 'pack';
-                        const scaledRaw = (ingAmt / batchWeightG) * servingG;
-                        const servingAmount = isCountable
-                          ? (ingAmt <= 1 ? 1 : Math.max(1, Math.round(scaledRaw)))
-                          : (ingAmt <= 0 ? 0 : (recipeAllowDecimals ? Math.max(0.1, Number(scaledRaw.toFixed(1))) : Math.max(1, Math.round(scaledRaw))));
+                        const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
+                        const invUnit = (invMatch?.unit || ing.unit || 'g').toLowerCase();
+                        const inputUnit = (ing.unit || invUnit).toLowerCase();
+                        const isCountable = inputUnit === 'pcs' || inputUnit === 'cans' || inputUnit === 'pc' || inputUnit === 'pack';
+                        
+                        let servingAmountDisplay = '';
+                        if (isCountable) {
+                          const scaled = (ingAmt / batchWeightG) * servingG;
+                          servingAmountDisplay = scaled >= 1 
+                            ? `${scaled % 1 === 0 ? scaled : Number(scaled.toFixed(1))} ${inputUnit}`
+                            : `${Number(scaled.toFixed(scaled < 0.01 ? 3 : 2))} ${inputUnit}`;
+                        } else {
+                          const baseAmount = getBaseEquivalentUnits(ingAmt, inputUnit);
+                          const scaledBase = (baseAmount / batchWeightG) * servingG;
+                          if (inputUnit === 'kg' || invUnit === 'kg') {
+                            servingAmountDisplay = scaledBase >= 1000 
+                              ? `${(scaledBase / 1000).toFixed(2)} kg` 
+                              : `${scaledBase >= 1 ? (scaledBase % 1 === 0 ? scaledBase : Number(scaledBase.toFixed(1))) : Number(scaledBase.toFixed(2))} g`;
+                          } else if (inputUnit === 'l' || invUnit === 'l') {
+                            servingAmountDisplay = scaledBase >= 1000 
+                              ? `${(scaledBase / 1000).toFixed(2)} L` 
+                              : `${scaledBase >= 1 ? (scaledBase % 1 === 0 ? scaledBase : Number(scaledBase.toFixed(1))) : Number(scaledBase.toFixed(2))} ml`;
+                          } else if (inputUnit === 'tbsp' || inputUnit === 'tsp' || inputUnit === 'cup' || inputUnit === 'oz' || inputUnit === 'pinch') {
+                            const scaledOriginal = (ingAmt / batchWeightG) * servingG;
+                            servingAmountDisplay = `${scaledBase >= 1 ? (scaledBase % 1 === 0 ? scaledBase : Number(scaledBase.toFixed(1))) : Number(scaledBase.toFixed(2))} g (${Number(scaledOriginal.toFixed(2))} ${inputUnit})`;
+                          } else {
+                            servingAmountDisplay = `${scaledBase >= 1 ? (scaledBase % 1 === 0 ? scaledBase : Number(scaledBase.toFixed(1))) : Number(scaledBase.toFixed(2))} ${inputUnit}`;
+                          }
+                        }
                         const servingCost = (ingCost / batchWeightG) * servingG;
                         const isExistingInv = ingredientsInventory.some(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
 
@@ -12596,7 +13963,7 @@ function AdminPanel({
                               </div>
                             </td>
                             <td className="p-2.5 text-blue-300 font-bold">
-                              {isCountable ? servingAmount : (recipeAllowDecimals ? Number(servingAmount).toFixed(1) : Math.round(Number(servingAmount)))}{ing.unit}
+                              {servingAmountDisplay}
                             </td>
                             <td className="p-2.5 text-brand-gold font-bold">
                               ₱{servingCost.toFixed(2)}
@@ -13874,15 +15241,27 @@ Total Projected Batch Net Profit: ₱${totalNetProfit.toFixed(2)}
 VIAND RAW MATERIALS BREAKDOWN:
 ${standaloneIngredients.map((item, idx) => {
   const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === item.name.toLowerCase());
-  const u = (item.unit || invMatch?.unit || 'g').toLowerCase();
+  const invUnit = (invMatch?.unit || item.unit || 'g').toLowerCase();
+  const u = (item.unit || invUnit).toLowerCase();
   const isCountable = u === 'pcs' || u === 'cans' || u === 'pc' || u === 'pack';
   const rawAmt = Number(item.batchAmount) || 0;
-  const scaled = (rawAmt / batchWeightG) * servingG;
-  const servingAmt = isCountable 
-    ? (rawAmt <= 1 ? 1 : Math.max(1, Math.round(scaled))) 
-    : (rawAmt <= 0 ? 0 : (recipeAllowDecimals ? Math.max(0.1, Number(scaled.toFixed(1))) : Math.max(1, Math.round(scaled))));
+  let servingAmtStr = '';
+  if (isCountable) {
+    const scaled = (rawAmt / batchWeightG) * servingG;
+    servingAmtStr = `${scaled >= 1 ? (scaled % 1 === 0 ? scaled : Number(scaled.toFixed(1))) : Number(scaled.toFixed(scaled < 0.01 ? 3 : 2))} ${u}`;
+  } else {
+    const baseAmount = getBaseEquivalentUnits(rawAmt, u);
+    const scaledBase = (baseAmount / batchWeightG) * servingG;
+    if (u === 'kg' || invUnit === 'kg') {
+      servingAmtStr = scaledBase >= 1000 ? `${(scaledBase / 1000).toFixed(2)} kg` : `${scaledBase >= 1 ? (scaledBase % 1 === 0 ? scaledBase : Number(scaledBase.toFixed(1))) : Number(scaledBase.toFixed(2))} g`;
+    } else if (u === 'l' || invUnit === 'l') {
+      servingAmtStr = scaledBase >= 1000 ? `${(scaledBase / 1000).toFixed(2)} L` : `${scaledBase >= 1 ? (scaledBase % 1 === 0 ? scaledBase : Number(scaledBase.toFixed(1))) : Number(scaledBase.toFixed(2))} ml`;
+    } else {
+      servingAmtStr = `${scaledBase >= 1 ? (scaledBase % 1 === 0 ? scaledBase : Number(scaledBase.toFixed(1))) : Number(scaledBase.toFixed(2))} ${u}`;
+    }
+  }
   const sCost = (((Number(item.cost) || 0) / batchWeightG) * servingG).toFixed(2);
-  return `${idx + 1}. ${item.name}: Batch ${item.batchAmount}${item.unit} (₱${item.cost}) -> Portion ${servingAmt}${item.unit} (₱${sCost})`;
+  return `${idx + 1}. ${item.name}: Batch ${item.batchAmount}${item.unit} (₱${item.cost}) -> Portion ${servingAmtStr} (₱${sCost})`;
 }).join('\n')}
 `;
                           navigator.clipboard.writeText(sheetText);
@@ -14811,105 +16190,569 @@ ${standaloneIngredients.map((item, idx) => {
         </div>
 
       {/* VIEW ACTIVE ORDER DETAILS OVERLAY */}
-      {viewingOrderDetails && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
-          <div className="bg-[#181818] border-2 border-white/10 rounded-[2rem] overflow-hidden shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh]">
-            
-            <div className="p-5 border-b-2 border-white/5 bg-[#0D0D0C] flex items-center justify-between">
-              <h4 className="font-display font-black text-white text-base uppercase tracking-tight">
-                Inspect Order #{viewingOrderDetails.id.slice(0, 8)}
-              </h4>
-              <button
-                onClick={() => setViewingOrderDetails(null)}
-                className="p-1.5 rounded-lg hover:bg-[#222222] text-gray-500 hover:text-white transition-all focus:outline-none"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {viewingOrderDetails && (() => {
+        const order = orders.find(o => o.id === viewingOrderDetails.id) || viewingOrderDetails;
+        const isCodUnconfirmed = order.paymentMethod === 'cod' && order.confirmationCallStatus !== 'confirmed';
+        const isFakeOrBogus = order.confirmationCallStatus === 'rejected' || order.isBogusRisk;
+        const isCooked = order.cookedItemIds && order.items.length > 0 && order.items.every(it => order.cookedItemIds?.includes(it.id));
 
-            <div className="p-6 overflow-y-auto space-y-5 text-sm">
-              {/* Customer summary */}
-              <div className="bg-[#0D0D0C] border-2 border-white/5 p-4 rounded-2xl space-y-1.5 text-xs">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold block">Delivery Details</span>
-                <p className="text-gray-300"><strong>Name:</strong> {viewingOrderDetails.customer.name}</p>
-                <p className="text-gray-300"><strong>Phone:</strong> {viewingOrderDetails.customer.phone}</p>
-                <p className="text-gray-300"><strong>Fulfillment Type:</strong> <span className="capitalize">{viewingOrderDetails.customer.orderType}</span></p>
-                <p className="text-gray-300"><strong>Address:</strong> {viewingOrderDetails.customer.address}</p>
-              </div>
+        const orderTimeAgo = (() => {
+          const diffMins = Math.round((Date.now() - new Date(order.timestamp).getTime()) / 60000);
+          if (diffMins < 1) return 'Just now';
+          if (diffMins < 60) return `${diffMins}m ago`;
+          const hours = Math.floor(diffMins / 60);
+          return `${hours}h ${diffMins % 60}m ago`;
+        })();
 
-              {/* Items */}
-              <div className="space-y-2">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold block">Dishes list</span>
-                
-                <div className="space-y-2">
-                  {viewingOrderDetails.items.map((item) => {
-                    const isVerified = viewingOrderDetails.confirmedItemIds?.includes(item.id);
-                    return (
-                      <div key={item.id} className={`p-3 rounded-xl border-2 flex items-start gap-2 text-xs transition-all ${
-                        isVerified ? 'bg-green-500/[0.03] border-green-500/20' : 'bg-[#0D0D0C] border-white/5'
-                      }`}>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-white font-bold">{item.quantity}x {item.menuItem.name}</p>
-                            {isVerified ? (
-                              <span className="text-[9px] bg-green-500/10 border border-green-500/20 text-green-400 font-extrabold px-1.5 py-0.5 rounded uppercase">✓ Verified received</span>
-                            ) : (
-                              <span className="text-[9px] bg-[#181818] border border-white/5 text-gray-500 font-bold px-1.5 py-0.5 rounded uppercase">Awaiting verification</span>
-                            )}
-                          </div>
-                          {item.selectedOptions && item.selectedOptions.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {item.selectedOptions.map((opt, optIdx) => (
-                                <span
-                                  key={optIdx}
-                                  className={`text-[9px] px-1.5 py-0.5 rounded font-bold border leading-none ${
-                                    opt.choice.price > 0
-                                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-                                      : 'bg-white/5 border-white/10 text-gray-300'
-                                  }`}
-                                >
-                                  + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {item.selectedAddOns && item.selectedAddOns.length > 0 && (
-                            <p className="text-[10px] text-brand-gold font-bold mt-1">
-                              Add-ons: {item.selectedAddOns.map(ao => `+${ao.name}`).join(', ')}
-                            </p>
-                          )}
-                          {item.specialInstructions && (
-                            <p className="text-[10px] text-gray-500 italic mt-1">
-                              " {item.specialInstructions} "
-                            </p>
-                          )}
-                        </div>
-                        <span className="font-mono text-brand-gold font-bold">₱{(item.totalUnitPrice * item.quantity).toFixed(2)}</span>
-                      </div>
-                    );
-                  })}
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+            <div className="bg-[#121211] border-2 border-white/10 rounded-[2rem] overflow-hidden shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+              
+              {/* Header */}
+              <div className="p-4 sm:p-5 border-b-2 border-white/5 bg-[#0D0D0C] flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <div className="p-2 rounded-xl bg-brand-gold/10 border border-brand-gold/20 text-brand-gold">
+                    <ChefHat className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-display font-black text-white text-base sm:text-lg uppercase tracking-tight">
+                        Order #{order.id.slice(0, 8)}
+                      </h4>
+                      {order.queueNumber && (
+                        <span className="text-[10px] bg-brand-gold/20 text-brand-gold font-mono font-black px-2 py-0.5 rounded-lg border border-brand-gold/30">
+                          #Q-{String(order.queueNumber).padStart(2, '0')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-gray-400 text-[10px] font-semibold mt-0.5">
+                      ⏱️ {orderTimeAgo} • {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, {new Date(order.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border ${
+                    order.status === 'delivered' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                    order.status === 'dispatched' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                    order.status === 'preparing' ? 'bg-brand-red/20 text-brand-red border-brand-red/30' :
+                    order.status === 'cancelled' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                    'bg-amber-500/20 text-amber-300 border-amber-500/30 animate-pulse'
+                  }`}>
+                    {order.status === 'delivered' ? '✓ Delivered' :
+                     order.status === 'dispatched' ? '🛵 Dispatched' :
+                     order.status === 'preparing' ? '👨‍🍳 Preparing' :
+                     order.status === 'cancelled' ? '❌ Cancelled' : '⏳ Pending'}
+                  </span>
+
+                  <button
+                    onClick={() => setViewingOrderDetails(null)}
+                    className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all cursor-pointer"
+                    title="Close Details"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
 
-              {/* Total amount */}
-              <div className="flex justify-between items-center pt-3 border-t-2 border-white/5 font-bold">
-                <span className="text-white text-xs font-bold uppercase">Grand Total</span>
-                <span className="text-brand-gold font-display font-extrabold text-base">₱{viewingOrderDetails.totalAmount.toFixed(2)}</span>
+              {/* Scrollable Content */}
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs font-sans">
+                
+                {/* Anti-Bogus & Verification Panel */}
+                <div className={`p-4 rounded-2xl border-2 space-y-3 transition-all ${
+                  isFakeOrBogus ? 'bg-red-500/10 border-red-500/40' :
+                  order.confirmationCallStatus === 'confirmed' ? 'bg-emerald-500/10 border-emerald-500/30' :
+                  'bg-amber-500/10 border-amber-500/30'
+                }`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className={`w-4 h-4 ${isFakeOrBogus ? 'text-red-400' : order.confirmationCallStatus === 'confirmed' ? 'text-emerald-400' : 'text-amber-400'}`} />
+                      <span className="font-display font-black text-white text-xs uppercase tracking-wide">
+                        {order.paymentMethod === 'cod' ? 'COD Anti-Bogus Verification' : 'Customer Identity & Order Verification'}
+                      </span>
+                    </div>
+
+                    <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border ${
+                      order.confirmationCallStatus === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                      order.confirmationCallStatus === 'unreachable' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
+                      order.confirmationCallStatus === 'rejected' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                      'bg-amber-500/20 text-amber-300 border-amber-500/30 animate-pulse'
+                    }`}>
+                      {order.confirmationCallStatus === 'confirmed' ? '✓ Legit & Confirmed' :
+                       order.confirmationCallStatus === 'unreachable' ? '📵 Unreachable (No Answer)' :
+                       order.confirmationCallStatus === 'rejected' ? '🚫 Flagged Bogus / Fake' :
+                       '📞 Verification Required (Call Pending)'}
+                    </span>
+                  </div>
+
+                  {/* Customer Quick Contact & Verification Buttons */}
+                  <div className="bg-[#0D0D0C] border border-white/10 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-sm">{order.customer.name}</span>
+                        {order.isFirstTimeCod && (
+                          <span className="text-[8px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded uppercase border border-amber-500/30">
+                            1st-Time Customer
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-gray-400 font-mono text-xs mt-0.5">📞 {order.customer.phone}</p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
+                      <a
+                        href={`tel:${order.customer.phone}`}
+                        className="flex-1 sm:flex-initial py-1.5 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9.5px] font-bold flex items-center justify-center gap-1.5 transition-all"
+                      >
+                        <PhoneCall className="w-3.5 h-3.5" />
+                        <span>Call</span>
+                      </a>
+                      <a
+                        href={`sms:${order.customer.phone}?body=Hi ${encodeURIComponent(order.customer.name)}, Curvada's Kitchen here regarding order #${order.id.slice(0, 8)}. Please confirm your order!`}
+                        className="flex-1 sm:flex-initial py-1.5 px-3 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[9.5px] font-bold flex items-center justify-center gap-1.5 transition-all"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>SMS</span>
+                      </a>
+                      {onUpdateConfirmationCallStatus && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => onUpdateConfirmationCallStatus(order.id, 'confirmed', false)}
+                            className={`py-1.5 px-2.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer ${
+                              order.confirmationCallStatus === 'confirmed'
+                                ? 'bg-emerald-500 text-black font-extrabold shadow-sm'
+                                : 'bg-white/5 text-gray-300 hover:bg-emerald-500/20 hover:text-emerald-400 border border-white/10'
+                            }`}
+                            title="Confirm Customer is Real and OK to Cook"
+                          >
+                            ✓ OK
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onUpdateConfirmationCallStatus(order.id, 'unreachable')}
+                            className={`py-1.5 px-2.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer ${
+                              order.confirmationCallStatus === 'unreachable'
+                                ? 'bg-orange-500 text-black font-extrabold shadow-sm'
+                                : 'bg-white/5 text-gray-300 hover:bg-orange-500/20 hover:text-orange-400 border border-white/10'
+                            }`}
+                            title="Customer Unreachable"
+                          >
+                            📵 No Ans
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Flag order #${order.id.slice(0, 8)} as Fake/Bogus and cancel it?`)) {
+                                onUpdateOrderStatus(order.id, 'cancelled');
+                                onUpdateConfirmationCallStatus(order.id, 'rejected', true);
+                              }
+                            }}
+                            className={`py-1.5 px-2.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer ${
+                              order.confirmationCallStatus === 'rejected'
+                                ? 'bg-red-500 text-white font-extrabold shadow-sm'
+                                : 'bg-white/5 text-gray-300 hover:bg-red-500/20 hover:text-red-400 border border-white/10'
+                            }`}
+                            title="Flag Bogus Order and Add to Reports"
+                          >
+                            🚫 Fake
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Delivery & Map Location Section */}
+                <div className="bg-[#0D0D0C] border-2 border-white/5 p-4 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[10px] text-gray-400 uppercase tracking-wider font-bold flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-brand-gold" />
+                      Fulfillment & Location Details
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[8.5px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                        order.customer.orderType === 'delivery' ? 'bg-red-500/15 text-red-400 border border-red-500/30' : 'bg-brand-gold/15 text-brand-gold border border-brand-gold/30'
+                      }`}>
+                        {order.customer.orderType === 'delivery' ? '🛵 Delivery' : `🛍️ Pickup ${order.customer.tableNumber ? `(Table ${order.customer.tableNumber})` : ''}`}
+                      </span>
+                      <span className="text-[8.5px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-gray-300 border border-white/10 uppercase">
+                        {order.paymentMethod === 'cod' ? '💵 COD' : order.paymentMethod}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div className="bg-[#141413] p-2.5 rounded-xl border border-white/5">
+                      <span className="text-[9px] text-gray-500 uppercase font-bold block">Delivery Address</span>
+                      <p className="text-white font-semibold mt-0.5">{order.customer.address || 'Standard Loft / Counter Pick-up'}</p>
+                    </div>
+
+                    <div className="bg-[#141413] p-2.5 rounded-xl border border-white/5 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9px] text-gray-500 uppercase font-bold">Target Time:</span>
+                        <span className="text-brand-gold font-bold">{order.customer.deliveryTime || order.customer.pickupTime || 'ASAP (~20-30 mins)'}</span>
+                      </div>
+                      {order.changeAmount !== undefined && order.changeAmount > 0 && (
+                        <div className="flex justify-between items-center pt-1 border-t border-white/5">
+                          <span className="text-[9px] text-amber-400 font-bold">Cash Tendered:</span>
+                          <span className="font-mono text-white font-bold">₱{order.amountTendered?.toFixed(2)} (Change: ₱{order.changeAmount.toFixed(2)})</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Interactive Map & GPS Embed */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                        <Navigation className="w-3.5 h-3.5" />
+                        {order.customer.latitude && order.customer.longitude
+                          ? `GPS Coordinates: ${order.customer.latitude.toFixed(5)}, ${order.customer.longitude.toFixed(5)}`
+                          : 'Location Address Map'}
+                      </span>
+
+                      <div className="flex items-center gap-2">
+                        {order.customer.latitude && order.customer.longitude ? (
+                          <>
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${order.customer.latitude},${order.customer.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-brand-gold hover:text-white font-bold underline flex items-center gap-1 text-[9.5px]"
+                            >
+                              <span>Google Maps</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                            <a
+                              href={`https://waze.com/ul?ll=${order.customer.latitude},${order.customer.longitude}&navigate=yes`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-400 hover:text-white font-bold underline flex items-center gap-1 text-[9.5px]"
+                            >
+                              <span>Waze</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </>
+                        ) : order.customer.address ? (
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.customer.address)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand-gold hover:text-white font-bold underline flex items-center gap-1 text-[9.5px]"
+                          >
+                            <span>Search Map</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Map Iframe Embed */}
+                    <div className="rounded-xl overflow-hidden border border-white/10 bg-black/40 h-44 w-full relative shadow-inner">
+                      {order.customer.latitude && order.customer.longitude ? (
+                        <iframe
+                          title="Customer Delivery GPS Map"
+                          src={`https://maps.google.com/maps?q=${order.customer.latitude},${order.customer.longitude}&hl=en&z=16&output=embed`}
+                          className="w-full h-full border-0"
+                          loading="lazy"
+                        />
+                      ) : order.customer.address ? (
+                        <iframe
+                          title="Customer Address Map"
+                          src={`https://maps.google.com/maps?q=${encodeURIComponent(order.customer.address)}&hl=en&z=15&output=embed`}
+                          className="w-full h-full border-0"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 gap-1.5 p-4 text-center">
+                          <Map className="w-8 h-8 opacity-40 text-brand-gold" />
+                          <p className="text-xs font-semibold">Store / Loft Pickup (No GPS coordinates required)</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Kitchen Staff & Chef Assignment */}
+                <div className="bg-[#0D0D0C] border-2 border-white/5 p-3.5 rounded-2xl flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-brand-gold/10 text-brand-gold rounded-xl border border-brand-gold/20">
+                      <ChefHat className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-400 uppercase font-bold block">Assigned Prep Chef & Station</span>
+                      <p className="text-white font-bold text-xs mt-0.5 flex items-center gap-1.5">
+                        <span>👨‍🍳 {order.cookedBy || defaultLeadChefName}</span>
+                        {(!order.cookedBy || order.cookedBy === defaultLeadChefName) && (
+                          <span className="text-[8px] bg-brand-gold/15 text-brand-gold font-mono font-bold px-1.5 py-0.5 rounded border border-brand-gold/20">
+                            Auto-Assigned On Duty
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  {onSetCookedBy && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9.5px] text-gray-500 font-bold uppercase">Change:</span>
+                      <select
+                        value={order.cookedBy || defaultLeadChefName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '__custom__') {
+                            const custom = prompt('Enter custom chef name:', order.cookedBy || '');
+                            if (custom && custom.trim()) onSetCookedBy(order.id, custom.trim());
+                          } else {
+                            onSetCookedBy(order.id, val);
+                          }
+                        }}
+                        className="bg-[#141413] border border-brand-gold/30 hover:border-brand-gold rounded-lg px-2.5 py-1 text-[10px] text-brand-gold font-bold focus:outline-none focus:border-brand-gold cursor-pointer"
+                      >
+                        {onDutyChefs.map((chef) => (
+                          <option key={chef.id} value={chef.name} className="bg-[#181818] text-white">
+                            👨‍🍳 {chef.name} {chef.isDefaultLeadChef ? '⭐ (Lead)' : ''} {chef.stationTask ? `• ${chef.stationTask}` : ''}
+                          </option>
+                        ))}
+                        {onDutyChefs.length === 0 && (
+                          <option value="Kitchen Team" className="bg-[#181818] text-white">👨‍🍳 Kitchen Team</option>
+                        )}
+                        {order.cookedBy && !onDutyChefs.some(c => c.name === order.cookedBy) && (
+                          <option value={order.cookedBy} className="bg-[#181818] text-amber-300">👨‍🍳 {order.cookedBy}</option>
+                        )}
+                        <option value="__custom__" className="bg-[#181818] text-gray-400">➕ Type custom name...</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Ordered Dishes & Customized Options */}
+                <div className="space-y-2">
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">
+                    Ordered Dishes ({order.items.reduce((s, it) => s + it.quantity, 0)} Items)
+                  </span>
+                  
+                  <div className="space-y-2">
+                    {order.items.map((item) => {
+                      const isItemCooked = order.cookedItemIds?.includes(item.id);
+                      const isItemStarted = order.startedItemIds?.includes(item.id);
+
+                      return (
+                        <div key={item.id} className={`p-3.5 rounded-xl border-2 flex items-start justify-between gap-3 text-xs transition-all ${
+                          isItemCooked ? 'bg-green-500/[0.04] border-green-500/25' : 'bg-[#0D0D0C] border-white/5'
+                        }`}>
+                          <div className="flex-1 space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-extrabold text-brand-red font-mono text-sm">{item.quantity}x</span>
+                              <span className="text-white font-bold text-sm">{item.menuItem.name}</span>
+                              {isItemCooked ? (
+                                <span className="text-[8.5px] bg-green-500/10 border border-green-500/20 text-green-400 font-extrabold px-1.5 py-0.5 rounded uppercase">
+                                  ✓ Cooked
+                                </span>
+                              ) : isItemStarted ? (
+                                <span className="text-[8.5px] bg-brand-gold/10 border border-brand-gold/20 text-brand-gold font-bold px-1.5 py-0.5 rounded uppercase">
+                                  🔥 On Grill / Stove
+                                </span>
+                              ) : (
+                                <span className="text-[8.5px] bg-white/5 border border-white/10 text-gray-500 font-bold px-1.5 py-0.5 rounded uppercase">
+                                  Pending Prep
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Options & Add-ons */}
+                            {item.selectedOptions && item.selectedOptions.filter(isRelevantOptionChoice).length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {item.selectedOptions.filter(isRelevantOptionChoice).map((opt, optIdx) => (
+                                  <span
+                                    key={optIdx}
+                                    className={`text-[9px] px-2 py-0.5 rounded font-bold border leading-none ${
+                                      opt.choice.price > 0
+                                        ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                                        : 'bg-white/5 border-white/10 text-gray-300'
+                                    }`}
+                                  >
+                                    + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {item.selectedAddOns && item.selectedAddOns.length > 0 && (
+                              <p className="text-[10px] text-brand-gold font-bold">
+                                Extra Add-ons: {item.selectedAddOns.map(ao => `+${ao.name}`).join(', ')}
+                              </p>
+                            )}
+
+                            {item.specialInstructions && (
+                              <p className="text-[10px] text-gray-400 italic bg-white/5 p-1.5 rounded-lg border border-white/5">
+                                💬 Note: "{item.specialInstructions}"
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="text-right">
+                            <span className="font-mono text-brand-gold font-black text-sm block">
+                              ₱{(item.totalUnitPrice * item.quantity).toFixed(2)}
+                            </span>
+                            <span className="text-[9px] text-gray-500 font-mono">₱{item.totalUnitPrice.toFixed(2)} ea</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Financial Summary Breakdown */}
+                <div className="bg-[#0D0D0C] border-2 border-white/5 p-4 rounded-2xl space-y-2 font-mono">
+                  <div className="flex justify-between items-center text-gray-400 text-xs">
+                    <span>Dishes Subtotal:</span>
+                    <span className="text-white font-bold">₱{order.items.reduce((s, it) => s + (it.totalUnitPrice * it.quantity), 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-gray-400 text-xs">
+                    <span>Delivery / Handling:</span>
+                    <span className="text-white font-bold">{order.customer.orderType === 'delivery' ? 'Included / Standard' : '₱0.00 (Pick-up)'}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t-2 border-white/5">
+                    <span className="text-white font-sans font-black text-sm uppercase">Grand Total Amount</span>
+                    <span className="text-brand-gold font-display font-extrabold text-xl">₱{order.totalAmount.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Activity & Log History */}
+                {order.logs && order.logs.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold block">Order Activity Timeline</span>
+                    <div className="bg-[#0D0D0C] border border-white/5 rounded-xl p-2.5 space-y-1 text-[10px] text-gray-400 font-mono">
+                      {order.logs.map((log, idx) => (
+                        <div key={idx} className="flex items-start justify-between gap-2 border-b border-white/[0.03] pb-1 last:border-0 last:pb-0">
+                          <span className="text-gray-300 font-semibold">{log.note || `Status changed to ${log.status}`}</span>
+                          <span className="text-gray-500 text-[9px] flex-shrink-0">{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
               </div>
-            </div>
 
-            <div className="p-4 bg-[#0D0D0C] border-t-2 border-white/5 text-right">
-              <button
-                onClick={() => setViewingOrderDetails(null)}
-                className="px-5 py-2.5 rounded-xl bg-brand-red hover:bg-brand-red-hover text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md hover:shadow-brand-red/25"
-              >
-                Dismiss
-              </button>
-            </div>
+              {/* Modal Action Footer */}
+              <div className="p-4 bg-[#0D0D0C] border-t-2 border-white/5 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrintingOrderType('kot');
+                      setPrintingOrder(order);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-brand-gold text-[10px] font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>KOT</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrintingOrderType('customer');
+                      setPrintingOrder(order);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-brand-gold text-[10px] font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Receipt</span>
+                  </button>
+                </div>
 
+                <div className="flex items-center gap-2">
+                  {order.status === 'pending' && (() => {
+                    if (isFakeOrBogus) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Cancel and report order #${order.id.slice(0, 8)} as a Bogus/Fake order?`)) {
+                              onUpdateOrderStatus(order.id, 'cancelled');
+                              onUpdateConfirmationCallStatus?.(order.id, 'rejected', true);
+                              setViewingOrderDetails(null);
+                            }
+                          }}
+                          className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-red-500/25 animate-pulse"
+                        >
+                          <Ban className="w-4 h-4" />
+                          <span>Cancel & Report Bogus</span>
+                        </button>
+                      );
+                    }
+
+                    if (isCodUnconfirmed) {
+                      return (
+                        <button
+                          type="button"
+                          disabled
+                          className="px-4 py-2 rounded-xl bg-[#1c1c1a] border border-white/10 text-gray-500 text-xs font-black uppercase tracking-wider cursor-not-allowed flex items-center gap-1.5 opacity-70"
+                          title="Verify customer via Call/SMS & click '✓ OK' before cooking"
+                        >
+                          <Lock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Confirm Customer to Accept</span>
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateOrderStatus(order.id, 'preparing');
+                          setViewingOrderDetails(null);
+                        }}
+                        className="px-5 py-2 rounded-xl bg-brand-gold hover:opacity-90 text-black text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-brand-gold/15 flex items-center gap-1.5"
+                      >
+                        <ChefHat className="w-4 h-4" />
+                        <span>Accept & Start Prep</span>
+                      </button>
+                    );
+                  })()}
+
+                  {order.status === 'preparing' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateOrderStatus(order.id, 'dispatched');
+                        setViewingOrderDetails(null);
+                      }}
+                      className="px-5 py-2 rounded-xl bg-brand-red hover:opacity-90 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-brand-red/15"
+                    >
+                      🛵 Dispatch Order
+                    </button>
+                  )}
+
+                  {order.status === 'dispatched' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateOrderStatus(order.id, 'delivered');
+                        setViewingOrderDetails(null);
+                      }}
+                      className="px-5 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-green-500/15"
+                    >
+                      ✓ Mark Completed
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => setViewingOrderDetails(null)}
+                    className="px-4 py-2 rounded-xl bg-[#1c1c1a] hover:bg-white/10 text-gray-300 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border border-white/5"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
 
 
@@ -15200,6 +17043,9 @@ ${standaloneIngredients.map((item, idx) => {
           const scheduledPosPickup = posScheduleType === 'scheduled' ? formatPosPickupDateTimeDisplay(posPickupTime, false) : 'ASAP (~15-20 mins)';
           const scheduledPosDelivery = posScheduleType === 'scheduled' ? formatPosPickupDateTimeDisplay(posDeliveryTime, true) : 'ASAP (~20-30 mins)';
 
+          const effectiveTimestamp = posOrderDate ? new Date(posOrderDate).toISOString() : new Date().toISOString();
+          const effectiveStatus: OrderStatus = posOrderStatus || 'delivered';
+
           const newOrderId = `ord-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
           const newOrder: Order = {
             id: newOrderId,
@@ -15221,13 +17067,13 @@ ${standaloneIngredients.map((item, idx) => {
             orderSource: posOrderSource,
             amountTendered: posPaymentMethod === 'cod' && typeof posAmountTendered === 'number' ? posAmountTendered : undefined,
             changeAmount: posPaymentMethod === 'cod' && typeof posAmountTendered === 'number' ? changeDue : undefined,
-            status: 'pending',
-            timestamp: new Date().toISOString(),
+            status: effectiveStatus,
+            timestamp: effectiveTimestamp,
             logs: [
               {
-                status: 'pending',
-                timestamp: new Date().toISOString(),
-                note: `Order manually registered at Counter POS (${posOrderSource === 'walkin' ? 'Walk-In' : 'Facebook Messenger'}).`
+                status: effectiveStatus,
+                timestamp: effectiveTimestamp,
+                note: `Order manually registered at Counter POS (${posOrderSource === 'walkin' ? 'Walk-In' : 'Facebook Messenger'}). Status set to ${effectiveStatus}.`
               }
             ]
           };
@@ -15246,6 +17092,10 @@ ${standaloneIngredients.map((item, idx) => {
           setPosPickupTime(getPosDefaultPickupDateTime(15));
           setPosDeliveryTime(getPosDefaultPickupDateTime(30));
           setPosScheduleType('asap');
+          const d = new Date();
+          const pad = (n: number) => String(n).padStart(2, '0');
+          setPosOrderDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+          setPosOrderStatus('delivered');
         };
 
         const currentConfiguredUnitPrice = posSelectedItem
@@ -15631,6 +17481,43 @@ ${standaloneIngredients.map((item, idx) => {
                         >
                           💬 Messenger
                         </button>
+                      </div>
+                    </div>
+
+                    {/* Order Date/Time & Initial Status (for manual / past order entry) */}
+                    <div className="bg-[#10100F] p-2 rounded-xl border border-white/5 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[9px] font-black uppercase tracking-wider text-brand-gold flex items-center gap-1">
+                          📅 Order Date & Time
+                        </label>
+                        <span className="text-[8px] text-gray-500 font-mono">Past/Manual Date</span>
+                      </div>
+                      <input
+                        type="datetime-local"
+                        value={posOrderDate}
+                        onChange={(e) => setPosOrderDate(e.target.value)}
+                        className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-brand-gold font-mono focus:outline-none focus:border-brand-gold"
+                      />
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-wider text-gray-400 block mb-1">
+                          Initial Status
+                        </label>
+                        <div className="grid grid-cols-3 gap-1">
+                          {(['delivered', 'pending', 'preparing'] as const).map((st) => (
+                            <button
+                              key={st}
+                              type="button"
+                              onClick={() => setPosOrderStatus(st as OrderStatus)}
+                              className={`py-1 px-1 rounded-lg text-[9px] font-bold uppercase transition-all flex items-center justify-center gap-1 border cursor-pointer ${
+                                posOrderStatus === st
+                                  ? 'bg-brand-gold text-black border-brand-gold font-black shadow-sm'
+                                  : 'bg-[#181818] border-white/5 text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              {st === 'delivered' ? '✅ Completed' : st === 'preparing' ? '🍳 Cooking' : '⏳ Pending'}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
@@ -16966,6 +18853,365 @@ ${standaloneIngredients.map((item, idx) => {
                 <Check className="w-4 h-4" /> Apply Crop & Save Photo
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Daily Sales Breakdown Reconciliation Modal */}
+      {showDailyBreakdownModal && (
+        <DailyBreakdownModal
+          isOpen={showDailyBreakdownModal}
+          onClose={() => setShowDailyBreakdownModal(false)}
+          orders={orders}
+          menuItems={menuItems}
+          selectedDate={selectedDailyAuditDate}
+          onDateChange={(d) => setSelectedDailyAuditDate(d)}
+          onOpenEditOrder={(order) => {
+            setEditingOrder(order);
+            setIsEditOrderModalOpen(true);
+          }}
+        />
+      )}
+
+      {/* Daily Stock Consumption Audit Modal */}
+      {showDailyStockAuditModal && (
+        <DailyStockAuditModal
+          isOpen={showDailyStockAuditModal}
+          onClose={() => setShowDailyStockAuditModal(false)}
+          orders={orders}
+          menuItems={menuItems}
+          ingredientsInventory={ingredientsInventory}
+          stockBatches={stockBatches}
+          selectedDate={selectedDailyAuditDate}
+          onDateChange={(d) => setSelectedDailyAuditDate(d)}
+        />
+      )}
+
+      {/* Smart FIFO Multi-Lot Inventory & Loss Modal */}
+      {isFifoModalOpen && (
+        <FifoStockModal
+          isOpen={isFifoModalOpen}
+          onClose={() => setIsFifoModalOpen(false)}
+          ingredientsInventory={ingredientsInventory}
+          stockBatches={stockBatches}
+          menuItems={menuItems}
+          initialIngredientId={selectedFifoIngredientId}
+          spoilageRecords={spoilageLogs as any}
+          onAddBatch={(newBatch) => {
+            if (onAddStockBatch) onAddStockBatch(newBatch);
+          }}
+          onUpdateBatch={(batchId, updates) => {
+            if (onUpdateStockBatch) onUpdateStockBatch(batchId, updates);
+          }}
+          onDeleteBatch={(batchId) => {
+            if (onDeleteStockBatch) onDeleteStockBatch(batchId);
+          }}
+          onLogSpoilage={(ingredientId, amount, reason, cost) => {
+            const ing = ingredientsInventory.find(i => i.id === ingredientId);
+            const newLog = {
+              id: `spoil-${Date.now()}`,
+              ingredientId,
+              ingredientName: ing?.name || 'Item',
+              amount,
+              unit: ing?.unit || 'g',
+              reason,
+              cost,
+              timestamp: new Date().toISOString(),
+              loggedBy: loginRole === 'admin' ? 'Manager' : 'Kitchen Crew'
+            };
+            setSpoilageLogs((prev) => [newLog, ...prev]);
+          }}
+        />
+      )}
+
+      {/* Edit Order Modal */}
+      {isEditOrderModalOpen && editingOrder && (
+        <EditOrderModal
+          isOpen={isEditOrderModalOpen}
+          onClose={() => {
+            setIsEditOrderModalOpen(false);
+            setEditingOrder(null);
+          }}
+          order={editingOrder}
+          menuItems={menuItems}
+          onSave={(updatedOrder, syncStock) => {
+            if (onEditOrder) {
+              onEditOrder(updatedOrder, syncStock);
+            }
+            setIsEditOrderModalOpen(false);
+            setEditingOrder(null);
+          }}
+          onDelete={(orderId) => {
+            if (onDeleteOrder) {
+              onDeleteOrder(orderId);
+            }
+            setIsEditOrderModalOpen(false);
+            setEditingOrder(null);
+          }}
+        />
+      )}
+
+      {/* Official Employee Payslip Modal */}
+      {viewingPayslip && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#121211] border border-white/10 rounded-[2rem] w-full max-w-lg overflow-hidden shadow-2xl animate-scale-up text-left flex flex-col max-h-[90vh]">
+            
+            {/* Payslip Header */}
+            <div className="p-6 bg-gradient-to-r from-brand-gold/10 via-black to-brand-gold/5 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-brand-gold/10 border border-brand-gold/20 flex items-center justify-center text-brand-gold font-display font-black text-lg">
+                  🍳
+                </div>
+                <div>
+                  <span className="text-[9px] bg-brand-gold/20 text-brand-gold font-mono font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+                    Official Compensation Slip
+                  </span>
+                  <h3 className="text-white font-display font-black text-lg">Curvada's Kitchen</h3>
+                  <p className="text-gray-400 text-xs">Payroll & Compensation Statement</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setViewingPayslip(null)}
+                className="p-2 text-gray-400 hover:text-white rounded-xl hover:bg-white/5 transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Payslip Body */}
+            <div className="p-6 space-y-4 overflow-y-auto font-sans text-xs">
+              
+              {/* Employee & Pay Period Details */}
+              <div className="bg-[#0D0D0C] border border-white/5 p-4 rounded-2xl grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] text-gray-500 uppercase font-bold block">Employee Name</span>
+                  <span className="text-white font-bold text-sm block mt-0.5">{viewingPayslip.staffName}</span>
+                  <span className="text-brand-gold text-[10px] font-semibold">{viewingPayslip.role}</span>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-[10px] text-gray-500 uppercase font-bold block">Pay Period</span>
+                  <span className="text-white font-mono font-bold text-xs block mt-0.5">{viewingPayslip.periodStart} to {viewingPayslip.periodEnd}</span>
+                  <span className={`inline-block mt-1 text-[8.5px] font-black px-2 py-0.5 rounded-full uppercase ${
+                    releasedPayrollIds.includes(viewingPayslip.id)
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  }`}>
+                    {releasedPayrollIds.includes(viewingPayslip.id) ? '✓ Disbursed & Paid' : '⏳ Pending Payment'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Earnings Breakdown */}
+              <div className="space-y-2">
+                <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block">1. Earnings & Compensations</span>
+                <div className="bg-[#0D0D0C] border border-white/5 p-3.5 rounded-2xl space-y-2 font-mono">
+                  <div className="flex justify-between items-center text-gray-300">
+                    <span>Regular Hours ({viewingPayslip.regularHours} hrs @ ₱{viewingPayslip.hourlyRate}/hr):</span>
+                    <span className="text-white font-bold">₱{(viewingPayslip.regularHours * viewingPayslip.hourlyRate).toFixed(2)}</span>
+                  </div>
+
+                  {viewingPayslip.overtimeHours > 0 && (
+                    <div className="flex justify-between items-center text-amber-400">
+                      <span>Overtime Hours ({viewingPayslip.overtimeHours} hrs @ 1.25x OT rate):</span>
+                      <span className="font-bold">₱{(viewingPayslip.overtimeHours * viewingPayslip.hourlyRate * 1.25).toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  {viewingPayslip.bonusTips > 0 && (
+                    <div className="flex justify-between items-center text-emerald-400">
+                      <span>Meal Subsidy & Tip Share:</span>
+                      <span className="font-bold">+₱{viewingPayslip.bonusTips.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center pt-2 border-t border-white/5 font-bold">
+                    <span className="text-white font-sans text-xs uppercase">Total Gross Earnings:</span>
+                    <span className="text-brand-gold text-sm">₱{(viewingPayslip.grossPay + viewingPayslip.bonusTips).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Deductions Breakdown */}
+              <div className="space-y-2">
+                <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block">2. Deductions & Cash Advances</span>
+                <div className="bg-[#0D0D0C] border border-white/5 p-3.5 rounded-2xl space-y-2 font-mono">
+                  <div className="flex justify-between items-center text-gray-300">
+                    <span>Cash Advances (Vale Loans):</span>
+                    <span className="text-brand-red font-bold">-₱{viewingPayslip.cashAdvanceDeduction.toFixed(2)}</span>
+                  </div>
+
+                  {viewingPayslip.otherDeductions > 0 && (
+                    <div className="flex justify-between items-center text-gray-300">
+                      <span>Other Deductions:</span>
+                      <span className="text-brand-red font-bold">-₱{viewingPayslip.otherDeductions.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center pt-2 border-t border-white/5 font-bold">
+                    <span className="text-white font-sans text-xs uppercase">Total Deductions:</span>
+                    <span className="text-brand-red text-sm">-₱{(viewingPayslip.cashAdvanceDeduction + viewingPayslip.otherDeductions).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Net Take-Home Pay Box */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-brand-gold/15 to-amber-500/10 border-2 border-brand-gold/30 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-brand-gold font-black uppercase tracking-wider block">Net Take-Home Pay</span>
+                  <span className="text-[10px] text-gray-400">Total payable compensation</span>
+                </div>
+                <span className="font-mono font-black text-brand-gold text-2xl">₱{viewingPayslip.netPay.toFixed(2)}</span>
+              </div>
+
+              {/* Signature Lines */}
+              <div className="pt-4 grid grid-cols-2 gap-4 text-center text-[10px] text-gray-500">
+                <div className="border-t border-white/10 pt-2">
+                  <p className="font-bold text-gray-400">Approved by Management</p>
+                  <p className="font-mono text-[9px] mt-0.5">Curvada's Kitchen Admin</p>
+                </div>
+                <div className="border-t border-white/10 pt-2">
+                  <p className="font-bold text-gray-400">Received by Employee</p>
+                  <p className="font-mono text-[9px] mt-0.5">{viewingPayslip.staffName}</p>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Payslip Modal Footer Actions */}
+            <div className="p-4 bg-[#0D0D0C] border-t border-white/10 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  window.print();
+                }}
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-white/10"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Payslip</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = viewingPayslip.id;
+                    const isPaid = releasedPayrollIds.includes(id);
+                    if (isPaid) {
+                      saveReleasedPayrolls(releasedPayrollIds.filter(item => item !== id));
+                    } else {
+                      saveReleasedPayrolls([...releasedPayrollIds, id]);
+                      alert(`Payment of ₱${viewingPayslip.netPay.toFixed(2)} recorded as released!`);
+                    }
+                    setViewingPayslip(null);
+                  }}
+                  className="px-5 py-2 bg-brand-gold hover:opacity-90 text-black font-black uppercase text-xs rounded-xl shadow-lg cursor-pointer transition-all flex items-center gap-1.5"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>{releasedPayrollIds.includes(viewingPayslip.id) ? 'Undo Release' : 'Mark as Released'}</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Log Cash Advance / Vale Modal */}
+      {showAdvanceModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#121211] border border-white/10 rounded-[2rem] w-full max-w-md overflow-hidden shadow-2xl animate-scale-up text-left">
+            
+            <div className="p-5 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-brand-gold/10 text-brand-gold rounded-xl border border-brand-gold/20">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-white text-base">Record Cash Advance (Vale)</h3>
+                  <p className="text-gray-400 text-xs">Deducts automatically from employee payroll</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAdvanceModal(false)}
+                className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const targetStaff = staffRoster.find(s => s.id === advanceStaffId) || staffRoster[0];
+                if (!targetStaff) return;
+                const newAdv: StaffAdvance = {
+                  id: `adv-${Date.now()}`,
+                  staffId: targetStaff.id,
+                  staffName: targetStaff.name,
+                  amount: advanceAmount,
+                  reason: advanceReason.trim() || 'Cash Advance (Vale)',
+                  date: new Date().toISOString().split('T')[0],
+                  isDeducted: true
+                };
+                saveStaffAdvances([newAdv, ...staffAdvances]);
+                setShowAdvanceModal(false);
+                alert(`Recorded ₱${advanceAmount} cash advance for ${targetStaff.name}!`);
+              }}
+              className="p-5 space-y-3.5 text-xs"
+            >
+              <div className="space-y-1">
+                <label className="text-gray-400 font-bold uppercase block text-[10px]">Select Employee *</label>
+                <select
+                  value={advanceStaffId}
+                  onChange={(e) => setAdvanceStaffId(e.target.value)}
+                  className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-bold focus:outline-none focus:border-brand-gold cursor-pointer"
+                >
+                  {staffRoster.map(s => (
+                    <option key={s.id} value={s.id} className="bg-[#181818] text-white">
+                      {s.name} ({s.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-gray-400 font-bold uppercase block text-[10px]">Advance Amount (₱) *</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="10"
+                  required
+                  value={advanceAmount}
+                  onChange={(e) => setAdvanceAmount(Number(e.target.value))}
+                  className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-mono font-bold text-sm focus:outline-none focus:border-brand-gold"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-gray-400 font-bold uppercase block text-[10px]">Reason / Notes</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Emergency Fare & Grocery Vale"
+                  value={advanceReason}
+                  onChange={(e) => setAdvanceReason(e.target.value)}
+                  className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl p-2.5 text-white font-semibold focus:outline-none focus:border-brand-gold"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-brand-gold hover:opacity-90 text-black font-black uppercase text-xs rounded-xl shadow-md cursor-pointer transition-all mt-2"
+              >
+                Confirm & Log Advance
+              </button>
+            </form>
+
           </div>
         </div>
       )}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { MenuItem, MenuOption, SelectedOption, CartItem, Order, CustomerInfo, OrderStatus, OrderLog, GroupMember, GroupCartItem, GroupOrderSession, IngredientStock } from './types';
+import { MenuItem, MenuOption, SelectedOption, CartItem, Order, CustomerInfo, OrderStatus, OrderLog, GroupMember, GroupCartItem, GroupOrderSession, IngredientStock, StockBatch } from './types';
 import { MENU_ITEMS } from './data/menu';
+import { deductFIFOOrderStock, restoreFIFOOrderStock, generateInitialStockBatches } from './services/fifoStockService';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import MenuSection from './components/MenuSection';
@@ -292,6 +293,54 @@ function AppContent() {
   const handleDeleteIngredient = (id: string) => {
     const updated = ingredientsInventory.filter(ing => ing.id !== id);
     saveIngredientsInventory(updated);
+  };
+
+  // --- FIFO STOCK BATCHES STATE & METHODS ---
+  const [stockBatches, setStockBatches] = useState<StockBatch[]>(() => {
+    const cached = localStorage.getItem('curvada_stock_batches');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error("Stock batches hydration failed", e);
+      }
+    }
+    return generateInitialStockBatches(ingredientsInventory);
+  });
+
+  const saveStockBatches = async (newBatches: StockBatch[]) => {
+    setStockBatches(newBatches);
+    localStorage.setItem('curvada_stock_batches', JSON.stringify(newBatches));
+    try {
+      await fetch('/api/batches/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stockBatches: newBatches })
+      });
+    } catch (e) {
+      console.error("Failed to sync stock batches", e);
+    }
+  };
+
+  const handleAddStockBatch = (batch: StockBatch) => {
+    const updated = [batch, ...stockBatches];
+    saveStockBatches(updated);
+    // Also increase total quantity in ingredientsInventory
+    const ing = ingredientsInventory.find(i => i.id === batch.ingredientId || i.name.toLowerCase() === batch.ingredientName.toLowerCase());
+    if (ing) {
+      handleUpdateIngredientStock(ing.id, ing.quantity + batch.initialQuantity);
+    }
+  };
+
+  const handleUpdateStockBatch = (batchId: string, updates: Partial<StockBatch>) => {
+    const updated = stockBatches.map(b => b.id === batchId ? { ...b, ...updates } : b);
+    saveStockBatches(updated);
+  };
+
+  const handleDeleteStockBatch = (batchId: string) => {
+    const updated = stockBatches.filter(b => b.id !== batchId);
+    saveStockBatches(updated);
   };
 
   // --- GROUP ORDER STATE & METHODS ---
@@ -633,7 +682,15 @@ function AppContent() {
     const cached = localStorage.getItem('curvada_menu_items');
     if (cached) {
       try {
-        return JSON.parse(cached);
+        const parsed: MenuItem[] = JSON.parse(cached);
+        const existingIds = new Set(parsed.map(i => i.id));
+        const missing = MENU_ITEMS.filter(item => !existingIds.has(item.id));
+        if (missing.length > 0) {
+          const merged = [...parsed, ...missing];
+          localStorage.setItem('curvada_menu_items', JSON.stringify(merged));
+          return merged;
+        }
+        return parsed;
       } catch (e) {
         console.error("Menu items hydration failed", e);
       }
@@ -747,40 +804,40 @@ function AppContent() {
     // 1. Check custom recipe requirements
     if (item.recipeRequirements && item.recipeRequirements.length > 0) {
       let minServings = Infinity;
-      let hasMatchingIngredient = false;
+      let trackedCount = 0;
       item.recipeRequirements.forEach((req) => {
         const ing = findMatchingIngredient(req.name, ingredientsInventory);
         if (ing) {
-          hasMatchingIngredient = true;
+          trackedCount++;
           const reqQty = ing.unit === 'kg' ? req.amount / 1000 : req.amount;
           const possibleServings = reqQty > 0 ? Math.floor(ing.quantity / reqQty) : 0;
           if (possibleServings < minServings) {
             minServings = possibleServings;
           }
-        } else {
-          minServings = 0;
         }
       });
-      recipeCapacity = hasMatchingIngredient ? minServings : 0;
+      if (trackedCount > 0 && minServings !== Infinity) {
+        recipeCapacity = minServings;
+      }
     } 
     // 2. Check general ingredients list
     else if (item.ingredients && item.ingredients.length > 0) {
       let minServings = Infinity;
-      let hasMatchingIngredient = false;
+      let trackedCount = 0;
       item.ingredients.forEach((ingName) => {
         const ing = findMatchingIngredient(ingName, ingredientsInventory);
         if (ing) {
-          hasMatchingIngredient = true;
+          trackedCount++;
           const reqPerServing = (ing.unit === 'pcs' || ing.unit === 'cans') ? 1 : ing.unit === 'kg' ? 0.1 : 100;
           const possibleServings = reqPerServing > 0 ? Math.floor(ing.quantity / reqPerServing) : 0;
           if (possibleServings < minServings) {
             minServings = possibleServings;
           }
-        } else {
-          minServings = 0;
         }
       });
-      recipeCapacity = hasMatchingIngredient ? minServings : 0;
+      if (trackedCount > 0 && minServings !== Infinity) {
+        recipeCapacity = minServings;
+      }
     }
 
     if (recipeCapacity !== null) {
@@ -1170,61 +1227,14 @@ function AppContent() {
     saveIngredientsInventory(updatedIngredients);
   };
 
-  // Helper to restore ingredient and stock levels when an order is cancelled
+  // Helper to restore ingredient, stock levels, and FIFO batches when an order is cancelled
   const restoreOrderStock = (
     orderItems: any[],
     currentStockLevels: Record<string, number>,
-    currentIngredientsInventory: IngredientStock[]
+    currentIngredientsInventory: IngredientStock[],
+    currentStockBatches: StockBatch[] = stockBatches
   ) => {
-    const updatedStock = { ...currentStockLevels };
-    const updatedIngredients = currentIngredientsInventory.map(i => ({ ...i }));
-
-    orderItems.forEach((item) => {
-      const menuItem = item.menuItem;
-      const orderQty = item.quantity || 1;
-
-      // 1. Restore item stock level
-      if (menuItem && menuItem.id) {
-        const id = menuItem.id;
-        if (updatedStock[id] !== undefined) {
-          updatedStock[id] += orderQty;
-        }
-      }
-
-      // 2. Restore ingredient stock levels
-      if (menuItem) {
-        if (menuItem.recipeRequirements && menuItem.recipeRequirements.length > 0) {
-          menuItem.recipeRequirements.forEach((req: any) => {
-            const ing = updatedIngredients.find(
-              (i) => i.name.toLowerCase() === req.name.toLowerCase()
-            );
-            if (ing) {
-              const amountPerServing = ing.unit === 'kg' ? req.amount / 1000 : req.amount;
-              const amountToRestore = amountPerServing * orderQty;
-              ing.quantity = Number((ing.quantity + amountToRestore).toFixed(4));
-            }
-          });
-        } else if (menuItem.ingredients) {
-          menuItem.ingredients.forEach((ingName: string) => {
-            const ing = updatedIngredients.find(
-              (i) => i.name.toLowerCase() === ingName.toLowerCase()
-            );
-            if (ing) {
-              let amountPerServing = 100;
-              if (ing.unit === 'pcs' || ing.unit === 'cans') {
-                amountPerServing = 1;
-              } else if (ing.unit === 'kg') {
-                amountPerServing = 0.1;
-              }
-              const amountToRestore = amountPerServing * orderQty;
-              ing.quantity = Number((ing.quantity + amountToRestore).toFixed(4));
-            }
-          });
-        }
-      }
-    });
-
-    return { updatedStock, updatedIngredients };
+    return restoreFIFOOrderStock(orderItems, currentStockLevels, currentIngredientsInventory, currentStockBatches);
   };
 
   // Checkout order submission
@@ -1471,10 +1481,11 @@ function AppContent() {
     ];
 
     // Restore stock in local state immediately
-    const { updatedStock, updatedIngredients } = restoreOrderStock(o.items, stockLevels, ingredientsInventory);
-    setStockLevels(updatedStock);
+    const { updatedStockLevels, updatedIngredients, updatedBatches } = restoreOrderStock(o.items, stockLevels, ingredientsInventory, stockBatches);
+    setStockLevels(updatedStockLevels);
     setIngredientsInventory(updatedIngredients);
-    localStorage.setItem('curvada_stock_levels', JSON.stringify(updatedStock));
+    saveStockBatches(updatedBatches);
+    localStorage.setItem('curvada_stock_levels', JSON.stringify(updatedStockLevels));
 
     try {
       const res = await fetch('/api/orders/status', {
@@ -1543,10 +1554,11 @@ function AppContent() {
 
       // If cancelling an active order, restore item stock & raw ingredients in local state
       if (newStatus === 'cancelled' && o.status !== 'cancelled') {
-        const { updatedStock, updatedIngredients } = restoreOrderStock(o.items, stockLevels, ingredientsInventory);
-        setStockLevels(updatedStock);
+        const { updatedStockLevels, updatedIngredients, updatedBatches } = restoreOrderStock(o.items, stockLevels, ingredientsInventory, stockBatches);
+        setStockLevels(updatedStockLevels);
         setIngredientsInventory(updatedIngredients);
-        localStorage.setItem('curvada_stock_levels', JSON.stringify(updatedStock));
+        saveStockBatches(updatedBatches);
+        localStorage.setItem('curvada_stock_levels', JSON.stringify(updatedStockLevels));
       }
 
       const logs = [
@@ -1940,6 +1952,105 @@ function AppContent() {
     }
   };
 
+  // Helper to deduct stock for order items using FIFO
+  const deductOrderStock = (
+    items: CartItem[],
+    currentStockLevels: Record<string, number>,
+    currentIngredientsInventory: IngredientStock[],
+    currentStockBatches: StockBatch[] = stockBatches
+  ) => {
+    return deductFIFOOrderStock(items, currentStockLevels, currentIngredientsInventory, currentStockBatches);
+  };
+
+  // Edit / Update Existing Order (with optional stock sync)
+  const handleEditOrder = async (updatedOrder: Order, oldOrder?: Order, syncStock: boolean = true) => {
+    let currentStock = { ...stockLevels };
+    let currentIngs = [...ingredientsInventory];
+    let currentBatches = [...stockBatches];
+
+    if (syncStock) {
+      if (oldOrder && oldOrder.status !== 'cancelled') {
+        const restored = restoreOrderStock(oldOrder.items, currentStock, currentIngs, currentBatches);
+        currentStock = restored.updatedStockLevels;
+        currentIngs = restored.updatedIngredients;
+        currentBatches = restored.updatedBatches;
+      }
+      if (updatedOrder.status !== 'cancelled') {
+        const deducted = deductOrderStock(updatedOrder.items, currentStock, currentIngs, currentBatches);
+        currentStock = deducted.updatedStockLevels;
+        currentIngs = deducted.updatedIngredients;
+        currentBatches = deducted.updatedBatches;
+      }
+      setStockLevels(currentStock);
+      setIngredientsInventory(currentIngs);
+      saveStockBatches(currentBatches);
+      localStorage.setItem('curvada_stock_levels', JSON.stringify(currentStock));
+    }
+
+    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+
+    try {
+      const res = await fetch('/api/orders/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order: updatedOrder,
+          stockLevels: syncStock ? currentStock : undefined,
+          ingredientsInventory: syncStock ? currentIngs : undefined
+        })
+      });
+      const data = await res.json();
+      if (data?.db?.orders) setOrders(data.db.orders);
+      if (syncStock) {
+        if (data?.db?.stockLevels) setStockLevels(data.db.stockLevels);
+        if (data?.db?.ingredientsInventory) setIngredientsInventory(data.db.ingredientsInventory);
+      }
+    } catch (e) {
+      console.error('Failed to update order on server', e);
+    }
+  };
+
+  // Delete / Void Order (with optional stock restoration)
+  const handleDeleteOrder = async (orderId: string, restoreStock: boolean = true) => {
+    const o = orders.find((ord) => ord.id === orderId);
+    let currentStock = { ...stockLevels };
+    let currentIngs = [...ingredientsInventory];
+    let currentBatches = [...stockBatches];
+
+    if (restoreStock && o && o.status !== 'cancelled') {
+      const restored = restoreOrderStock(o.items, currentStock, currentIngs, currentBatches);
+      currentStock = restored.updatedStockLevels;
+      currentIngs = restored.updatedIngredients;
+      currentBatches = restored.updatedBatches;
+      setStockLevels(currentStock);
+      setIngredientsInventory(currentIngs);
+      saveStockBatches(currentBatches);
+      localStorage.setItem('curvada_stock_levels', JSON.stringify(currentStock));
+    }
+
+    setOrders((prev) => prev.filter((ord) => ord.id !== orderId));
+
+    try {
+      const res = await fetch('/api/orders/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          stockLevels: restoreStock ? currentStock : undefined,
+          ingredientsInventory: restoreStock ? currentIngs : undefined
+        })
+      });
+      const data = await res.json();
+      if (data?.db?.orders) setOrders(data.db.orders);
+      if (restoreStock) {
+        if (data?.db?.stockLevels) setStockLevels(data.db.stockLevels);
+        if (data?.db?.ingredientsInventory) setIngredientsInventory(data.db.ingredientsInventory);
+      }
+    } catch (e) {
+      console.error('Failed to delete order on server', e);
+    }
+  };
+
   // Toggle item availability
   const handleToggleItemAvailability = async (itemId: string) => {
     let newUnavailable: string[];
@@ -2256,6 +2367,12 @@ function AppContent() {
               onStartItemCooking={handleStartItemCooking}
               onManualPlaceOrder={handleManualPlaceOrder}
               onUpdateConfirmationCallStatus={handleUpdateConfirmationCallStatus}
+              onEditOrder={handleEditOrder}
+              onDeleteOrder={handleDeleteOrder}
+              stockBatches={stockBatches}
+              onAddStockBatch={handleAddStockBatch}
+              onUpdateStockBatch={handleUpdateStockBatch}
+              onDeleteStockBatch={handleDeleteStockBatch}
             />
           </div>
         )}

@@ -1,0 +1,40 @@
+name: Curvada's Kitchen Web App CI/CD
+
+on:
+  push:
+    branches:
+      - main       # Production
+      - staging    # Staging
+      - develop    # Development
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'vite.config.ts'
+      - '.github/workflows/webapp-ci-cd.yml'
+  pull_request:
+    branches:
+      - main
+      - staging
+      - develop
+
+jobs:
+  build-webapp:
+    name: Build & Validate Web App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Web App
+        run: npm run build
