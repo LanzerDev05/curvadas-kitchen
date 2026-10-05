@@ -1,14 +1,13 @@
 services:
-  # ==========================================
-  # 1. Curvada's Kitchen Standalone Backend
-  # ==========================================
+  # ==============================================================================
+  # 🍛 Curvada's Kitchen — 1 Unified Web Service (Backend API + Web App + WebSocket)
+  # ==============================================================================
   - type: web
-    name: curvadas-backend
+    name: curvadas-kitchen
     runtime: node
-    rootDir: backend
     plan: starter
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    buildCommand: npm install && npm run build && cd backend && npm install && npm run build
+    startCommand: cd backend && npm start
     envVars:
       - key: NODE_ENV
         value: production
@@ -17,32 +16,10 @@ services:
       - key: PORT
         value: 10000
       - key: MONGODB_URI
-        sync: false # Set securely in Render dashboard
+        sync: false # Set in Render Dashboard
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 7d
       - key: CORS_ORIGIN
         value: '*'
-
-  # ==========================================
-  # 2. Curvada's Kitchen Web App (React)
-  # ==========================================
-  - type: web
-    name: curvadas-webapp
-    runtime: static
-    plan: starter
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: VITE_APP_ENV
-        value: production
-      - key: VITE_BACKEND_URL
-        fromService:
-          type: web
-          name: curvadas-backend
-          property: host

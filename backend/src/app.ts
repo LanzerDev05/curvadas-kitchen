@@ -1,5 +1,7 @@
 import express, { Express } from 'express';
 import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
 import { ENV } from './config/env';
 import { container } from './core/di/container';
 import { errorHandler } from './shared/middleware/errorHandler';
@@ -51,6 +53,26 @@ export const createApp = (): Express => {
   legacyApi.post('/spoilage', container.inventoryController.logSpoilage);
 
   app.use('/api', legacyApi);
+
+  // Single Render Deploy Support: Serve React Frontend static assets if available
+  const possibleDistPaths = [
+    path.resolve(process.cwd(), '../dist'),
+    path.resolve(process.cwd(), 'dist/public'),
+    path.resolve(process.cwd(), 'public'),
+  ];
+
+  for (const distPath of possibleDistPaths) {
+    if (fs.existsSync(distPath) && fs.existsSync(path.resolve(distPath, 'index.html'))) {
+      app.use(express.static(distPath));
+      app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api') || req.path.startsWith('/ws') || req.path === '/health') {
+          return next();
+        }
+        res.sendFile(path.resolve(distPath, 'index.html'));
+      });
+      break;
+    }
+  }
 
   // Global Error Handler
   app.use(errorHandler);
