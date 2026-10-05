@@ -192,7 +192,7 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-display font-black text-white text-base sm:text-lg uppercase tracking-tight">
-                  Edit Order #{order.id.slice(0, 8)}
+                  Edit Order #{String(order.id || (order as any)._id || 'ORD00000').slice(0, 8)}
                 </h3>
                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider font-mono border ${
                   status === 'delivered' ? 'bg-green-500/10 text-green-400 border-green-500/30' :
@@ -621,8 +621,9 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (confirm(`Permanently delete Order #${order.id.slice(0, 8)}? This cannot be undone.`)) {
-                  onDelete(order.id);
+                const safeId = String(order.id || (order as any)._id || '');
+                if (confirm(`Permanently delete Order #${safeId.slice(0, 8)}? This cannot be undone.`)) {
+                  onDelete(safeId);
                   onClose();
                 }
               }}

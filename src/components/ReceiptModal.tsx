@@ -151,10 +151,10 @@ export default function ReceiptModal({
                       <div className="flex items-center justify-between bg-gray-100 px-2.5 py-1 rounded-lg text-[11px] font-black my-1 border border-gray-300">
                         <span className="text-gray-600">QUEUE PRIORITY:</span>
                         <span className="text-black font-mono text-sm font-black">
-                          #{String(order.queueNumber || (parseInt(order.id.replace(/\D/g, '').slice(-2), 10) || 1)).padStart(2, '0')}
+                          #{String(order.queueNumber || (parseInt(String(order.id || (order as any)._id || '1').replace(/\D/g, '').slice(-2), 10) || 1)).padStart(2, '0')}
                         </span>
                       </div>
-                      <p className="text-[11px] font-black">RECEIPT #{order.id.slice(0, 8).toUpperCase()}</p>
+                      <p className="text-[11px] font-black">RECEIPT #{String(order.id || (order as any)._id || 'ORD00000').slice(0, 8).toUpperCase()}</p>
                       <p className="text-[9px] text-gray-600">{new Date(order.timestamp).toLocaleString()}</p>
                     </div>
                   </div>
@@ -315,9 +315,9 @@ export default function ReceiptModal({
                     <div className="bg-black text-white py-1.5 px-3 rounded-xl font-black flex items-center justify-between my-1">
                       <span className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">QUEUE PRIO:</span>
                       <span className="text-brand-gold text-xl font-black font-mono tracking-wider">
-                        #{String(order.queueNumber || (parseInt(order.id.replace(/\D/g, '').slice(-2), 10) || 1)).padStart(2, '0')}
+                        #{String(order.queueNumber || (parseInt(String(order.id || (order as any)._id || '1').replace(/\D/g, '').slice(-2), 10) || 1)).padStart(2, '0')}
                       </span>
-                      <span className="text-[9px] text-gray-300 font-mono">#{order.id.slice(0, 8).toUpperCase()}</span>
+                      <span className="text-[9px] text-gray-300 font-mono">#{String(order.id || (order as any)._id || 'ORD00000').slice(0, 8).toUpperCase()}</span>
                     </div>
 
                     <p className="text-[9px] text-gray-700">{new Date(order.timestamp).toLocaleTimeString()} - {new Date(order.timestamp).toLocaleDateString()}</p>

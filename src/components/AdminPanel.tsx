@@ -1703,7 +1703,7 @@ function AdminPanel({
         <div className="flex items-center justify-between pb-2 border-b border-white/5">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] font-black text-white/50 uppercase">
-              #{order.id.slice(0, 8)}
+              #{String(order.id || (order as any)._id || 'ORD00000').slice(0, 8)}
             </span>
             <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
               elapsedMinutes > 15 ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse' :
@@ -1854,7 +1854,7 @@ function AdminPanel({
                 </a>
 
                 <a
-                  href={`sms:${order.customer.phone}?body=Hi ${encodeURIComponent(order.customer.name)}, this is Curvada's Kitchen regarding your COD order #${order.id.slice(0, 8)}. Please confirm your order so we can cook!`}
+                  href={`sms:${order.customer.phone}?body=Hi ${encodeURIComponent(order.customer.name)}, this is Curvada's Kitchen regarding your COD order #${String(order.id || (order as any)._id || 'ORD00000').slice(0, 8)}. Please confirm your order so we can cook!`}
                   className="py-1 px-1 rounded-lg bg-[#1c1c1a] hover:bg-blue-600/30 text-blue-400 hover:text-white border border-white/5 hover:border-blue-500/30 text-[9px] font-bold flex items-center justify-center gap-1 transition-all text-center"
                   title="Send SMS"
                 >
@@ -2150,9 +2150,10 @@ function AdminPanel({
                     <button
                       type="button"
                       onClick={() => {
-                        if (confirm(`Cancel and report order #${order.id.slice(0, 8)} as a Bogus / Fake order?`)) {
-                          onUpdateOrderStatus(order.id, 'cancelled');
-                          onUpdateConfirmationCallStatus?.(order.id, 'rejected', true);
+                        const safeId = String(order.id || (order as any)._id || '');
+                        if (confirm(`Cancel and report order #${safeId.slice(0, 8)} as a Bogus / Fake order?`)) {
+                          onUpdateOrderStatus(safeId, 'cancelled');
+                          onUpdateConfirmationCallStatus?.(safeId, 'rejected', true);
                         }
                       }}
                       className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white text-[9.5px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-red-500/20 flex items-center justify-center gap-1.5 animate-pulse"
@@ -3107,7 +3108,7 @@ function AdminPanel({
                   <div className="space-y-2 min-w-0 flex-1">
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <span className="font-mono font-black text-white text-sm">
-                        #{order.id.slice(0, 8)}
+                        #{String(order.id || (order as any)._id || 'ORD00000').slice(0, 8)}
                       </span>
                       <span className="text-gray-500 text-xs font-mono">
                         📅 {new Date(order.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -3197,8 +3198,9 @@ function AdminPanel({
                         <button
                           type="button"
                           onClick={() => {
-                            if (confirm(`Are you sure you want to permanently delete Order #${order.id.slice(0, 8)}? This will restore any deducted stocks if applicable.`)) {
-                              onDeleteOrder(order.id);
+                            const safeId = String(order.id || (order as any)._id || '');
+                            if (confirm(`Are you sure you want to permanently delete Order #${safeId.slice(0, 8)}? This will restore any deducted stocks if applicable.`)) {
+                              onDeleteOrder(safeId);
                             }
                           }}
                           className="px-2.5 py-2 rounded-xl bg-brand-red/10 hover:bg-brand-red/20 border border-brand-red/30 text-brand-red text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shadow-sm"
@@ -3497,7 +3499,7 @@ function AdminPanel({
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b-2 border-white/5 mb-3 text-xs">
                             <div className="flex items-center gap-2">
                               <span className="font-display font-bold text-white text-sm">
-                                Order #{order.id.slice(0, 8)}
+                                Order #{String(order.id || (order as any)._id || 'ORD00000').slice(0, 8)}
                               </span>
                               <span className="text-white/10">|</span>
                               <span className="text-gray-500 font-mono">
@@ -3665,7 +3667,7 @@ function AdminPanel({
                                         <PhoneCall className="w-2.5 h-2.5" /> Call
                                       </a>
                                       <a
-                                        href={`sms:${order.customer.phone}?body=Hi ${encodeURIComponent(order.customer.name)}, Curvada's Kitchen received your COD order #${order.id.slice(0, 8)}. Please confirm!`}
+                                        href={`sms:${order.customer.phone}?body=Hi ${encodeURIComponent(order.customer.name)}, Curvada's Kitchen received your COD order #${String(order.id || (order as any)._id || 'ORD00000').slice(0, 8)}. Please confirm!`}
                                         className="px-2 py-0.5 rounded bg-black/40 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 text-[9px] font-bold flex items-center gap-1"
                                       >
                                         <MessageSquare className="w-2.5 h-2.5" /> SMS
@@ -3754,9 +3756,10 @@ function AdminPanel({
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        if (confirm(`Cancel and report order #${order.id.slice(0, 8)} as a Bogus / Fake order?`)) {
-                                          onUpdateOrderStatus(order.id, 'cancelled');
-                                          onUpdateConfirmationCallStatus?.(order.id, 'rejected', true);
+                                        const safeId = String(order.id || (order as any)._id || '');
+                                        if (confirm(`Cancel and report order #${safeId.slice(0, 8)} as a Bogus / Fake order?`)) {
+                                          onUpdateOrderStatus(safeId, 'cancelled');
+                                          onUpdateConfirmationCallStatus?.(safeId, 'rejected', true);
                                         }
                                       }}
                                       className="py-2 px-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-black uppercase tracking-wider text-[10px] shadow-lg shadow-red-500/20 cursor-pointer flex items-center gap-1 animate-pulse"
@@ -16217,7 +16220,7 @@ ${standaloneIngredients.map((item, idx) => {
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="font-display font-black text-white text-base sm:text-lg uppercase tracking-tight">
-                        Order #{order.id.slice(0, 8)}
+                        Order #{String(order.id || (order as any)._id || 'ORD00000').slice(0, 8)}
                       </h4>
                       {order.queueNumber && (
                         <span className="text-[10px] bg-brand-gold/20 text-brand-gold font-mono font-black px-2 py-0.5 rounded-lg border border-brand-gold/30">
@@ -16308,7 +16311,7 @@ ${standaloneIngredients.map((item, idx) => {
                         <span>Call</span>
                       </a>
                       <a
-                        href={`sms:${order.customer.phone}?body=Hi ${encodeURIComponent(order.customer.name)}, Curvada's Kitchen here regarding order #${order.id.slice(0, 8)}. Please confirm your order!`}
+                        href={`sms:${order.customer.phone}?body=Hi ${encodeURIComponent(order.customer.name)}, Curvada's Kitchen here regarding order #${String(order.id || (order as any)._id || 'ORD00000').slice(0, 8)}. Please confirm your order!`}
                         className="flex-1 sm:flex-initial py-1.5 px-3 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[9.5px] font-bold flex items-center justify-center gap-1.5 transition-all"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
@@ -16343,9 +16346,10 @@ ${standaloneIngredients.map((item, idx) => {
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm(`Flag order #${order.id.slice(0, 8)} as Fake/Bogus and cancel it?`)) {
-                                onUpdateOrderStatus(order.id, 'cancelled');
-                                onUpdateConfirmationCallStatus(order.id, 'rejected', true);
+                              const safeId = String(order.id || (order as any)._id || '');
+                              if (confirm(`Flag order #${safeId.slice(0, 8)} as Fake/Bogus and cancel it?`)) {
+                                onUpdateOrderStatus(safeId, 'cancelled');
+                                onUpdateConfirmationCallStatus(safeId, 'rejected', true);
                               }
                             }}
                             className={`py-1.5 px-2.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer ${
@@ -16671,9 +16675,10 @@ ${standaloneIngredients.map((item, idx) => {
                         <button
                           type="button"
                           onClick={() => {
-                            if (confirm(`Cancel and report order #${order.id.slice(0, 8)} as a Bogus/Fake order?`)) {
-                              onUpdateOrderStatus(order.id, 'cancelled');
-                              onUpdateConfirmationCallStatus?.(order.id, 'rejected', true);
+                            const safeId = String(order.id || (order as any)._id || '');
+                            if (confirm(`Cancel and report order #${safeId.slice(0, 8)} as a Bogus/Fake order?`)) {
+                              onUpdateOrderStatus(safeId, 'cancelled');
+                              onUpdateConfirmationCallStatus?.(safeId, 'rejected', true);
                               setViewingOrderDetails(null);
                             }
                           }}

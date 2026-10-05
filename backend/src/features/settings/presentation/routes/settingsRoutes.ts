@@ -114,28 +114,35 @@ export class SettingsController {
         SettingModel.findOne() || SettingModel.create({}),
       ]);
 
+      const normalize = (doc: any) => {
+        if (!doc) return doc;
+        const obj = typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
+        obj.id = obj.customId || obj.id || (obj._id ? obj._id.toString() : undefined);
+        return obj;
+      };
+
       const stockLevels: Record<string, number> = {};
       menuItems.forEach((m: any) => {
-        const id = m.customId || m._id.toString();
-        stockLevels[id] = 20; // fallback standard level
+        const id = m.customId || m.id || m._id?.toString();
+        if (id) stockLevels[id] = 20; // fallback standard level
       });
 
       res.status(200).json({
-        menuItems,
-        ingredientsInventory,
-        stockBatches,
+        menuItems: menuItems.map(normalize),
+        ingredientsInventory: ingredientsInventory.map(normalize),
+        stockBatches: stockBatches.map(normalize),
         stockLevels,
         manualStockOverrides: [],
         hiddenCategories: [],
-        orders,
+        orders: orders.map(normalize),
         groupSessions: [],
-        users,
-        promoVouchers,
-        spoilageLogs,
-        staffShifts,
-        zReadAudits,
-        tables,
-        settings,
+        users: users.map(normalize),
+        promoVouchers: promoVouchers.map(normalize),
+        spoilageLogs: spoilageLogs.map(normalize),
+        staffShifts: staffShifts.map(normalize),
+        zReadAudits: zReadAudits.map(normalize),
+        tables: tables.map(normalize),
+        settings: typeof (settings as any)?.toObject === 'function' ? (settings as any).toObject() : settings,
       });
     } catch (err) {
       next(err);

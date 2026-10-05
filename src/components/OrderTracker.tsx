@@ -202,7 +202,7 @@ function OrderTracker({
                           : 'bg-[#181818] text-gray-300 border-white/10 hover:border-white/20'
                       }`}
                     >
-                      <span className="font-mono">#{ord.id.slice(0, 8).toUpperCase()}</span>
+                      <span className="font-mono">#{String(ord.id || (ord as any)._id || 'ORD00000').slice(0, 8).toUpperCase()}</span>
                       <span className={`text-[9px] uppercase font-mono px-1.5 py-0.5 rounded-md border ${
                         isSelected ? 'bg-black/30 border-white/20 text-white' : ordStatusColor
                       }`}>
@@ -226,7 +226,7 @@ function OrderTracker({
                 </span>
               </div>
               <h3 className="font-display font-black text-white text-lg mt-1.5 flex items-center gap-2 uppercase tracking-tight">
-                Order #{id.slice(0, 8)}
+                Order #{String(id || 'ORD00000').slice(0, 8)}
                 {status === 'preparing' && <Loader2 className="w-4 h-4 text-brand-red animate-spin" />}
               </h3>
             </div>

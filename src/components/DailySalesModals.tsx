@@ -124,7 +124,7 @@ ${dishSalesStats.map((d, i) => `${i + 1}. ${d.menuItem.name}: ${d.qty} plates = 
   const handleExportCSV = () => {
     const headers = ['Order ID', 'Time', 'Customer Name', 'Contact Phone', 'Fulfillment', 'Payment Method', 'Status', 'Total (PHP)', 'Dishes Summary'];
     const rows = dayOrders.map((o) => [
-      `#${o.id.slice(0, 8)}`,
+      `#${String(o.id || (o as any)._id || 'ORD00000').slice(0, 8)}`,
       new Date(o.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       `"${o.customer.name}"`,
       `"${o.customer.phone}"`,
@@ -361,7 +361,7 @@ ${dishSalesStats.map((d, i) => `${i + 1}. ${d.menuItem.name}: ${d.qty} plates = 
                   >
                     <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono font-bold text-white text-xs">#{o.id.slice(0, 8)}</span>
+                        <span className="font-mono font-bold text-white text-xs">#{String(o.id || (o as any)._id || 'ORD00000').slice(0, 8)}</span>
                         <span className="text-[10px] text-gray-500 font-mono">
                           {new Date(o.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>

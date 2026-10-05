@@ -82,7 +82,7 @@ export default function OrderHistory({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 border-white/5 pb-3 text-xs">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="font-display font-black text-white text-sm uppercase tracking-tight">
-                      Order #{order.id.slice(0, 8)}
+                      Order #{String(order.id || (order as any)._id || 'ORD00000').slice(0, 8)}
                     </span>
                     <span className="text-white/10">|</span>
                     <span className="text-gray-400 flex items-center gap-1 font-semibold">

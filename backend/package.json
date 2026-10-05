@@ -4,9 +4,9 @@
   "description": "Curvada's Kitchen Standalone REST & WebSocket Backend API",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "tsx src/server.ts",
-    "dev:stg": "cross-env APP_ENV=stg tsx src/server.ts",
-    "dev:prod": "cross-env APP_ENV=prod tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "dev:stg": "cross-env APP_ENV=stg tsx watch src/server.ts",
+    "dev:prod": "cross-env APP_ENV=prod tsx watch src/server.ts",
     "build": "tsc",
     "start": "cross-env APP_ENV=prod node dist/server.js",
     "start:stg": "cross-env APP_ENV=stg node dist/server.js",
