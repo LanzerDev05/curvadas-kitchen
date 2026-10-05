@@ -24,6 +24,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { calculateFIFODishCost, calculateStockLossReport, getFIFOBatchesForIngredient } from '../services/fifoStockService';
+import { SearchableSelect } from './SearchableSelect';
 
 interface FifoStockModalProps {
   isOpen: boolean;
@@ -117,6 +118,23 @@ export const FifoStockModal: React.FC<FifoStockModalProps> = ({
       if (ing.supplier?.name) setIntakeSupplier(ing.supplier.name);
     }
   };
+
+  const ingredientFilterOptions = useMemo(() => [
+    { value: 'all', label: `All Pantry Ingredients (${ingredientsInventory.length})` },
+    ...ingredientsInventory.map(ing => ({
+      value: ing.id,
+      label: ing.name,
+      sublabel: `Stock: ${ing.quantity} ${ing.unit}`,
+      badge: ing.unit,
+    }))
+  ], [ingredientsInventory]);
+
+  const intakeIngredientOptions = useMemo(() => ingredientsInventory.map(ing => ({
+    value: ing.id,
+    label: ing.name,
+    sublabel: `Current: ${ing.quantity} ${ing.unit} • ₱${(ing.costPerUnit || 0).toFixed(2)}/${ing.unit}`,
+    badge: ing.unit,
+  })), [ingredientsInventory]);
 
   // Stock Loss & Valuation Metrics
   const lossReport = useMemo(() => {
@@ -469,16 +487,15 @@ ${squeezedDishes.length > 0
 
                 {/* Ingredient Dropdown */}
                 <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
-                  <select
-                    value={selectedIngredientFilter}
-                    onChange={(e) => setSelectedIngredientFilter(e.target.value)}
-                    className="bg-[#0D0D0C] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-brand-gold font-bold focus:outline-none focus:border-brand-gold cursor-pointer"
-                  >
-                    <option value="all">All Pantry Ingredients ({ingredientsInventory.length})</option>
-                    {ingredientsInventory.map(ing => (
-                      <option key={ing.id} value={ing.id}>{ing.name} ({ing.quantity} {ing.unit})</option>
-                    ))}
-                  </select>
+                  <div className="w-full sm:w-64">
+                    <SearchableSelect
+                      options={ingredientFilterOptions}
+                      value={selectedIngredientFilter}
+                      onChange={setSelectedIngredientFilter}
+                      placeholder="Filter by ingredient..."
+                      searchPlaceholder="Search ingredient..."
+                    />
+                  </div>
 
                   {/* Status Filter */}
                   <select
@@ -936,18 +953,13 @@ ${squeezedDishes.length > 0
                   <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider block mb-1">
                     Select Ingredient <span className="text-brand-red">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={intakeIngredientOptions}
                     value={intakeIngId}
-                    onChange={(e) => handleIntakeIngredientChange(e.target.value)}
-                    className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-3 py-2 text-sm text-brand-gold font-bold focus:outline-none focus:border-brand-gold cursor-pointer"
-                    required
-                  >
-                    {ingredientsInventory.map(ing => (
-                      <option key={ing.id} value={ing.id}>
-                        {ing.name} (Current Stock: {ing.quantity} {ing.unit})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => handleIntakeIngredientChange(val)}
+                    placeholder="Search and select ingredient..."
+                    searchPlaceholder="Type ingredient name (e.g. Beef Tapa, Rice, Eggs)..."
+                  />
                 </div>
 
                 {/* 2. Batch Number & Invoice */}

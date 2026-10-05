@@ -112,5 +112,39 @@
   }
 }
 
+/* ==============================================================================
+   Universal High-Contrast Inputs & Selects (Dark Mode & Windows Native Dropdowns)
+   ============================================================================== */
+select, option, input, textarea {
+  color: #FFFFFF !important;
+}
 
+select option {
+  background-color: #181818 !important;
+  color: #FFFFFF !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  padding: 8px 12px !important;
+}
 
+select option:checked {
+  background-color: #D31F24 !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+}
+
+select option:hover {
+  background-color: #222222 !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #9CA3AF !important;
+  opacity: 1 !important;
+}
+
+/* Custom focus ring enhancement */
+input:focus, select:focus, textarea:focus {
+  outline: none !important;
+  border-color: #F2C94C !important;
+  box-shadow: 0 0 0 1px rgba(242, 201, 76, 0.4) !important;
+}

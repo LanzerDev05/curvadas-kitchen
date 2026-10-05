@@ -87,14 +87,24 @@ export default function MenuSection({
           
           {/* Search Bar */}
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-500" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400 pointer-events-none" />
             <input
               type="text"
               placeholder="Search dishes (e.g. Tapsilog, Bento, Red Tea)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#181818] text-white rounded-xl py-3 pl-12 pr-4 text-sm border-2 border-white/5 focus:border-brand-red focus:outline-none transition-all placeholder:text-gray-500"
+              className="w-full bg-[#181818] text-white font-semibold rounded-xl py-3 pl-12 pr-10 text-sm border-2 border-white/15 focus:border-brand-red focus:ring-1 focus:ring-brand-red/30 focus:outline-none transition-all placeholder:text-gray-400 shadow-inner"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-all"
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
           {/* Quick Toggle Tags (Spicy / Popular) */}

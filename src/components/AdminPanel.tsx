@@ -3014,13 +3014,13 @@ function AdminPanel({
             {/* Status & Search */}
             <div className="flex items-center gap-3 w-full lg:w-auto flex-1 max-w-xl">
               <div className="relative flex-1">
-                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
                   placeholder="Search Order #, Customer, Phone, or Dish Item..."
                   value={archiveSearchQuery}
                   onChange={(e) => setArchiveSearchQuery(e.target.value)}
-                  className="w-full bg-[#0D0D0C] border border-white/10 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold font-medium"
+                  className="w-full bg-[#0D0D0C] border border-white/20 rounded-2xl pl-10 pr-8 py-2.5 text-xs text-white font-semibold placeholder-gray-400 focus:outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold/30 shadow-inner"
                 />
                 {archiveSearchQuery && (
                   <button
@@ -8523,14 +8523,24 @@ function AdminPanel({
               {/* Filters and Actions */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
-                  <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5 pointer-events-none" />
                   <input
                     type="text"
                     value={stockSearchQuery}
                     onChange={(e) => setStockSearchQuery(e.target.value)}
                     placeholder={stockViewMode === 'ingredients' ? "Search ingredients..." : "Search dishes..."}
-                    className="pl-9 pr-4 py-1.5 w-48 sm:w-60 bg-[#0D0D0C] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-brand-red"
+                    className="pl-9 pr-8 py-1.5 w-48 sm:w-60 bg-[#0D0D0C] border border-white/20 rounded-xl text-xs text-white font-semibold placeholder-gray-400 focus:outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold/30 transition-all shadow-inner"
                   />
+                  {stockSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setStockSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white"
+                      title="Clear search"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
 
                 {stockViewMode === 'recipes' && (
@@ -9259,14 +9269,24 @@ function AdminPanel({
 
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
-                  <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5 pointer-events-none" />
                   <input
                     type="text"
                     value={builderSearchQuery}
                     onChange={(e) => setBuilderSearchQuery(e.target.value)}
                     placeholder="Search recipes..."
-                    className="pl-9 pr-4 py-1.5 w-44 sm:w-52 bg-[#0D0D0C] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-brand-red"
+                    className="pl-9 pr-8 py-1.5 w-44 sm:w-56 bg-[#0D0D0C] border border-white/20 rounded-xl text-xs text-white font-semibold placeholder-gray-400 focus:outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold/30 transition-all shadow-inner"
                   />
+                  {builderSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setBuilderSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white"
+                      title="Clear search"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
 
                 <select
@@ -17190,14 +17210,24 @@ ${standaloneIngredients.map((item, idx) => {
                   {/* Category Filter & Search Bar */}
                   <div className="p-3 border-b border-white/5 space-y-2 flex-shrink-0 bg-[#141413]">
                     <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
                         type="text"
                         placeholder="Search menu..."
                         value={posSearchQuery}
                         onChange={(e) => setPosSearchQuery(e.target.value)}
-                        className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                        className="w-full bg-[#0D0D0C] border border-white/20 rounded-xl pl-9 pr-8 py-1.5 text-xs text-white font-semibold placeholder-gray-400 focus:outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold/30 transition-all shadow-inner"
                       />
+                      {posSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setPosSearchQuery('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white"
+                          title="Clear search"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar">
