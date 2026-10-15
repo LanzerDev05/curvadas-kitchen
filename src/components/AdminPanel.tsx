@@ -77,7 +77,7 @@ import {
   ExternalLink,
   AlertCircle,
   CheckCircle2,
-  Map
+  Map as MapIcon
 } from 'lucide-react';
 import ReceiptModal from './ReceiptModal';
 import BluetoothPrinterModal from './BluetoothPrinterModal';
@@ -85,6 +85,7 @@ import CustomizeModal from './CustomizeModal';
 import EditOrderModal from './EditOrderModal';
 import { DailyBreakdownModal, DailyStockAuditModal } from './DailySalesModals';
 import FifoStockModal from './FifoStockModal';
+import { SearchableSelect } from './SearchableSelect';
 import { bluetoothPrinter, PrinterStatus } from '../services/bluetoothPrinter';
 
 
@@ -265,33 +266,77 @@ const calculateDishRecipeCost = (item: MenuItem, ingredientsInventory: Ingredien
     }
   };
 
+  const processedNames = new Set<string>();
+
   if (item.recipeRequirements && item.recipeRequirements.length > 0) {
     item.recipeRequirements.forEach((req) => {
-      const ing = ingredientsInventory.find(
-        (i) => i.name.toLowerCase() === req.name.toLowerCase()
-      );
+      const ing = findMatchingIngredientInInventory(req.name, ingredientsInventory);
       const unit = ing ? ing.unit : 'g';
-      const unitPrice = getUnitPriceLocal(unit, ing?.id);
+      const unitPrice = (ing && ing.costPerUnit !== undefined && ing.costPerUnit !== null)
+        ? ing.costPerUnit
+        : getUnitPriceLocal(unit, ing?.id);
       const amountFactor = unit === 'kg' ? req.amount / 1000 : req.amount;
       const cost = amountFactor * unitPrice;
       totalCost += cost;
+      processedNames.add(req.name.toLowerCase().trim());
       breakDown.push({ name: req.name, amount: req.amount, unit, cost });
     });
   } else if (item.ingredients && item.ingredients.length > 0) {
     item.ingredients.forEach((ingName) => {
-      const ing = ingredientsInventory.find(
-        (i) => i.name.toLowerCase() === ingName.toLowerCase()
-      );
+      const ing = findMatchingIngredientInInventory(ingName, ingredientsInventory);
       const unit = ing ? ing.unit : 'g';
       const reqAmount = (unit === 'pcs' || unit === 'cans') ? 1 : unit === 'kg' ? 0.1 : 100;
-      const unitPrice = getUnitPriceLocal(unit, ing?.id);
+      const unitPrice = (ing && ing.costPerUnit !== undefined && ing.costPerUnit !== null)
+        ? ing.costPerUnit
+        : getUnitPriceLocal(unit, ing?.id);
       const cost = reqAmount * unitPrice;
       totalCost += cost;
+      processedNames.add(ingName.toLowerCase().trim());
       breakDown.push({ name: ingName, amount: reqAmount, unit, cost });
     });
   } else {
     // Fallback COGS estimate at 35%
     totalCost = item.price * 0.35;
+  }
+
+  // Include garnishes if they were not already processed in recipeRequirements/ingredients
+  if (item.garnishes && item.garnishes.length > 0) {
+    item.garnishes.filter(g => g.selected).forEach((g) => {
+      const gNameClean = (g.name || '').toLowerCase().trim();
+      if (!processedNames.has(gNameClean)) {
+        const inv = findMatchingIngredientInInventory(g.name, ingredientsInventory);
+        const gUnit = (g.unit || inv?.unit || 'pcs').toLowerCase();
+        const isVol = gUnit === 'g' || gUnit === 'ml';
+        const rawRate = inv ? (Number(inv.costPerUnit) || 0) : (g.costPerUnit || 0);
+        const effectiveRate = (() => {
+          if (isVol && rawRate > 0) {
+            const iu = (inv?.unit || '').toLowerCase();
+            if (iu === 'g' || iu === 'ml') return rawRate;
+            if (iu === 'kg' || iu === 'l') return rawRate / 1000;
+          }
+          return g.costPerUnit || rawRate || 0;
+        })();
+        const cost = effectiveRate * (Number(g.amount) || 1);
+        totalCost += cost;
+        processedNames.add(gNameClean);
+        breakDown.push({ name: g.name, amount: Number(g.amount) || 1, unit: gUnit, cost });
+      }
+    });
+  }
+
+  // Include packaging if not already in recipeRequirements/ingredients
+  if (item.packaging && item.packaging.length > 0) {
+    item.packaging.filter(p => p.selected).forEach((p) => {
+      const pNameClean = (p.name || '').toLowerCase().trim();
+      if (!processedNames.has(pNameClean)) {
+        const inv = findMatchingIngredientInInventory(p.name, ingredientsInventory);
+        const pRate = inv ? (Number(inv.costPerUnit) || 0) : (p.costPerUnit || 0);
+        const cost = pRate * (Number(p.amount) || 1);
+        totalCost += cost;
+        processedNames.add(pNameClean);
+        breakDown.push({ name: p.name, amount: Number(p.amount) || 1, unit: p.unit || 'pcs', cost });
+      }
+    });
   }
 
   const profit = item.price - totalCost;
@@ -323,6 +368,13 @@ interface SmartProfitModalProps {
   initialMenuItemId?: string;
 }
 
+interface MultiItemConfig {
+  selected: boolean;
+  dailyUnits: number;
+  price: number;
+  cogs: number;
+}
+
 const SmartProfitModal: React.FC<SmartProfitModalProps> = ({
   isOpen,
   onClose,
@@ -330,8 +382,9 @@ const SmartProfitModal: React.FC<SmartProfitModalProps> = ({
   ingredientsInventory,
   initialMenuItemId,
 }) => {
+  const [simulationMode, setSimulationMode] = React.useState<'multi' | 'single'>('multi');
   const [selectedItemId, setSelectedItemId] = React.useState<string>(initialMenuItemId || (menuItems[0]?.id || ''));
-  const [periodType, setPeriodType] = React.useState<'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'>('daily');
+  const [periodType, setPeriodType] = React.useState<'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'>('monthly');
   const [customDays, setCustomDays] = React.useState<number>(15);
   const [dailyUnits, setDailyUnits] = React.useState<number>(10);
   const [localPrice, setLocalPrice] = React.useState<number>(120);
@@ -339,17 +392,50 @@ const SmartProfitModal: React.FC<SmartProfitModalProps> = ({
   const [customDishName, setCustomDishName] = React.useState<string>('');
   const [isCopied, setIsCopied] = React.useState(false);
 
+  // Multi-menu state
+  const [itemConfigs, setItemConfigs] = React.useState<Record<string, MultiItemConfig>>({});
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = React.useState<string>('all');
+  const [batchVolumeInput, setBatchVolumeInput] = React.useState<number>(10);
+
   // Overheads list with categories and icons
   const [overheads, setOverheads] = React.useState([
     { id: 'elec', label: 'Electricity', amount: 150, enabled: true, icon: '⚡' },
     { id: 'water', label: 'Water & Utilities', amount: 50, enabled: true, icon: '💧' },
     { id: 'gas', label: 'Gas / LPG Fuel', amount: 80, enabled: true, icon: '🔥' },
-    { id: 'labor', label: 'Labor / Crew Wages', amount: 500, enabled: false, icon: '👨‍🍳' },
+    { id: 'labor', label: 'Labor / Crew Wages', amount: 500, enabled: true, icon: '👨‍🍳' },
     { id: 'rent', label: 'Store Rent / Space', amount: 200, enabled: false, icon: '🏠' },
-    { id: 'pkg', label: 'Packaging & Supplies', amount: 50, enabled: false, icon: '📦' },
+    { id: 'pkg', label: 'Packaging & Supplies', amount: 50, enabled: true, icon: '📦' },
   ]);
   const [newExpenseLabel, setNewExpenseLabel] = React.useState('');
   const [newExpenseAmt, setNewExpenseAmt] = React.useState<number | ''>('');
+
+  // Helper to compute dish COGS with full recipe, garnishes, and packaging parity
+  const calculateItemCogs = React.useCallback((item: MenuItem) => {
+    const fin = calculateDishRecipeCost(item, ingredientsInventory);
+    return Number(fin.totalCost.toFixed(2)) || Number((item.price * 0.35).toFixed(2));
+  }, [ingredientsInventory]);
+
+  // Initialize or update item configurations
+  React.useEffect(() => {
+    if (menuItems.length > 0) {
+      setItemConfigs(prev => {
+        const updated = { ...prev };
+        menuItems.forEach(item => {
+          if (!updated[item.id]) {
+            const calculatedCogs = calculateItemCogs(item);
+            updated[item.id] = {
+              selected: true,
+              dailyUnits: 10,
+              price: item.price,
+              cogs: calculatedCogs
+            };
+          }
+        });
+        return updated;
+      });
+    }
+  }, [menuItems, calculateItemCogs]);
 
   // Update selectedItemId if initialMenuItemId changes when opening modal
   React.useEffect(() => {
@@ -360,7 +446,7 @@ const SmartProfitModal: React.FC<SmartProfitModalProps> = ({
     }
   }, [initialMenuItemId, isOpen, menuItems]);
 
-  // When selected dish changes, recalculate COGS & price
+  // When single selected dish changes, recalculate COGS & price
   React.useEffect(() => {
     if (selectedItemId === '__custom__') {
       if (!customDishName) setCustomDishName('Custom Specialty Plate');
@@ -370,37 +456,10 @@ const SmartProfitModal: React.FC<SmartProfitModalProps> = ({
     if (item) {
       setLocalPrice(item.price);
       setCustomDishName(item.name);
-
-      // Calculate accurate COGS
-      const fin = calculateDishRecipeCost(item, ingredientsInventory);
-      let calculatedCogs = fin.totalCost;
-
-      // Add garnishes if any
-      if (item.garnishes && item.garnishes.length > 0) {
-        const garnishCost = item.garnishes.filter(g => g.selected).reduce((acc, g) => {
-          const invItem = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === (g.name || '').toLowerCase());
-          const gUnit = (g.unit || 'pcs').toLowerCase();
-          const isVol = gUnit === 'g' || gUnit === 'ml';
-          const rawRate = invItem ? (Number(invItem.costPerUnit) || 0) : (g.costPerUnit || 0);
-          const effectiveRate = (() => {
-            if (isVol && rawRate > 0) {
-              const iu = (invItem?.unit || '').toLowerCase();
-              if (iu === 'g' || iu === 'ml') return rawRate;
-              if (iu === 'kg' || iu === 'l') return rawRate / 1000;
-            }
-            return g.costPerUnit || rawRate || 0;
-          })();
-          return acc + effectiveRate * (Number(g.amount) || 1);
-        }, 0);
-        calculatedCogs += garnishCost;
-      }
-      setLocalCogs(Number(calculatedCogs.toFixed(2)) || Number((item.price * 0.35).toFixed(2)));
+      const computedCogs = calculateItemCogs(item);
+      setLocalCogs(computedCogs);
     }
-  }, [selectedItemId, menuItems, ingredientsInventory]);
-
-  if (!isOpen) return null;
-
-  const selectedItem = menuItems.find(m => m.id === selectedItemId);
+  }, [selectedItemId, menuItems, calculateItemCogs]);
 
   // Period multiplier in days
   const periodDays = (() => {
@@ -410,7 +469,7 @@ const SmartProfitModal: React.FC<SmartProfitModalProps> = ({
       case 'monthly': return 30;
       case 'yearly': return 365;
       case 'custom': return Math.max(1, customDays);
-      default: return 1;
+      default: return 30;
     }
   })();
 
@@ -421,37 +480,126 @@ const SmartProfitModal: React.FC<SmartProfitModalProps> = ({
       case 'monthly': return 'Monthly (30 Days)';
       case 'yearly': return 'Yearly (365 Days)';
       case 'custom': return `Custom (${periodDays} Days)`;
-      default: return 'Daily';
+      default: return 'Monthly (30 Days)';
     }
   })();
 
-  // Core Math
-  const price = Math.max(0, localPrice);
-  const cogsPerServing = Math.max(0, localCogs);
+  const selectedItem = menuItems.find(m => m.id === selectedItemId);
   const totalDailyOverhead = overheads.filter(o => o.enabled).reduce((s, o) => s + o.amount, 0);
   const totalPeriodOverhead = totalDailyOverhead * periodDays;
 
-  const totalPeriodUnits = dailyUnits * periodDays;
-  const periodRevenue = price * totalPeriodUnits;
-  const periodCogsTotal = cogsPerServing * totalPeriodUnits;
-  const periodGrossProfit = periodRevenue - periodCogsTotal;
-  const periodNetProfit = periodGrossProfit - totalPeriodOverhead;
+  // Single Item Calculations
+  const singlePrice = Math.max(0, localPrice);
+  const singleCogs = Math.max(0, localCogs);
+  const singleTotalPeriodUnits = dailyUnits * periodDays;
+  const singlePeriodRevenue = singlePrice * singleTotalPeriodUnits;
+  const singlePeriodCogsTotal = singleCogs * singleTotalPeriodUnits;
+  const singlePeriodGrossProfit = singlePeriodRevenue - singlePeriodCogsTotal;
+  const singlePeriodNetProfit = singlePeriodGrossProfit - totalPeriodOverhead;
+  const singleUnitGrossSpread = singlePrice - singleCogs;
+  const singleGrossMargin = singlePeriodRevenue > 0 ? (singlePeriodGrossProfit / singlePeriodRevenue) * 100 : 0;
+  const singleNetMargin = singlePeriodRevenue > 0 ? (singlePeriodNetProfit / singlePeriodRevenue) * 100 : 0;
+  const singleDailyBreakEvenUnits = singleUnitGrossSpread > 0 ? Math.ceil(totalDailyOverhead / singleUnitGrossSpread) : 0;
+  const singlePeriodBreakEvenUnits = singleDailyBreakEvenUnits * periodDays;
 
-  const unitGrossSpread = price - cogsPerServing;
-  const grossMargin = periodRevenue > 0 ? (periodGrossProfit / periodRevenue) * 100 : 0;
-  const netMargin = periodRevenue > 0 ? (periodNetProfit / periodRevenue) * 100 : 0;
-  const cogsRatio = periodRevenue > 0 ? (periodCogsTotal / periodRevenue) * 100 : 0;
-  const overheadRatio = periodRevenue > 0 ? (totalPeriodOverhead / periodRevenue) * 100 : 0;
+  // Multi-Menu Calculations
+  const activeMultiItems = React.useMemo(() => {
+    return menuItems.filter(item => itemConfigs[item.id]?.selected);
+  }, [menuItems, itemConfigs]);
 
-  // Break-even
-  const dailyBreakEvenUnits = unitGrossSpread > 0 ? Math.ceil(totalDailyOverhead / unitGrossSpread) : 0;
-  const periodBreakEvenUnits = dailyBreakEvenUnits * periodDays;
+  const multiMetrics = React.useMemo(() => {
+    let combinedDailyRevenue = 0;
+    let combinedDailyCogs = 0;
+    let combinedDailyUnits = 0;
 
-  // Quick Multi-Horizon Projections for the summary matrix
-  const getHorizonMetrics = (days: number) => {
-    const units = dailyUnits * days;
-    const rev = price * units;
-    const cogs = cogsPerServing * units;
+    const itemsSummary = activeMultiItems.map(item => {
+      const cfg = itemConfigs[item.id] || { selected: true, dailyUnits: 10, price: item.price, cogs: item.price * 0.35 };
+      const itemDailyUnits = Math.max(0, cfg.dailyUnits);
+      const itemPrice = Math.max(0, cfg.price);
+      const itemCogs = Math.max(0, cfg.cogs);
+
+      const itemPeriodUnits = itemDailyUnits * periodDays;
+      const itemPeriodRevenue = itemPrice * itemPeriodUnits;
+      const itemPeriodCogs = itemCogs * itemPeriodUnits;
+      const itemPeriodGross = itemPeriodRevenue - itemPeriodCogs;
+      const itemUnitMargin = itemPrice - itemCogs;
+      const itemMarginPct = itemPrice > 0 ? (itemUnitMargin / itemPrice) * 100 : 0;
+
+      combinedDailyRevenue += itemPrice * itemDailyUnits;
+      combinedDailyCogs += itemCogs * itemDailyUnits;
+      combinedDailyUnits += itemDailyUnits;
+
+      return {
+        item,
+        cfg,
+        itemDailyUnits,
+        itemPeriodUnits,
+        itemPrice,
+        itemCogs,
+        itemUnitMargin,
+        itemMarginPct,
+        itemPeriodRevenue,
+        itemPeriodCogs,
+        itemPeriodGross,
+      };
+    });
+
+    const periodRevenue = combinedDailyRevenue * periodDays;
+    const periodCogs = combinedDailyCogs * periodDays;
+    const periodGrossProfit = periodRevenue - periodCogs;
+    const periodNetProfit = periodGrossProfit - totalPeriodOverhead;
+    const totalPeriodUnits = combinedDailyUnits * periodDays;
+
+    const grossMargin = periodRevenue > 0 ? (periodGrossProfit / periodRevenue) * 100 : 0;
+    const netMargin = periodRevenue > 0 ? (periodNetProfit / periodRevenue) * 100 : 0;
+    const cogsRatio = periodRevenue > 0 ? (periodCogs / periodRevenue) * 100 : 0;
+    const overheadRatio = periodRevenue > 0 ? (totalPeriodOverhead / periodRevenue) * 100 : 0;
+
+    const avgUnitGrossSpread = combinedDailyUnits > 0 ? (combinedDailyRevenue - combinedDailyCogs) / combinedDailyUnits : 0;
+    const dailyBreakEvenUnits = avgUnitGrossSpread > 0 ? Math.ceil(totalDailyOverhead / avgUnitGrossSpread) : 0;
+    const periodBreakEvenUnits = dailyBreakEvenUnits * periodDays;
+
+    // Add contribution percentage to itemsSummary
+    const enrichedItems = itemsSummary.map(it => ({
+      ...it,
+      profitContributionPct: periodGrossProfit > 0 ? (it.itemPeriodGross / periodGrossProfit) * 100 : 0,
+      revenueContributionPct: periodRevenue > 0 ? (it.itemPeriodRevenue / periodRevenue) * 100 : 0,
+    })).sort((a, b) => b.itemPeriodGross - a.itemPeriodGross);
+
+    return {
+      items: enrichedItems,
+      combinedDailyUnits,
+      totalPeriodUnits,
+      periodRevenue,
+      periodCogs,
+      periodGrossProfit,
+      periodNetProfit,
+      grossMargin,
+      netMargin,
+      cogsRatio,
+      overheadRatio,
+      avgUnitGrossSpread,
+      dailyBreakEvenUnits,
+      periodBreakEvenUnits,
+    };
+  }, [activeMultiItems, itemConfigs, periodDays, totalPeriodOverhead]);
+
+  // Multi-Horizon Projections for Multi-Menu
+  const getMultiHorizonMetrics = (days: number) => {
+    let dRev = 0;
+    let dCogs = 0;
+    let dUnits = 0;
+
+    activeMultiItems.forEach(item => {
+      const cfg = itemConfigs[item.id] || { selected: true, dailyUnits: 10, price: item.price, cogs: item.price * 0.35 };
+      dRev += cfg.price * cfg.dailyUnits;
+      dCogs += cfg.cogs * cfg.dailyUnits;
+      dUnits += cfg.dailyUnits;
+    });
+
+    const units = dUnits * days;
+    const rev = dRev * days;
+    const cogs = dCogs * days;
     const gross = rev - cogs;
     const overhead = totalDailyOverhead * days;
     const net = gross - overhead;
@@ -459,32 +607,155 @@ const SmartProfitModal: React.FC<SmartProfitModalProps> = ({
     return { days, units, rev, cogs, gross, overhead, net, margin };
   };
 
-  const horizonDaily = getHorizonMetrics(1);
-  const horizonWeekly = getHorizonMetrics(7);
-  const horizonMonthly = getHorizonMetrics(30);
-  const horizonYearly = getHorizonMetrics(365);
+  const getSingleHorizonMetrics = (days: number) => {
+    const units = dailyUnits * days;
+    const rev = singlePrice * units;
+    const cogs = singleCogs * units;
+    const gross = rev - cogs;
+    const overhead = totalDailyOverhead * days;
+    const net = gross - overhead;
+    const margin = rev > 0 ? (net / rev) * 100 : 0;
+    return { days, units, rev, cogs, gross, overhead, net, margin };
+  };
+
+  const horizonDaily = simulationMode === 'multi' ? getMultiHorizonMetrics(1) : getSingleHorizonMetrics(1);
+  const horizonWeekly = simulationMode === 'multi' ? getMultiHorizonMetrics(7) : getSingleHorizonMetrics(7);
+  const horizonMonthly = simulationMode === 'multi' ? getMultiHorizonMetrics(30) : getSingleHorizonMetrics(30);
+  const horizonYearly = simulationMode === 'multi' ? getMultiHorizonMetrics(365) : getSingleHorizonMetrics(365);
 
   const activeDishTitle = selectedItemId === '__custom__' ? (customDishName || 'Custom Dish') : (selectedItem?.name || 'Selected Dish');
 
+  // Bulk actions for multi-menu
+  const handleSelectAll = (select: boolean) => {
+    setItemConfigs(prev => {
+      const updated = { ...prev };
+      menuItems.forEach(item => {
+        if (updated[item.id]) {
+          updated[item.id] = { ...updated[item.id], selected: select };
+        }
+      });
+      return updated;
+    });
+  };
+
+  const handleSelectCategory = (category: string) => {
+    setItemConfigs(prev => {
+      const updated = { ...prev };
+      menuItems.forEach(item => {
+        if (updated[item.id]) {
+          updated[item.id] = { ...updated[item.id], selected: item.category === category };
+        }
+      });
+      return updated;
+    });
+  };
+
+  const handleSelectHighProfitOnly = () => {
+    setItemConfigs(prev => {
+      const updated = { ...prev };
+      menuItems.forEach(item => {
+        if (updated[item.id]) {
+          const margin = updated[item.id].price > 0 ? ((updated[item.id].price - updated[item.id].cogs) / updated[item.id].price) * 100 : 0;
+          updated[item.id] = { ...updated[item.id], selected: margin >= 50 };
+        }
+      });
+      return updated;
+    });
+  };
+
+  const handleApplyBatchVolume = (vol: number) => {
+    setItemConfigs(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(id => {
+        if (updated[id].selected) {
+          updated[id] = { ...updated[id], dailyUnits: vol };
+        }
+      });
+      return updated;
+    });
+  };
+
+  const handleResetAllCogsAndPrice = () => {
+    setItemConfigs(prev => {
+      const updated = { ...prev };
+      menuItems.forEach(item => {
+        const computedCogs = calculateItemCogs(item);
+        updated[item.id] = {
+          selected: updated[item.id]?.selected ?? true,
+          dailyUnits: updated[item.id]?.dailyUnits ?? 10,
+          price: item.price,
+          cogs: computedCogs,
+        };
+      });
+      return updated;
+    });
+  };
+
+  // Filtered menu items for the multi selection UI
+  const filteredMenuItems = React.useMemo(() => {
+    return menuItems.filter(item => {
+      const matchesCat = selectedCategoryFilter === 'all' || item.category === selectedCategoryFilter;
+      const matchesSearch = !searchQuery.trim() || item.name.toLowerCase().includes(searchQuery.toLowerCase()) || (item.category || '').toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesCat && matchesSearch;
+    });
+  }, [menuItems, selectedCategoryFilter, searchQuery]);
+
+  // Categories list
+  const availableCategories = React.useMemo(() => {
+    const set = new Set<string>();
+    menuItems.forEach(m => {
+      if (m.category) set.add(m.category);
+    });
+    return Array.from(set);
+  }, [menuItems]);
+
   // Copy text report handler
   const handleCopyReport = () => {
-    const report = `===========================================
+    let report = '';
+    if (simulationMode === 'multi') {
+      report = `===========================================
+MULTI-MENU PROFIT SIMULATION REPORT (${activeMultiItems.length} SELECTED DISHES)
+Horizon: ${periodLabel} (${periodDays} days)
+===========================================
+Total Portfolio Volume: ${multiMetrics.combinedDailyUnits} plates/day (${multiMetrics.totalPeriodUnits} total for ${periodDays}d)
+Combined Break-Even Point: ${multiMetrics.dailyBreakEvenUnits} plates/day (${multiMetrics.periodBreakEvenUnits} total)
+
+--- FINANCIAL BREAKDOWN ---
+Total Revenue:      ₱${multiMetrics.periodRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+Total Recipe COGS:  ₱${multiMetrics.periodCogs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${multiMetrics.cogsRatio.toFixed(1)}% Food Cost)
+Gross Profit:       ₱${multiMetrics.periodGrossProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Gross Margin: ${multiMetrics.grossMargin.toFixed(1)}%)
+Operating Overheads:₱${totalPeriodOverhead.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${multiMetrics.overheadRatio.toFixed(1)}%)
+NET PROFIT:         ₱${multiMetrics.periodNetProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Net Margin: ${multiMetrics.netMargin.toFixed(1)}%)
+
+--- TOP MENU PROFIT CONTRIBUTORS ---
+${multiMetrics.items.map((it, idx) => `${idx + 1}. ${it.item.name} (${it.itemDailyUnits} pcs/day)
+   Price: ₱${it.itemPrice.toFixed(2)} | COGS: ₱${it.itemCogs.toFixed(2)} | Margin: ${it.itemMarginPct.toFixed(1)}%
+   Period Gross: ₱${it.itemPeriodGross.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${it.profitContributionPct.toFixed(1)}% of total profit)`).join('\n')}
+
+--- HORIZON FORECASTS (ALL SELECTED DISHES) ---
+Daily Net:   ₱${horizonDaily.net.toFixed(2)} / day
+Weekly Net:  ₱${horizonWeekly.net.toFixed(2)} / week
+Monthly Net: ₱${horizonMonthly.net.toFixed(2)} / month (30d)
+Yearly Net:  ₱${horizonYearly.net.toFixed(2)} / year
+===========================================`;
+    } else {
+      report = `===========================================
 PROFIT SIMULATION REPORT: ${activeDishTitle.toUpperCase()}
 Horizon: ${periodLabel} (${periodDays} days)
 ===========================================
-Selling Price: ₱${price.toFixed(2)} / serving
-Plate COGS: ₱${cogsPerServing.toFixed(2)} / serving
-Unit Spread: ₱${unitGrossSpread.toFixed(2)} / plate
+Selling Price: ₱${singlePrice.toFixed(2)} / serving
+Plate COGS: ₱${singleCogs.toFixed(2)} / serving
+Unit Spread: ₱${singleUnitGrossSpread.toFixed(2)} / plate
 
-Daily Volume: ${dailyUnits} plates/day (Total: ${totalPeriodUnits} plates)
-Break-Even Point: ${dailyBreakEvenUnits} plates/day (${periodBreakEvenUnits} total)
+Daily Volume: ${dailyUnits} plates/day (Total: ${singleTotalPeriodUnits} plates)
+Break-Even Point: ${singleDailyBreakEvenUnits} plates/day (${singlePeriodBreakEvenUnits} total)
 
 --- FINANCIAL BREAKDOWN ---
-Total Revenue:      ₱${periodRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-Total Recipe COGS:  ₱${periodCogsTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${cogsRatio.toFixed(1)}%)
-Gross Profit:       ₱${periodGrossProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Gross Margin: ${grossMargin.toFixed(1)}%)
-Overhead Expenses:  ₱${totalPeriodOverhead.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${overheadRatio.toFixed(1)}%)
-NET PROFIT:         ₱${periodNetProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Net Margin: ${netMargin.toFixed(1)}%)
+Total Revenue:      ₱${singlePeriodRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+Total Recipe COGS:  ₱${singlePeriodCogsTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${(singlePeriodRevenue > 0 ? (singlePeriodCogsTotal / singlePeriodRevenue) * 100 : 0).toFixed(1)}%)
+Gross Profit:       ₱${singlePeriodGrossProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Gross Margin: ${singleGrossMargin.toFixed(1)}%)
+Overhead Expenses:  ₱${totalPeriodOverhead.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${(singlePeriodRevenue > 0 ? (totalPeriodOverhead / singlePeriodRevenue) * 100 : 0).toFixed(1)}%)
+NET PROFIT:         ₱${singlePeriodNetProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Net Margin: ${singleNetMargin.toFixed(1)}%)
 
 --- HORIZON FORECASTS ---
 Daily Net:   ₱${horizonDaily.net.toFixed(2)} / day
@@ -492,18 +763,33 @@ Weekly Net:  ₱${horizonWeekly.net.toFixed(2)} / week
 Monthly Net: ₱${horizonMonthly.net.toFixed(2)} / month (30d)
 Yearly Net:  ₱${horizonYearly.net.toFixed(2)} / year
 ===========================================`;
+    }
 
     navigator.clipboard.writeText(report);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
 
+  if (!isOpen) return null;
+
+  const currentNetProfit = simulationMode === 'multi' ? multiMetrics.periodNetProfit : singlePeriodNetProfit;
+  const currentGrossProfit = simulationMode === 'multi' ? multiMetrics.periodGrossProfit : singlePeriodGrossProfit;
+  const currentRevenue = simulationMode === 'multi' ? multiMetrics.periodRevenue : singlePeriodRevenue;
+  const currentCogs = simulationMode === 'multi' ? multiMetrics.periodCogs : singlePeriodCogsTotal;
+  const currentTotalUnits = simulationMode === 'multi' ? multiMetrics.totalPeriodUnits : singleTotalPeriodUnits;
+  const currentDailyUnits = simulationMode === 'multi' ? multiMetrics.combinedDailyUnits : dailyUnits;
+  const currentGrossMargin = simulationMode === 'multi' ? multiMetrics.grossMargin : singleGrossMargin;
+  const currentNetMargin = simulationMode === 'multi' ? multiMetrics.netMargin : singleNetMargin;
+  const currentCogsRatio = simulationMode === 'multi' ? multiMetrics.cogsRatio : (singlePeriodRevenue > 0 ? (singlePeriodCogsTotal / singlePeriodRevenue) * 100 : 0);
+  const currentBreakEvenDaily = simulationMode === 'multi' ? multiMetrics.dailyBreakEvenUnits : singleDailyBreakEvenUnits;
+  const currentBreakEvenPeriod = simulationMode === 'multi' ? multiMetrics.periodBreakEvenUnits : singlePeriodBreakEvenUnits;
+
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5 bg-black/90 backdrop-blur-md overflow-y-auto animate-fade-in text-left">
-      <div className="bg-[#141413] border-2 border-emerald-500/30 rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden shadow-2xl w-full max-w-4xl lg:max-w-5xl flex flex-col max-h-[92vh] animate-slide-in-up">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-md overflow-y-auto animate-fade-in text-left">
+      <div className="bg-[#141413] border-2 border-emerald-500/30 rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden shadow-2xl w-full max-w-6xl flex flex-col max-h-[94vh] animate-slide-in-up">
         
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b-2 border-white/5 bg-[#0D0D0C] flex items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 border-b-2 border-white/5 bg-[#0D0D0C] flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
               <Calculator className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -516,19 +802,52 @@ Yearly Net:  ₱${horizonYearly.net.toFixed(2)} / year
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
                   {periodLabel}
                 </span>
+                {simulationMode === 'multi' && (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-500/10 text-brand-gold border border-amber-500/20 font-mono">
+                    {activeMultiItems.length} Dishes Selected
+                  </span>
+                )}
               </div>
               <p className="text-gray-400 text-xs mt-0.5">
-                Forecast revenue, ingredient COGS, and kitchen overheads across Daily, Weekly, Monthly, Yearly, or Custom days.
+                Simulate single dish or multi-selected menu basket profit across Daily, Weekly, Monthly, Yearly, or Custom horizons.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className={`hidden sm:inline-flex font-mono text-xs font-black px-3 py-1.5 rounded-xl border ${
-              periodNetProfit >= 0 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : 'text-red-400 bg-red-500/10 border-red-500/30'
+          <div className="flex items-center gap-2 ml-auto sm:ml-0">
+            {/* Mode Switcher Tabs */}
+            <div className="flex items-center bg-[#181818] p-1 rounded-xl border border-white/10">
+              <button
+                type="button"
+                onClick={() => setSimulationMode('multi')}
+                className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                  simulationMode === 'multi'
+                    ? 'bg-emerald-500 text-black shadow-md'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <span>✨ Multi-Menu Basket</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-black/20 font-mono">{activeMultiItems.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSimulationMode('single')}
+                className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                  simulationMode === 'single'
+                    ? 'bg-emerald-500 text-black shadow-md'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <span>🍱 Single Dish</span>
+              </button>
+            </div>
+
+            <span className={`hidden md:inline-flex font-mono text-xs font-black px-3 py-1.5 rounded-xl border ${
+              currentNetProfit >= 0 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : 'text-red-400 bg-red-500/10 border-red-500/30'
             }`}>
-              Net: ₱{periodNetProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              Net: ₱{currentNetProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
+
             <button
               type="button"
               onClick={onClose}
@@ -542,302 +861,647 @@ Yearly Net:  ₱${horizonYearly.net.toFixed(2)} / year
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-xs">
           
-          {/* Section 1: Menu Item Picker & Timeframe Selector */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            
-            {/* Menu Item Selector (5 cols) */}
-            <div className="lg:col-span-5 bg-[#0D0D0C] p-4 rounded-2xl border border-white/10 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] text-brand-gold uppercase font-black tracking-wider flex items-center gap-1.5">
-                  <span>🍱 Select Menu Item / Dish</span>
-                </label>
-                {selectedItem && (
-                  <span className="text-[9px] text-gray-400 capitalize font-mono">
-                    {selectedItem.category}
-                  </span>
-                )}
-              </div>
-
-              <select
-                value={selectedItemId}
-                onChange={(e) => setSelectedItemId(e.target.value)}
-                className="w-full bg-[#181818] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-gold cursor-pointer"
-              >
-                <option value="">-- Choose a Dish to Simulate --</option>
-                <option value="__custom__">✨ Custom / Manual Simulation</option>
-                {['bento', 'silog', 'rice-bowl', 'drinks'].map(cat => {
-                  const itemsInCat = menuItems.filter(m => m.category === cat);
-                  if (itemsInCat.length === 0) return null;
-                  return (
-                    <optgroup key={cat} label={`🍽️ ${cat.toUpperCase()}`}>
-                      {itemsInCat.map(item => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} (₱{item.price.toFixed(2)})
-                        </option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
-              </select>
-
-              {/* Selected dish quick metadata */}
-              {selectedItem ? (
-                <div className="flex items-center gap-3 bg-[#121211] p-2.5 rounded-xl border border-white/5">
-                  <img
-                    src={selectedItem.image}
-                    alt={selectedItem.name}
-                    className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=300';
-                    }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <h5 className="font-bold text-white text-xs truncate">{selectedItem.name}</h5>
-                    <div className="flex items-center gap-2 text-[10px] font-mono mt-0.5 text-gray-400">
-                      <span>Base: <strong className="text-brand-gold">₱{selectedItem.price.toFixed(2)}</strong></span>
-                      <span>·</span>
-                      <span>COGS: <strong className="text-gray-200">₱{cogsPerServing.toFixed(2)}</strong></span>
-                    </div>
-                  </div>
-                </div>
-              ) : selectedItemId === '__custom__' ? (
-                <div className="space-y-1 bg-[#121211] p-2.5 rounded-xl border border-white/5">
-                  <label className="text-[8px] text-gray-400 uppercase font-bold block">Custom Recipe / Dish Title</label>
-                  <input
-                    type="text"
-                    value={customDishName}
-                    onChange={(e) => setCustomDishName(e.target.value)}
-                    placeholder="e.g. Special Pork Adobo Bowl"
-                    className="w-full bg-[#181818] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white font-bold focus:outline-none focus:border-brand-gold"
-                  />
-                </div>
-              ) : null}
+          {/* Section 1: Projection Horizon Timeframe Selector */}
+          <div className="bg-[#0D0D0C] p-4 rounded-2xl border border-white/10 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <label className="text-[10px] text-emerald-400 uppercase font-black tracking-wider flex items-center gap-1.5">
+                <span>📅 Projection Time Horizon</span>
+              </label>
+              <span className="text-[10px] text-gray-400 font-mono">
+                Duration Multiplier: <strong className="text-white">{periodDays} {periodDays === 1 ? 'day' : 'days'}</strong>
+              </span>
             </div>
 
-            {/* Timeframe & Horizon Period Tabs (7 cols) */}
-            <div className="lg:col-span-7 bg-[#0D0D0C] p-4 rounded-2xl border border-white/10 space-y-3 flex flex-col justify-between">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <label className="text-[10px] text-emerald-400 uppercase font-black tracking-wider flex items-center gap-1.5">
-                  <span>📅 Projection Time Horizon</span>
-                </label>
-                <span className="text-[10px] text-gray-400 font-mono">
-                  Multiplier: <strong className="text-white">{periodDays} {periodDays === 1 ? 'day' : 'days'}</strong>
-                </span>
-              </div>
+            {/* Time Horizon Button Tabs */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {[
+                { id: 'daily', label: '☀️ Daily', days: 1, sub: '1 Day' },
+                { id: 'weekly', label: '📆 Weekly', days: 7, sub: '7 Days' },
+                { id: 'monthly', label: '🗓️ Monthly', days: 30, sub: '30 Days' },
+                { id: 'yearly', label: '🏛️ Yearly', days: 365, sub: '365 Days' },
+                { id: 'custom', label: '⚙️ Custom', days: customDays, sub: `${customDays} Days` },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setPeriodType(tab.id as any)}
+                  className={`py-2 px-2.5 rounded-xl text-center transition-all cursor-pointer border ${
+                    periodType === tab.id
+                      ? 'bg-emerald-500/15 border-emerald-500 text-emerald-400 font-black shadow-md'
+                      : 'bg-[#181818] border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <span className="block text-[11px] leading-tight font-black">{tab.label}</span>
+                  <span className="block text-[9px] opacity-75 font-mono mt-0.5">{tab.sub}</span>
+                </button>
+              ))}
+            </div>
 
-              {/* Time Horizon Button Tabs */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
-                {[
-                  { id: 'daily', label: '☀️ Daily', days: 1, sub: '1 Day' },
-                  { id: 'weekly', label: '📆 Weekly', days: 7, sub: '7 Days' },
-                  { id: 'monthly', label: '🗓️ Monthly', days: 30, sub: '30 Days' },
-                  { id: 'yearly', label: '🏛️ Yearly', days: 365, sub: '365 Days' },
-                  { id: 'custom', label: '⚙️ Custom', days: customDays, sub: `${customDays} Days` },
-                ].map((tab) => (
+            {/* Custom Days Input field (shown when custom is selected) */}
+            {periodType === 'custom' && (
+              <div className="flex items-center gap-2 bg-[#181818] p-2.5 rounded-xl border border-emerald-500/30 animate-fade-in flex-wrap">
+                <span className="text-gray-300 text-xs font-bold">Input Custom Duration:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="3650"
+                  value={customDays}
+                  onChange={(e) => setCustomDays(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-20 bg-[#0D0D0C] border border-emerald-500/40 rounded-lg px-2 py-1 text-xs text-white text-center font-mono font-black focus:outline-none"
+                />
+                <span className="text-gray-400 text-xs">days</span>
+                <div className="flex gap-1 ml-auto flex-wrap">
+                  {[14, 45, 60, 90, 180].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setCustomDays(d)}
+                      className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold cursor-pointer ${
+                        customDays === d ? 'bg-emerald-500 text-black' : 'bg-[#0D0D0C] text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {d}d
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Mode Specific Selector & Configurator */}
+          {simulationMode === 'multi' ? (
+            /* MULTI-MENU BASKET SIMULATOR VIEW */
+            <div className="bg-[#0D0D0C] p-4 sm:p-5 rounded-2xl border border-emerald-500/20 space-y-4">
+              
+              {/* Multi-Select Toolbar & Category Filters */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/5 pb-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🍱</span>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white">
+                      Multiple Menu Selection & Volume Simulation
+                    </h4>
+                    <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      {activeMultiItems.length} of {menuItems.length} items active
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-400">
+                    Check dishes to include in the combined store menu income simulation. Adjust price, recipe COGS, or volume per item.
+                  </p>
+                </div>
+
+                {/* Batch Actions */}
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <button
-                    key={tab.id}
                     type="button"
-                    onClick={() => setPeriodType(tab.id as any)}
-                    className={`py-2 px-2 rounded-xl text-center transition-all cursor-pointer border ${
-                      periodType === tab.id
-                        ? 'bg-emerald-500/15 border-emerald-500 text-emerald-400 font-black shadow-md'
-                        : 'bg-[#181818] border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
-                    }`}
+                    onClick={() => handleSelectAll(true)}
+                    className="px-2.5 py-1 bg-[#181818] hover:bg-emerald-500/20 text-emerald-400 border border-white/10 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer"
                   >
-                    <span className="block text-[10.5px] leading-tight font-black">{tab.label}</span>
-                    <span className="block text-[8.5px] opacity-75 font-mono mt-0.5">{tab.sub}</span>
+                    ✓ Select All
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectAll(false)}
+                    className="px-2.5 py-1 bg-[#181818] hover:bg-red-500/20 text-gray-400 hover:text-red-400 border border-white/10 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer"
+                  >
+                    ✗ Deselect All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSelectHighProfitOnly}
+                    className="px-2.5 py-1 bg-[#181818] hover:bg-brand-gold/20 text-brand-gold border border-white/10 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer"
+                    title="Select only dishes with margin >= 50%"
+                  >
+                    ⭐ High Profit (&ge;50%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetAllCogsAndPrice}
+                    className="px-2.5 py-1 bg-[#181818] hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                    title="Reset all prices and auto-calculate recipe COGS"
+                  >
+                    🔄 Auto COGS
+                  </button>
+                </div>
               </div>
 
-              {/* Custom Days Input field (shown when custom is selected) */}
-              {periodType === 'custom' && (
-                <div className="flex items-center gap-2 bg-[#181818] p-2.5 rounded-xl border border-emerald-500/30 animate-fade-in">
-                  <span className="text-gray-300 text-xs font-bold">Input Custom Duration:</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="3650"
-                    value={customDays}
-                    onChange={(e) => setCustomDays(Math.max(1, Number(e.target.value) || 1))}
-                    className="w-20 bg-[#0D0D0C] border border-emerald-500/40 rounded-lg px-2 py-1 text-xs text-white text-center font-mono font-black focus:outline-none"
-                  />
-                  <span className="text-gray-400 text-xs">days</span>
-                  <div className="flex gap-1 ml-auto flex-wrap">
-                    {[14, 45, 60, 90, 180].map((d) => (
+              {/* Filter Pills, Search & Batch Volume Controls */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                
+                {/* Search & Category Pills (7 cols) */}
+                <div className="md:col-span-7 flex items-center gap-2 flex-wrap">
+                  <div className="relative min-w-[140px] flex-1">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-gray-500" />
+                    <input
+                      type="text"
+                      placeholder="Search menu dishes..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-[#181818] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-gold"
+                    />
+                  </div>
+
+                  {/* Category Buttons */}
+                  <div className="flex gap-1 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('all')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                        selectedCategoryFilter === 'all'
+                          ? 'bg-brand-gold text-black font-black'
+                          : 'bg-[#181818] text-gray-400 hover:text-white border border-white/5'
+                      }`}
+                    >
+                      All ({menuItems.length})
+                    </button>
+                    {availableCategories.map(cat => (
                       <button
-                        key={d}
+                        key={cat}
                         type="button"
-                        onClick={() => setCustomDays(d)}
-                        className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold ${
-                          customDays === d ? 'bg-emerald-500 text-black' : 'bg-[#0D0D0C] text-gray-400 hover:text-white'
+                        onClick={() => {
+                          setSelectedCategoryFilter(cat);
+                        }}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer capitalize ${
+                          selectedCategoryFilter === cat
+                            ? 'bg-brand-gold text-black font-black'
+                            : 'bg-[#181818] text-gray-400 hover:text-white border border-white/5'
                         }`}
                       >
-                        {d}d
+                        {cat}
                       </button>
                     ))}
                   </div>
                 </div>
-              )}
+
+                {/* Batch Volume Setter (5 cols) */}
+                <div className="md:col-span-5 bg-[#181818] p-2 rounded-xl border border-white/5 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-gray-400 shrink-0">Batch Volume:</span>
+                  <div className="flex items-center gap-1">
+                    {[5, 10, 15, 20, 30].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          setBatchVolumeInput(v);
+                          handleApplyBatchVolume(v);
+                        }}
+                        className="px-1.5 py-0.5 bg-[#0D0D0C] hover:bg-emerald-500 hover:text-black text-gray-300 text-[9px] font-mono font-bold rounded border border-white/5 transition-colors cursor-pointer"
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <input
+                      type="number"
+                      min="1"
+                      value={batchVolumeInput}
+                      onChange={e => setBatchVolumeInput(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-12 bg-[#0D0D0C] border border-white/10 rounded px-1.5 py-0.5 text-xs text-white text-center font-mono font-bold focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleApplyBatchVolume(batchVolumeInput)}
+                      className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-black text-[9px] font-black uppercase rounded transition-all cursor-pointer"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Multi-Item Interactive Selection List / Table */}
+              <div className="border border-white/10 rounded-2xl overflow-hidden bg-[#121211] max-h-[320px] overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#181818] text-[9px] font-black uppercase tracking-wider text-gray-400 sticky top-0 z-10 border-b border-white/10">
+                    <tr>
+                      <th className="p-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={filteredMenuItems.length > 0 && filteredMenuItems.every(m => itemConfigs[m.id]?.selected)}
+                          onChange={(e) => {
+                            const isChecked = e.target.checked;
+                            setItemConfigs(prev => {
+                              const updated = { ...prev };
+                              filteredMenuItems.forEach(m => {
+                                if (updated[m.id]) {
+                                  updated[m.id] = { ...updated[m.id], selected: isChecked };
+                                }
+                              });
+                              return updated;
+                            });
+                          }}
+                          className="w-4 h-4 rounded text-emerald-500 bg-[#0D0D0C] border-white/20 focus:ring-0 cursor-pointer"
+                        />
+                      </th>
+                      <th className="p-3">Dish / Item</th>
+                      <th className="p-3 text-right">Selling Price</th>
+                      <th className="p-3 text-right">Recipe COGS</th>
+                      <th className="p-3 text-center">Daily Sold</th>
+                      <th className="p-3 text-right">Unit Margin</th>
+                      <th className="p-3 text-right">Daily Gross</th>
+                      <th className="p-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filteredMenuItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-6 text-center text-gray-500">
+                          No menu items found matching "{searchQuery}".
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredMenuItems.map(item => {
+                        const cfg = itemConfigs[item.id] || { selected: true, dailyUnits: 10, price: item.price, cogs: calculateItemCogs(item) };
+                        const unitMargin = cfg.price - cfg.cogs;
+                        const marginPct = cfg.price > 0 ? (unitMargin / cfg.price) * 100 : 0;
+                        const dailyGross = unitMargin * cfg.dailyUnits;
+
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`transition-colors ${
+                              cfg.selected ? 'bg-[#141413] hover:bg-[#1a1a19]' : 'bg-[#0a0a09]/60 opacity-40 hover:opacity-70'
+                            }`}
+                          >
+                            {/* Checkbox */}
+                            <td className="p-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={cfg.selected}
+                                onChange={(e) => {
+                                  const isChecked = e.target.checked;
+                                  setItemConfigs(prev => ({
+                                    ...prev,
+                                    [item.id]: { ...cfg, selected: isChecked }
+                                  }));
+                                }}
+                                className="w-4 h-4 rounded text-emerald-500 bg-[#181818] border-white/20 focus:ring-0 cursor-pointer"
+                              />
+                            </td>
+
+                            {/* Dish Info */}
+                            <td className="p-3">
+                              <div className="flex items-center gap-2.5">
+                                <img
+                                  src={item.image}
+                                  alt={item.name}
+                                  className="w-9 h-9 rounded-lg object-cover border border-white/10 shrink-0"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=300';
+                                  }}
+                                />
+                                <div className="min-w-0">
+                                  <div className="font-bold text-white text-xs truncate max-w-[180px]">
+                                    {item.name}
+                                  </div>
+                                  <span className="text-[9px] text-brand-gold uppercase font-mono">
+                                    {item.category}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Selling Price */}
+                            <td className="p-3 text-right">
+                              <div className="inline-flex items-center gap-1 bg-[#181818] border border-white/10 rounded-lg px-2 py-0.5">
+                                <span className="text-[10px] text-gray-500 font-mono">₱</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={cfg.price}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value) || 0;
+                                    setItemConfigs(prev => ({
+                                      ...prev,
+                                      [item.id]: { ...cfg, price: val }
+                                    }));
+                                  }}
+                                  className="w-14 bg-transparent text-xs text-white text-right font-mono font-bold focus:outline-none"
+                                />
+                              </div>
+                            </td>
+
+                            {/* Recipe COGS */}
+                            <td className="p-3 text-right">
+                              <div className="inline-flex items-center gap-1 bg-[#181818] border border-white/10 rounded-lg px-2 py-0.5">
+                                <span className="text-[10px] text-gray-500 font-mono">₱</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={cfg.cogs}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value) || 0;
+                                    setItemConfigs(prev => ({
+                                      ...prev,
+                                      [item.id]: { ...cfg, cogs: val }
+                                    }));
+                                  }}
+                                  className="w-14 bg-transparent text-xs text-amber-400 text-right font-mono font-bold focus:outline-none"
+                                />
+                              </div>
+                            </td>
+
+                            {/* Daily Sold Stepper */}
+                            <td className="p-3 text-center">
+                              <div className="inline-flex items-center gap-1 bg-[#181818] border border-white/10 rounded-lg p-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setItemConfigs(prev => ({
+                                      ...prev,
+                                      [item.id]: { ...cfg, dailyUnits: Math.max(0, cfg.dailyUnits - 1) }
+                                    }));
+                                  }}
+                                  className="w-5 h-5 rounded bg-[#242424] text-white flex items-center justify-center hover:bg-white/10 text-xs font-bold cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={cfg.dailyUnits}
+                                  onChange={(e) => {
+                                    const val = Math.max(0, Number(e.target.value) || 0);
+                                    setItemConfigs(prev => ({
+                                      ...prev,
+                                      [item.id]: { ...cfg, dailyUnits: val }
+                                    }));
+                                  }}
+                                  className="w-9 bg-transparent text-xs text-white text-center font-mono font-black focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setItemConfigs(prev => ({
+                                      ...prev,
+                                      [item.id]: { ...cfg, dailyUnits: cfg.dailyUnits + 1 }
+                                    }));
+                                  }}
+                                  className="w-5 h-5 rounded bg-[#242424] text-white flex items-center justify-center hover:bg-white/10 text-xs font-bold cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </td>
+
+                            {/* Unit Margin */}
+                            <td className="p-3 text-right font-mono">
+                              <span className={`block font-bold ${unitMargin > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                ₱{unitMargin.toFixed(2)}
+                              </span>
+                              <span className={`text-[9px] block ${
+                                marginPct >= 50 ? 'text-emerald-400 font-bold' : marginPct >= 25 ? 'text-amber-400' : 'text-red-400 font-bold'
+                              }`}>
+                                {marginPct.toFixed(0)}% margin
+                              </span>
+                            </td>
+
+                            {/* Daily Gross */}
+                            <td className="p-3 text-right font-mono font-bold">
+                              <span className={dailyGross > 0 ? 'text-white' : 'text-gray-500'}>
+                                ₱{dailyGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </td>
+
+                            {/* Action Focus */}
+                            <td className="p-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedItemId(item.id);
+                                  setSimulationMode('single');
+                                }}
+                                className="px-2 py-1 bg-white/5 hover:bg-brand-gold/20 text-gray-400 hover:text-brand-gold rounded-lg text-[9px] font-bold uppercase transition-all cursor-pointer"
+                                title="Focus Single Item Deep Dive"
+                              >
+                                Focus
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
             </div>
+          ) : (
+            /* SINGLE ITEM DEEP-DIVE VIEW */
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                
+                {/* Menu Item Selector (5 cols) */}
+                <div className="lg:col-span-5 bg-[#0D0D0C] p-4 rounded-2xl border border-white/10 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] text-brand-gold uppercase font-black tracking-wider flex items-center gap-1.5">
+                      <span>🍱 Select Menu Item / Dish</span>
+                    </label>
+                    {selectedItem && (
+                      <span className="text-[9px] text-gray-400 capitalize font-mono">
+                        {selectedItem.category}
+                      </span>
+                    )}
+                  </div>
 
-          </div>
-
-          {/* Section 2: Input Parameters Grid (Daily Volume, Selling Price, Plate COGS, Break-Even) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            
-            {/* 1. Daily Units Sold */}
-            <div className="bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/10 space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
-                  Daily Volume Sold
-                </label>
-                <span className="text-[9px] text-emerald-400 font-mono font-bold">
-                  {totalPeriodUnits} total
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDailyUnits(u => Math.max(1, u - 1))}
-                  className="w-8 h-8 rounded-xl bg-[#181818] border border-white/10 text-white font-bold text-base flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer"
-                >−</button>
-                <input
-                  type="number"
-                  min="1"
-                  value={dailyUnits}
-                  onChange={e => setDailyUnits(Math.max(1, Number(e.target.value) || 1))}
-                  className="flex-1 bg-[#181818] border border-white/10 rounded-xl px-2 py-1.5 text-sm text-white text-center font-mono font-black focus:outline-none focus:border-emerald-400"
-                />
-                <button
-                  type="button"
-                  onClick={() => setDailyUnits(u => u + 1)}
-                  className="w-8 h-8 rounded-xl bg-[#181818] border border-white/10 text-white font-bold text-base flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer"
-                >+</button>
-              </div>
-              <div className="flex gap-1 flex-wrap pt-0.5">
-                {[5, 10, 15, 20, 30, 50, 100].map(n => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setDailyUnits(n)}
-                    className={`px-1.5 py-0.5 text-[8.5px] font-black rounded transition-all cursor-pointer ${
-                      dailyUnits === n
-                        ? 'bg-emerald-500 text-black'
-                        : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
-                    }`}
+                  <select
+                    value={selectedItemId}
+                    onChange={(e) => setSelectedItemId(e.target.value)}
+                    className="w-full bg-[#181818] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-gold cursor-pointer"
                   >
-                    {n} pcs
-                  </button>
-                ))}
+                    <option value="">-- Choose a Dish to Simulate --</option>
+                    <option value="__custom__">✨ Custom / Manual Simulation</option>
+                    {availableCategories.map(cat => {
+                      const itemsInCat = menuItems.filter(m => m.category === cat);
+                      if (itemsInCat.length === 0) return null;
+                      return (
+                        <optgroup key={cat} label={`🍽️ ${cat.toUpperCase()}`}>
+                          {itemsInCat.map(item => (
+                            <option key={item.id} value={item.id}>
+                              {item.name} (₱{(item.price ?? 0).toFixed(2)})
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+
+                  {/* Selected dish quick metadata */}
+                  {selectedItem ? (
+                    <div className="flex items-center gap-3 bg-[#121211] p-2.5 rounded-xl border border-white/5">
+                      <img
+                        src={selectedItem.image}
+                        alt={selectedItem.name}
+                        className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=300';
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h5 className="font-bold text-white text-xs truncate">{selectedItem.name}</h5>
+                        <div className="flex items-center gap-2 text-[10px] font-mono mt-0.5 text-gray-400">
+                          <span>Base: <strong className="text-brand-gold">₱{selectedItem.price.toFixed(2)}</strong></span>
+                          <span>·</span>
+                          <span>COGS: <strong className="text-gray-200">₱{singleCogs.toFixed(2)}</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : selectedItemId === '__custom__' ? (
+                    <div className="space-y-1 bg-[#121211] p-2.5 rounded-xl border border-white/5">
+                      <label className="text-[8px] text-gray-400 uppercase font-bold block">Custom Recipe / Dish Title</label>
+                      <input
+                        type="text"
+                        value={customDishName}
+                        onChange={(e) => setCustomDishName(e.target.value)}
+                        placeholder="e.g. Special Pork Adobo Bowl"
+                        className="w-full bg-[#181818] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white font-bold focus:outline-none focus:border-brand-gold"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Single Item Quick Parameters (7 cols) */}
+                <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  
+                  {/* Daily Volume Sold */}
+                  <div className="bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/10 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
+                        Daily Volume Sold
+                      </label>
+                      <span className="text-[9px] text-emerald-400 font-mono font-bold">
+                        {singleTotalPeriodUnits} total
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDailyUnits(u => Math.max(1, u - 1))}
+                        className="w-8 h-8 rounded-xl bg-[#181818] border border-white/10 text-white font-bold text-base flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer"
+                      >−</button>
+                      <input
+                        type="number"
+                        min="1"
+                        value={dailyUnits}
+                        onChange={e => setDailyUnits(Math.max(1, Number(e.target.value) || 1))}
+                        className="flex-1 bg-[#181818] border border-white/10 rounded-xl px-2 py-1.5 text-sm text-white text-center font-mono font-black focus:outline-none focus:border-emerald-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setDailyUnits(u => u + 1)}
+                        className="w-8 h-8 rounded-xl bg-[#181818] border border-white/10 text-white font-bold text-base flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer"
+                      >+</button>
+                    </div>
+                    <div className="flex gap-1 flex-wrap pt-0.5">
+                      {[5, 10, 15, 20, 30, 50, 100].map(n => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setDailyUnits(n)}
+                          className={`px-1.5 py-0.5 text-[8.5px] font-black rounded transition-all cursor-pointer ${
+                            dailyUnits === n
+                              ? 'bg-emerald-500 text-black'
+                              : 'bg-[#181818] text-gray-400 border border-white/5 hover:text-white'
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Selling Price / Plate */}
+                  <div className="bg-[#0D0D0C] p-3.5 rounded-2xl border border-brand-gold/30 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[9px] text-brand-gold uppercase font-black tracking-wider block">
+                        Selling Price
+                      </label>
+                      {selectedItem && localPrice !== selectedItem.price && (
+                        <button
+                          type="button"
+                          onClick={() => setLocalPrice(selectedItem.price)}
+                          className="text-[8px] text-gray-500 hover:text-brand-gold underline"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-xs text-brand-gold font-bold">₱</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={localPrice}
+                        onChange={e => setLocalPrice(Number(e.target.value) || 0)}
+                        className="w-full bg-[#181818] border border-brand-gold/30 rounded-xl pl-7 pr-3 py-1.5 text-sm text-white text-right font-mono font-black focus:outline-none focus:border-brand-gold"
+                      />
+                    </div>
+                    <div className="text-[9px] text-gray-400 font-mono flex justify-between">
+                      <span>Unit Margin:</span>
+                      <span className={singleUnitGrossSpread > 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
+                        ₱{singleUnitGrossSpread.toFixed(2)} ({singlePrice > 0 ? ((singleUnitGrossSpread / singlePrice) * 100).toFixed(0) : 0}%)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cost of Goods Sold (COGS) */}
+                  <div className="bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/10 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
+                        Recipe COGS
+                      </label>
+                      {selectedItem && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cogs = calculateItemCogs(selectedItem);
+                            setLocalCogs(cogs);
+                          }}
+                          className="text-[8px] text-gray-500 hover:text-gray-300 underline"
+                        >
+                          Auto COGS
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-xs text-gray-400 font-bold">₱</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={localCogs}
+                        onChange={e => setLocalCogs(Number(e.target.value) || 0)}
+                        className="w-full bg-[#181818] border border-white/10 rounded-xl pl-7 pr-3 py-1.5 text-sm text-white text-right font-mono font-bold focus:outline-none focus:border-emerald-400"
+                      />
+                    </div>
+                    <div className="text-[9px] text-gray-500 font-mono flex justify-between">
+                      <span>Food Cost:</span>
+                      <span className="text-amber-400 font-bold">
+                        {singlePrice > 0 ? ((singleCogs / singlePrice) * 100).toFixed(1) : 0}%
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
+
               </div>
             </div>
+          )}
 
-            {/* 2. Selling Price / Plate */}
-            <div className="bg-[#0D0D0C] p-3.5 rounded-2xl border border-brand-gold/30 space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-[9px] text-brand-gold uppercase font-black tracking-wider block">
-                  Selling Price / Plate
-                </label>
-                {selectedItem && localPrice !== selectedItem.price && (
-                  <button
-                    type="button"
-                    onClick={() => setLocalPrice(selectedItem.price)}
-                    className="text-[8px] text-gray-500 hover:text-brand-gold underline"
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <span className="absolute left-3 top-2 text-xs text-brand-gold font-bold">₱</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={localPrice}
-                  onChange={e => setLocalPrice(Number(e.target.value) || 0)}
-                  className="w-full bg-[#181818] border border-brand-gold/30 rounded-xl pl-7 pr-3 py-1.5 text-sm text-white text-right font-mono font-black focus:outline-none focus:border-brand-gold"
-                />
-              </div>
-              <div className="text-[9px] text-gray-400 font-mono flex justify-between">
-                <span>Unit Margin:</span>
-                <span className={unitGrossSpread > 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
-                  ₱{unitGrossSpread.toFixed(2)} ({price > 0 ? ((unitGrossSpread / price) * 100).toFixed(0) : 0}%)
-                </span>
-              </div>
-            </div>
-
-            {/* 3. Cost of Goods Sold (COGS) / Plate */}
-            <div className="bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/10 space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
-                  Plate Recipe COGS
-                </label>
-                {selectedItem && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const fin = calculateDishRecipeCost(selectedItem, ingredientsInventory);
-                      setLocalCogs(Number(fin.totalCost.toFixed(2)));
-                    }}
-                    className="text-[8px] text-gray-500 hover:text-gray-300 underline"
-                  >
-                    Auto COGS
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <span className="absolute left-3 top-2 text-xs text-gray-400 font-bold">₱</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={localCogs}
-                  onChange={e => setLocalCogs(Number(e.target.value) || 0)}
-                  className="w-full bg-[#181818] border border-white/10 rounded-xl pl-7 pr-3 py-1.5 text-sm text-white text-right font-mono font-bold focus:outline-none focus:border-emerald-400"
-                />
-              </div>
-              <div className="text-[9px] text-gray-500 font-mono flex justify-between">
-                <span>Food Cost Ratio:</span>
-                <span className="text-amber-400 font-bold">
-                  {price > 0 ? ((cogsPerServing / price) * 100).toFixed(1) : 0}%
-                </span>
-              </div>
-            </div>
-
-            {/* 4. Break-Even Benchmark */}
-            <div className="bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/10 space-y-1.5 flex flex-col justify-between">
-              <div className="flex justify-between items-center">
-                <label className="text-[9px] text-gray-400 uppercase font-black tracking-wider block">
-                  Break-Even Point
-                </label>
-                <span className="text-[8.5px] text-gray-500 font-mono">To cover overheads</span>
-              </div>
-              <div className="text-center py-1">
-                <span className="text-2xl font-black font-mono text-white">{dailyBreakEvenUnits}</span>
-                <span className="text-[9.5px] text-gray-400 block font-medium">plates/day ({periodBreakEvenUnits} for {periodDays}d)</span>
-              </div>
-              <span className={`text-[9px] font-bold text-center block px-2 py-0.5 rounded-lg ${
-                dailyUnits >= dailyBreakEvenUnits
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-              }`}>
-                {dailyUnits >= dailyBreakEvenUnits
-                  ? `✓ +${dailyUnits - dailyBreakEvenUnits} plates/day profit margin`
-                  : `⚠️ -${dailyBreakEvenUnits - dailyUnits} more plates/day needed`}
-              </span>
-            </div>
-
-          </div>
-
-          {/* Section 3: Overhead Expenses Configurator */}
+          {/* Section 3: Operating Overhead Expenses Configurator */}
           <div className="bg-[#0D0D0C] rounded-2xl border border-white/10 overflow-hidden space-y-0">
             <div className="px-4 py-3 bg-[#181818] border-b border-white/5 flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm">💡</span>
                 <span className="text-xs font-black uppercase tracking-wider text-white">
-                  Operating Overhead Expenses
+                  Shared Operating Overhead Expenses
+                </span>
+                <span className="text-[9px] text-gray-400 font-mono">
+                  (Deducted from combined menu gross profit)
                 </span>
               </div>
               <div className="flex items-center gap-3 font-mono text-xs">
@@ -927,38 +1591,38 @@ Yearly Net:  ₱${horizonYearly.net.toFixed(2)} / year
             {[
               {
                 label: `Total Revenue (${periodLabel})`,
-                value: `₱${periodRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                sub: `${totalPeriodUnits} pcs × ₱${price}`,
+                value: `₱${currentRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                sub: `${currentTotalUnits} total plates (${currentDailyUnits}/day)`,
                 color: 'text-white',
                 bg: 'bg-white/[0.02] border-white/10'
               },
               {
                 label: 'Total Recipe COGS',
-                value: `₱${periodCogsTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                sub: `Food cost: ${cogsRatio.toFixed(1)}%`,
+                value: `₱${currentCogs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                sub: `Food cost: ${currentCogsRatio.toFixed(1)}%`,
                 color: 'text-amber-400',
                 bg: 'bg-amber-500/5 border-amber-500/20'
               },
               {
                 label: 'Gross Profit',
-                value: `₱${periodGrossProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                sub: `Gross margin: ${grossMargin.toFixed(1)}%`,
+                value: `₱${currentGrossProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                sub: `Gross margin: ${currentGrossMargin.toFixed(1)}%`,
                 color: 'text-sky-400',
                 bg: 'bg-sky-500/5 border-sky-500/20'
               },
               {
                 label: 'Period Overheads',
                 value: `₱${totalPeriodOverhead.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                sub: `Overhead ratio: ${overheadRatio.toFixed(1)}%`,
+                sub: `₱${totalDailyOverhead.toFixed(2)}/day`,
                 color: 'text-red-400',
                 bg: 'bg-red-500/5 border-red-500/20'
               },
               {
                 label: `Net Profit (${periodLabel})`,
-                value: `₱${periodNetProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                sub: `Net margin: ${netMargin.toFixed(1)}%`,
-                color: periodNetProfit >= 0 ? 'text-emerald-400' : 'text-red-400',
-                bg: periodNetProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'
+                value: `₱${currentNetProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                sub: `Net margin: ${currentNetMargin.toFixed(1)}%`,
+                color: currentNetProfit >= 0 ? 'text-emerald-400' : 'text-red-400',
+                bg: currentNetProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'
               },
             ].map((card, i) => (
               <div key={i} className={`p-3.5 rounded-2xl border ${card.bg} space-y-1`}>
@@ -975,11 +1639,144 @@ Yearly Net:  ₱${horizonYearly.net.toFixed(2)} / year
             ))}
           </div>
 
-          {/* Section 5: Multi-Horizon Quick Comparison Matrix */}
+          {/* Section 5: Break-Even Benchmark Banner */}
+          <div className="bg-[#0D0D0C] p-3.5 rounded-2xl border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-white/5 text-gray-300">
+                <Target className="w-5 h-5 text-brand-gold" />
+              </div>
+              <div>
+                <div className="text-xs font-black uppercase tracking-tight text-white flex items-center gap-2">
+                  <span>Break-Even Benchmark Point:</span>
+                  <strong className="text-brand-gold font-mono text-sm">{currentBreakEvenDaily} plates/day</strong>
+                  <span className="text-gray-400 text-[10px]">({currentBreakEvenPeriod} plates for {periodDays}d)</span>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  Minimum daily plate volume needed across {simulationMode === 'multi' ? 'all active dishes' : 'this dish'} to completely pay off daily kitchen overheads (₱{totalDailyOverhead.toFixed(2)}/day).
+                </p>
+              </div>
+            </div>
+
+            <div className="shrink-0">
+              <span className={`text-[10px] font-bold px-3 py-1.5 rounded-xl border ${
+                currentDailyUnits >= currentBreakEvenDaily
+                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+              }`}>
+                {currentDailyUnits >= currentBreakEvenDaily
+                  ? `✓ +${currentDailyUnits - currentBreakEvenDaily} plates/day margin surplus`
+                  : `⚠️ -${currentBreakEvenDaily - currentDailyUnits} more plates/day needed`}
+              </span>
+            </div>
+          </div>
+
+          {/* Section 6: Multi-Item Profit Contribution Ranked Table (Shown in Multi-Mode) */}
+          {simulationMode === 'multi' && multiMetrics.items.length > 0 && (
+            <div className="bg-[#0D0D0C] rounded-2xl border border-white/10 overflow-hidden space-y-0">
+              <div className="px-4 py-3 bg-[#181818] border-b border-white/5 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">🏆</span>
+                  <span className="text-xs font-black uppercase tracking-wider text-white">
+                    Dish-by-Dish Income & Profit Contribution Breakdown ({periodLabel})
+                  </span>
+                </div>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  Ranked by Total Gross Profit
+                </span>
+              </div>
+
+              <div className="p-3.5 overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="text-[9px] font-black uppercase tracking-wider text-gray-400 border-b border-white/10 pb-2">
+                    <tr>
+                      <th className="pb-2 w-8">#</th>
+                      <th className="pb-2">Dish</th>
+                      <th className="pb-2 text-right">Volume</th>
+                      <th className="pb-2 text-right">Price / COGS</th>
+                      <th className="pb-2 text-right">Unit Margin</th>
+                      <th className="pb-2 text-right">Total Revenue</th>
+                      <th className="pb-2 text-right">Total Gross Profit</th>
+                      <th className="pb-2 text-right">Profit Share</th>
+                      <th className="pb-2 text-center">Profitability</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {multiMetrics.items.map((it, idx) => {
+                      const isTopEarner = idx === 0 && it.itemPeriodGross > 0;
+                      return (
+                        <tr key={it.item.id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="py-2.5 font-mono text-gray-500 font-bold">
+                            {idx + 1}
+                          </td>
+                          <td className="py-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-xs">{it.item.name}</span>
+                              {isTopEarner && (
+                                <span className="px-1.5 py-0.2 rounded text-[8px] font-black uppercase bg-brand-gold/20 text-brand-gold border border-brand-gold/30">
+                                  ⭐ Top Star
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[9px] text-gray-400 capitalize">{it.item.category}</span>
+                          </td>
+                          <td className="py-2.5 text-right font-mono">
+                            <span className="text-white font-bold">{it.itemDailyUnits} /day</span>
+                            <span className="text-[9px] text-gray-400 block">({it.itemPeriodUnits} total)</span>
+                          </td>
+                          <td className="py-2.5 text-right font-mono">
+                            <span className="text-white font-bold">₱{it.itemPrice.toFixed(2)}</span>
+                            <span className="text-[9px] text-amber-400 block">COGS: ₱{it.itemCogs.toFixed(2)}</span>
+                          </td>
+                          <td className="py-2.5 text-right font-mono">
+                            <span className={`font-bold ${it.itemUnitMargin > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              ₱{it.itemUnitMargin.toFixed(2)}
+                            </span>
+                            <span className="text-[9px] text-gray-400 block">{it.itemMarginPct.toFixed(0)}%</span>
+                          </td>
+                          <td className="py-2.5 text-right font-mono font-bold text-white">
+                            ₱{it.itemPeriodRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2.5 text-right font-mono font-black text-emerald-400">
+                            ₱{it.itemPeriodGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2.5 text-right font-mono">
+                            <div className="inline-flex items-center gap-1.5">
+                              <div className="w-12 bg-white/10 rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className="bg-emerald-400 h-full rounded-full"
+                                  style={{ width: `${Math.min(100, Math.max(0, it.profitContributionPct))}%` }}
+                                />
+                              </div>
+                              <span className="font-bold text-emerald-400 text-[10px]">
+                                {it.profitContributionPct.toFixed(1)}%
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-wider ${
+                              it.itemMarginPct >= 50
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : it.itemMarginPct >= 25
+                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                            }`}>
+                              {it.itemMarginPct >= 50 ? 'High Profit' : it.itemMarginPct >= 25 ? 'Healthy' : 'Low Margin'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Section 7: Multi-Horizon Quick Comparison Matrix */}
           <div className="bg-[#0D0D0C] p-4 rounded-2xl border border-white/10 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-gray-400 uppercase font-black tracking-wider flex items-center gap-1.5">
-                <span>📊 Horizon Projections Matrix ({dailyUnits} pcs/day volume)</span>
+                <span>📊 Full Horizon Projections Matrix ({currentDailyUnits} total plates/day volume)</span>
               </span>
               <span className="text-[9px] text-gray-500 font-mono">Normalized estimates</span>
             </div>
@@ -1035,7 +1832,11 @@ Yearly Net:  ₱${horizonYearly.net.toFixed(2)} / year
         <div className="p-4 sm:p-5 border-t-2 border-white/5 bg-[#0D0D0C] flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-[10px] text-gray-400 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Simulating <strong>{activeDishTitle}</strong> at <strong>{dailyUnits} plates/day</strong> for <strong>{periodLabel}</strong>.</span>
+            <span>
+              {simulationMode === 'multi'
+                ? `Simulating ${activeMultiItems.length} selected dishes (${multiMetrics.combinedDailyUnits} plates/day combined) for ${periodLabel}.`
+                : `Simulating ${activeDishTitle} at ${dailyUnits} plates/day for ${periodLabel}.`}
+            </span>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1987,7 +2788,7 @@ function AdminPanel({
                                 : 'bg-white/5 border-white/10 text-gray-300'
                             }`}
                           >
-                            + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
+                            + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${(opt.choice.price ?? 0).toFixed(2)})` : ''}
                           </span>
                         ))}
                       </div>
@@ -3151,7 +3952,7 @@ function AdminPanel({
                             <div className="flex flex-wrap gap-1 mt-0.5">
                               {i.selectedOptions.filter(isRelevantOptionChoice).map((opt, optIdx) => (
                                 <span key={optIdx} className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${opt.choice.price > 0 ? 'text-amber-300' : 'text-gray-400'}`}>
-                                  + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
+                                  + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${(opt.choice.price ?? 0).toFixed(2)})` : ''}
                                 </span>
                               ))}
                             </div>
@@ -3562,7 +4363,7 @@ function AdminPanel({
                                           <div className="flex flex-wrap gap-1 mt-0.5">
                                             {item.selectedOptions.filter(isRelevantOptionChoice).map((opt, optIdx) => (
                                               <span key={optIdx} className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${opt.choice.price > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-white/10 text-gray-300'}`}>
-                                                + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
+                                                + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${(opt.choice.price ?? 0).toFixed(2)})` : ''}
                                               </span>
                                             ))}
                                           </div>
@@ -3623,7 +4424,7 @@ function AdminPanel({
                                     )}
                                     {' '}• <strong>Payment:</strong> <span className="uppercase font-bold text-brand-gold">{order.paymentMethod === 'cod' ? '💵 COD' : order.paymentMethod}</span>
                                     {order.changeAmount !== undefined && order.changeAmount > 0 && (
-                                      <> • <strong className="text-amber-400">Change:</strong> <span className="font-mono font-bold text-amber-300">₱{order.changeAmount.toFixed(2)}</span> (Paid: ₱{order.amountTendered?.toFixed(2)})</>
+                                      <> • <strong className="text-amber-400">Change:</strong> <span className="font-mono font-bold text-amber-300">₱{order.changeAmount.toFixed(2)}</span> (Paid: ₱{(order.amountTendered ?? 0).toFixed(2)})</>
                                     )}
                                   </div>
 
@@ -4116,6 +4917,7 @@ function AdminPanel({
   const [rentBaseRate, setRentBaseRate] = useState<number>(500);
   const [laborBaseRate, setLaborBaseRate] = useState<number>(1200);
   const [gasBaseRate, setGasBaseRate] = useState<number>(200);
+  const [deliveryGasBaseRate, setDeliveryGasBaseRate] = useState<number>(100);
   const [otherBaseRate, setOtherBaseRate] = useState<number>(100);
 
   // Financial Target States
@@ -4141,6 +4943,7 @@ function AdminPanel({
     rentBaseRate: number;
     laborBaseRate: number;
     gasBaseRate: number;
+    deliveryGasBaseRate: number;
     otherBaseRate: number;
   }>>(() => {
     try {
@@ -4162,6 +4965,7 @@ function AdminPanel({
       setRentBaseRate(saved.rentBaseRate);
       setLaborBaseRate(saved.laborBaseRate);
       setGasBaseRate(saved.gasBaseRate);
+      setDeliveryGasBaseRate(saved.deliveryGasBaseRate ?? 100);
       setOtherBaseRate(saved.otherBaseRate);
     }
     setIsEditingRates(false);
@@ -4175,6 +4979,7 @@ function AdminPanel({
       rentBaseRate,
       laborBaseRate,
       gasBaseRate,
+      deliveryGasBaseRate,
       otherBaseRate
     };
     const targetKey = selectedFinancialMonth === 'all' ? 'default' : selectedFinancialMonth;
@@ -4241,6 +5046,7 @@ function AdminPanel({
           if (data.settings.rentBaseRate !== undefined) setRentBaseRate(data.settings.rentBaseRate);
           if (data.settings.laborBaseRate !== undefined) setLaborBaseRate(data.settings.laborBaseRate);
           if (data.settings.gasBaseRate !== undefined) setGasBaseRate(data.settings.gasBaseRate);
+          if (data.settings.deliveryGasBaseRate !== undefined) setDeliveryGasBaseRate(data.settings.deliveryGasBaseRate);
           if (data.settings.otherBaseRate !== undefined) setOtherBaseRate(data.settings.otherBaseRate);
           if (data.settings.targetSalesDay !== undefined) setTargetSalesDay(data.settings.targetSalesDay);
           if (data.settings.targetSalesWeek !== undefined) setTargetSalesWeek(data.settings.targetSalesWeek);
@@ -4281,6 +5087,7 @@ function AdminPanel({
         rentBaseRate,
         laborBaseRate,
         gasBaseRate,
+        deliveryGasBaseRate,
         otherBaseRate,
         targetSalesDay,
         targetSalesWeek,
@@ -4311,6 +5118,7 @@ function AdminPanel({
     rentBaseRate,
     laborBaseRate,
     gasBaseRate,
+    deliveryGasBaseRate,
     otherBaseRate,
     targetSalesDay,
     targetSalesWeek,
@@ -4375,6 +5183,7 @@ function AdminPanel({
   const [builderCategoryFilter, setBuilderCategoryFilter] = useState<Category | 'all'>('all');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [formSelectedTemplateKey, setFormSelectedTemplateKey] = useState<string>('');
 
   // Add/Edit menu item form states
   const [formName, setFormName] = useState('');
@@ -4522,7 +5331,7 @@ function AdminPanel({
 
   // Helper to determine grams or piece conversion for plate garnishes/toppings
   const getGarnishGramsPerPiece = (name: string, invMatch?: IngredientStock): number => {
-    const n = name.toLowerCase();
+    const n = String(name || '').toLowerCase();
     if (n.includes('egg') || n.includes('itlog')) return 50;
     if (n.includes('chili') || n.includes('sili')) return 10;
     if (n.includes('calamansi') || n.includes('kalamansi') || n.includes('lemon')) return 12;
@@ -4536,7 +5345,7 @@ function AdminPanel({
   const getGarnishPieceCost = (name: string, fallbackCost?: number, invMatch?: IngredientStock): number => {
     if (!invMatch) {
       if (fallbackCost !== undefined && fallbackCost > 0) return Number(fallbackCost.toFixed(2));
-      const n = name.toLowerCase();
+      const n = String(name || '').toLowerCase();
       if (n.includes('egg') || n.includes('itlog')) return 8.00;
       if (n.includes('calamansi') || n.includes('kalamansi')) return 0.50;
       if (n.includes('chili') || n.includes('sili')) return 1.00;
@@ -4735,7 +5544,10 @@ function AdminPanel({
 
   // Helper to compute inventory item cost for a given amount and unit (handling tbsp, tsp, cups, oz, pinch, ml, g, kg, L)
   const computeInventoryIngredientCost = (name: string, amount: number | '', unit: string) => {
-    const inv = ingredientsInventory.find(i => i.name.toLowerCase() === name.toLowerCase());
+    if (!name || typeof name !== 'string') return 0;
+    const cleanName = name.trim().toLowerCase();
+    if (!cleanName) return 0;
+    const inv = (ingredientsInventory || []).find(i => i && i.name && typeof i.name === 'string' && i.name.toLowerCase().trim() === cleanName);
     const invUnit = (inv?.unit || 'g').toLowerCase();
     const inputUnit = (unit || invUnit).toLowerCase();
     const numAmt = Number(amount) || 0;
@@ -4978,6 +5790,36 @@ function AdminPanel({
         { name: 'Stir-fry Cabbage & Veggies', batchAmount: 70, unit: 'g' },
         { name: 'Pure Sesame Cooking Oil', batchAmount: 30, unit: 'ml' }
       ]
+    },
+    {
+      id: 'template-chicken-poppers',
+      name: 'Crispy Chicken Poppers Bento',
+      category: 'bento',
+      description: 'Bite-sized crispy golden chicken poppers seasoned with special spices, served with steamed rice and signature dipping sauce.',
+      batchYieldUnit: 'g',
+      servingSizeUnit: 'g',
+      servingSizeGrams: 100,
+      batchYieldGrams: 2000,
+      targetMargin: 50,
+      includeRice: true,
+      ricePortionGrams: 150,
+      riceCostPerGram: 0.04,
+      includeGarnishes: true,
+      garnishes: [
+        { name: 'Signature Gravy / Dip', amount: 1, unit: 'pcs', costPerUnit: 3.50, selected: true },
+        { name: 'Spring Onions & Sesame', amount: 1, unit: 'pcs', costPerUnit: 1.00, selected: true }
+      ],
+      includePackaging: true,
+      packaging: [
+        { name: 'Bento Box with Lid', amount: 1, unit: 'pcs', costPerUnit: 4.50, selected: true },
+        { name: 'Utensils (Spoon & Fork)', amount: 1, unit: 'pcs', costPerUnit: 1.50, selected: true }
+      ],
+      ingredients: [
+        { name: 'Breast Chicken', batchAmount: 1600, unit: 'g' },
+        { name: 'Crispy Tempura / Batter Mix', batchAmount: 250, unit: 'g' },
+        { name: 'Chicken Powder', batchAmount: 50, unit: 'g' },
+        { name: 'Cooking Oil (Deep Fry)', batchAmount: 300, unit: 'ml' }
+      ]
     }
   ];
 
@@ -4986,7 +5828,7 @@ function AdminPanel({
       const stored = localStorage.getItem('curvada_saved_recipe_templates');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed;
         }
       }
@@ -4996,20 +5838,47 @@ function AdminPanel({
     return DEFAULT_RECIPE_TEMPLATES;
   });
 
+  useEffect(() => {
+    const fetchTemplatesFromDb = async () => {
+      try {
+        const res = await fetch('/api/templates');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.templates && Array.isArray(data.templates) && data.templates.length > 0) {
+            const normalized = data.templates.map((tmpl: any) => ({
+              ...tmpl,
+              id: (tmpl.id && tmpl.id !== 'undefined') ? tmpl.id : (tmpl.customId && tmpl.customId !== 'undefined' ? tmpl.customId : `template-${tmpl._id || Date.now()}`)
+            }));
+            setSavedRecipeTemplates(normalized);
+            localStorage.setItem('curvada_saved_recipe_templates', JSON.stringify(normalized));
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch recipe templates from server', e);
+      }
+    };
+    fetchTemplatesFromDb();
+  }, []);
+
   const [selectedRecipeToLoad, setSelectedRecipeToLoad] = useState<string>('');
   const [isSavingTemplatePrompt, setIsSavingTemplatePrompt] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
 
-  const saveRecipeTemplates = (newTemplates: SavedRecipeTemplate[]) => {
+  const saveRecipeTemplates = async (newTemplates: SavedRecipeTemplate[]) => {
     setSavedRecipeTemplates(newTemplates);
     try {
       localStorage.setItem('curvada_saved_recipe_templates', JSON.stringify(newTemplates));
+      await fetch('/api/templates/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templates: newTemplates })
+      });
     } catch (e) {
-      console.error('Failed to save templates to storage', e);
+      console.error('Failed to save templates to storage/server', e);
     }
   };
 
-  const handleDeleteRecipeTemplate = (templateIdWithPrefix: string) => {
+  const handleDeleteRecipeTemplate = async (templateIdWithPrefix: string) => {
     const rawId = templateIdWithPrefix.replace(/^template:/, '');
     const target = savedRecipeTemplates.find(t => t.id === rawId);
     if (!target) return;
@@ -5018,6 +5887,11 @@ function AdminPanel({
     }
     const updated = savedRecipeTemplates.filter(t => t.id !== rawId);
     saveRecipeTemplates(updated);
+    try {
+      await fetch(`/api/templates/${rawId}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to delete template from server', e);
+    }
     setSelectedRecipeToLoad('');
     handleOpenFreshBatchCalculator();
   };
@@ -5029,8 +5903,16 @@ function AdminPanel({
       return;
     }
 
+    const isUpdatingExisting = selectedRecipeToLoad.startsWith('template:');
+    const existingId = isUpdatingExisting ? selectedRecipeToLoad.replace('template:', '') : null;
+    const matchingIndex = savedRecipeTemplates.findIndex(t => 
+      (existingId && t.id === existingId) || t.name.toLowerCase().trim() === finalName.toLowerCase().trim()
+    );
+
+    const templateId = matchingIndex !== -1 ? savedRecipeTemplates[matchingIndex].id : (existingId || 'template-' + Date.now());
+
     const newTemplate: SavedRecipeTemplate = {
-      id: 'template-' + Date.now(),
+      id: templateId,
       name: finalName,
       batchYieldUnit: standaloneBatchUnit,
       servingSizeUnit: standaloneBatchUnit,
@@ -5041,230 +5923,1070 @@ function AdminPanel({
       ricePortionGrams: Number(standaloneRicePortionGrams) || 150,
       riceCostPerGram: Number(standaloneRiceCostPerGram) || 0.04,
       includeGarnishes: standaloneIncludeGarnishes,
-      garnishes: standaloneSelectedGarnishes,
+      garnishes: standaloneIncludeGarnishes ? standaloneSelectedGarnishes.filter(g => g.selected) : [],
       includePackaging: standaloneIncludePackaging,
-      packaging: standaloneSelectedPackaging,
+      packaging: standaloneIncludePackaging ? standaloneSelectedPackaging.filter(p => p.selected) : [],
       ingredients: standaloneIngredients.map(item => ({
-        name: item.name,
+        name: item.name.trim(),
         batchAmount: Number(item.batchAmount) || 0,
         unit: item.unit,
         cost: Number(item.cost) || 0
       }))
     };
 
-    const updated = [newTemplate, ...savedRecipeTemplates.filter(t => t.name.toLowerCase() !== finalName.toLowerCase())];
-    saveRecipeTemplates(updated);
+    let updatedTemplates = [...savedRecipeTemplates];
+    if (matchingIndex !== -1) {
+      updatedTemplates[matchingIndex] = newTemplate;
+    } else {
+      updatedTemplates = [newTemplate, ...updatedTemplates];
+    }
+    saveRecipeTemplates(updatedTemplates);
     setSelectedRecipeToLoad(`template:${newTemplate.id}`);
     setIsSavingTemplatePrompt(false);
     setNewTemplateName('');
-    alert(`🎉 Successfully saved "${finalName}" template with ${newTemplate.ingredients.length} viand ingredients, ${standaloneIncludeRice ? '1 rice' : 'no rice'}, ${standaloneIncludeGarnishes ? standaloneSelectedGarnishes.filter(g => g.selected).length : 0} garnishes & ${standaloneIncludePackaging ? standaloneSelectedPackaging.filter(p => p.selected).length : 0} packaging items!`);
+    alert(`🎉 Successfully saved "${finalName}" template with ${newTemplate.ingredients.length} viand ingredients! All batch amounts, portion yields & costing are updated.`);
   };
 
-  const handleSaveAllBatchCostingChanges = (options?: { closeModal?: boolean; sectionLabel?: string; openMenuForm?: boolean }) => {
-    const finalName = (standaloneRecipeName || 'Custom Recipe').trim();
-    const batchWeightG = Math.max(1, Number(standaloneBatchWeight) || (standaloneBatchUnit === 'pcs' ? 100 : 2000));
-    const servingG = Math.max(1, Number(standaloneServingGrams) || (standaloneBatchUnit === 'pcs' ? 4 : 90));
+  // Helper to intelligently infer or auto-generate Dish Title, Description, Ingredients Tags & Category from Bulk Calculator / Template / Viand Ingredients
+  const resolveBulkCalculatorAutoFill = React.useCallback(() => {
+    // 1. Gather all active batch viand ingredients
+    const activeBatch = (formBatchIngredients && formBatchIngredients.length > 0)
+      ? formBatchIngredients
+      : (standaloneIngredients && standaloneIngredients.length > 0)
+        ? standaloneIngredients
+        : [];
 
-    // Calculate portion amounts for viand ingredients
-    const scaledReqs = standaloneIngredients.map(item => {
-      const invMatch = (ingredientsInventory || []).find(inv => inv.name.toLowerCase() === item.name.toLowerCase());
-      const invUnit = (invMatch?.unit || item.unit || 'g').toLowerCase();
-      const inputUnit = (item.unit || invUnit).toLowerCase();
-      const isCountable = inputUnit === 'pcs' || inputUnit === 'cans' || inputUnit === 'pc' || inputUnit === 'pack';
-      const rawAmt = Number(item.batchAmount) || 0;
-      
-      let finalAmt: number;
-      if (rawAmt <= 0) {
-        finalAmt = 0;
-      } else if (isCountable) {
-        const scaled = (rawAmt / batchWeightG) * servingG;
-        finalAmt = Number(scaled.toFixed(3));
-      } else {
-        // Convert to base units (grams for weight, ml for volume)
-        const baseAmount = getBaseEquivalentUnits(rawAmt, inputUnit);
-        const scaledBase = (baseAmount / batchWeightG) * servingG;
-        finalAmt = Number(scaledBase.toFixed(2));
-      }
+    const viandNames = activeBatch.map(i => String(i?.name || '').trim()).filter(Boolean);
+    const hasViand = viandNames.length > 0;
 
-      return {
-        name: item.name.trim(),
-        amount: finalAmt
-      };
-    });
+    // 2. Resolve template or dish match
+    let matchedTemplate: SavedRecipeTemplate | undefined;
+    const cleanLoadKey = (selectedRecipeToLoad || formSelectedTemplateKey || '').trim();
+    if (cleanLoadKey.startsWith('template:')) {
+      const tid = cleanLoadKey.replace(/^template:/, '').trim().toLowerCase();
+      matchedTemplate = (savedRecipeTemplates || []).find(t => t && (
+        String(t.id || '').toLowerCase() === tid ||
+        String(t.name || '').toLowerCase().trim() === tid
+      )) || DEFAULT_RECIPE_TEMPLATES.find(t => t && (
+        String(t.id || '').toLowerCase() === tid ||
+        String(t.name || '').toLowerCase().trim() === tid
+      ));
+    }
 
-    if (standaloneIncludeRice) {
-      const riceName = standaloneSelectedRiceIngredient || 'Steamed Rice';
-      scaledReqs.push({
-        name: riceName,
-        amount: Number(standaloneRicePortionGrams) || 150
+    // Also match template by ingredient similarity if not explicitly keyed
+    if (!matchedTemplate && hasViand) {
+      const lowerViand = viandNames.map(n => n.toLowerCase());
+      matchedTemplate = (savedRecipeTemplates || []).find(t => {
+        if (!t || !Array.isArray(t.ingredients) || t.ingredients.length === 0) return false;
+        const tIngs = t.ingredients.map(i => (typeof i === 'string' ? i : i.name).toLowerCase());
+        const matchCount = tIngs.filter(ti => lowerViand.some(lv => lv.includes(ti) || ti.includes(lv))).length;
+        return matchCount >= Math.min(2, tIngs.length);
+      }) || DEFAULT_RECIPE_TEMPLATES.find(t => {
+        if (!t || !Array.isArray(t.ingredients) || t.ingredients.length === 0) return false;
+        const tIngs = t.ingredients.map(i => (typeof i === 'string' ? i : i.name).toLowerCase());
+        const matchCount = tIngs.filter(ti => lowerViand.some(lv => lv.includes(ti) || ti.includes(lv))).length;
+        return matchCount >= Math.min(2, tIngs.length);
       });
     }
 
-    if (standaloneIncludeGarnishes && standaloneSelectedGarnishes.length > 0) {
-      standaloneSelectedGarnishes
-        .filter(g => g.selected)
-        .forEach(g => {
-          const invMatch = (ingredientsInventory || []).find(inv => inv.name.toLowerCase() === g.name.toLowerCase());
-          const garnishUnit = (g.unit || 'pcs').toLowerCase();
-          const isGarnishWeightUnit = garnishUnit === 'g' || garnishUnit === 'ml';
-          const isWeightStockPcs = (invMatch?.unit === 'g' || invMatch?.unit === 'kg') && !isGarnishWeightUnit;
-          const gramsPerPc = getGarnishGramsPerPiece(g.name, invMatch);
-          // If garnish unit is already g/ml, the amount IS the per-serving weight — don't multiply by gramsPerPc.
-          // Only convert pieces→grams when the garnish is measured in pcs but stored in g/kg inventory.
-          const reqAmount = isGarnishWeightUnit
-            ? (Number(g.amount) || 1)
-            : isWeightStockPcs
-              ? (Number(g.amount) || 1) * gramsPerPc
-              : (Number(g.amount) || 1);
-
-          scaledReqs.push({
-            name: g.name,
-            amount: reqAmount
-          });
-        });
-    }
-
-    if (standaloneIncludePackaging && standaloneSelectedPackaging.length > 0) {
-      standaloneSelectedPackaging
-        .filter(p => p.selected)
-        .forEach(p => {
-          scaledReqs.push({
-            name: p.name,
-            amount: Number(p.amount) || 1
-          });
-        });
-    }
-    const finalCombinedReqs = deduplicateAndNormalizeRequirements(scaledReqs);
-    const allIngredientNames = Array.from(new Set(finalCombinedReqs.map(p => p.name)));
-
-    const batchCost = standaloneTotalBatchCost !== undefined && standaloneTotalBatchCost > 0
-      ? standaloneTotalBatchCost
-      : standaloneIngredients.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
-    const viandCostPerServing = (batchCost / batchWeightG) * servingG;
-    const riceCostPerServing = standaloneIncludeRice ? (Number(standaloneRicePortionGrams) || 0) * (Number(standaloneRiceCostPerGram) || 0) : 0;
-    const garnishesCostPerServing = standaloneIncludeGarnishes
-      ? standaloneSelectedGarnishes.filter(g => g.selected).reduce((sum, g) => sum + (Number(g.amount) || 1) * (Number(g.costPerUnit) || 0), 0)
-      : 0;
-    const packagingCostPerServing = standaloneIncludePackaging
-      ? standaloneSelectedPackaging.filter(p => p.selected).reduce((sum, p) => sum + (Number(p.amount) || 1) * (Number(p.costPerUnit) || 0), 0)
-      : 0;
-    const totalPlateCogs = viandCostPerServing + riceCostPerServing + garnishesCostPerServing + packagingCostPerServing;
-    const targetMarginRatio = (Number(standaloneTargetMargin) || 50) / 100;
-    const recSellingPrice = Math.max(1, Math.round(totalPlateCogs / Math.max(0.05, (1 - targetMarginRatio))));
-
-    // Update Form States (so the Add/Edit form always has the fresh values)
-    const exactBatchIngredients = standaloneIngredients.map(item => ({
-      name: item.name,
-      batchAmount: Number(item.batchAmount) || 0,
-      unit: item.unit,
-      cost: Number(item.cost) || 0
-    }));
-    setFormBatchIngredients(exactBatchIngredients);
-    setFormGarnishes(standaloneSelectedGarnishes);
-    setFormPackaging(standaloneSelectedPackaging);
-    setFormBatchTotalCost(batchCost);
-    setFormPrice(recSellingPrice);
-    setFormTargetMargin(Number(standaloneTargetMargin) || 50);
-    setFormBatchYieldUnit(standaloneBatchUnit);
-    setFormServingSizeUnit(standaloneBatchUnit);
-    setFormBatchYieldGrams(batchWeightG);
-    setFormServingSizeGrams(servingG);
-    setFormIncludeRice(standaloneIncludeRice);
-    setFormRicePortionGrams(Number(standaloneRicePortionGrams) || 150);
-    setFormRiceCostPerGram(Number(standaloneRiceCostPerGram) || 0.04);
-    setFormSelectedRiceIngredient(standaloneSelectedRiceIngredient);
-    setFormRecipeRequirements(finalCombinedReqs);
-    setFormIngredients(allIngredientNames.join(', '));
-
-    // Pre-fill form metadata if not editing an existing item
-    if (!editingItem && options?.openMenuForm) {
-      setFormName(finalName);
-      setFormDescription(`Prepared in bulk ${standaloneBatchUnit === 'pcs' ? `${batchWeightG} pcs` : `${(batchWeightG / 1000).toFixed(1)}kg`} viand batch, portioned at ${servingG}${standaloneBatchUnit === 'pcs' ? ' pcs' : 'g meat'}${standaloneIncludeRice ? ` with ${standaloneRicePortionGrams}g steamed rice` : ''}. Served fresh with savory traditional accompaniments.`);
-      if (!formCategory) setFormCategory('silog');
-      if (!formImage) setFormImage(IMAGE_PRESETS[2].url);
-      if (!formOriginalImage) setFormOriginalImage(IMAGE_PRESETS[2].url);
-    } else if (standaloneRecipeName && standaloneRecipeName !== 'New Dish Recipe') {
-      setFormName(finalName);
-    }
-
-    // Persist directly to active MenuItem if loaded from dish or matching name
+    // Match existing menu dish if applicable
     let matchedDish: MenuItem | undefined;
-    if (selectedRecipeToLoad && selectedRecipeToLoad.startsWith('dish:')) {
-      const dishId = selectedRecipeToLoad.replace('dish:', '');
-      matchedDish = menuItems.find(item => item.id === dishId);
-    } else {
-      matchedDish = menuItems.find(item => item.name.toLowerCase() === finalName.toLowerCase());
+    if (cleanLoadKey.startsWith('dish:')) {
+      const did = cleanLoadKey.replace(/^dish:/, '').trim().toLowerCase();
+      matchedDish = (menuItems || []).find(d => d && (
+        String(d.id || '').toLowerCase() === did ||
+        String((d as any)._id || '').toLowerCase() === did ||
+        String(d.name || '').toLowerCase().trim() === did
+      ));
     }
 
-    if (matchedDish) {
-      const updatedDish: MenuItem = {
-        ...matchedDish,
+    // 3. Resolve Title
+    let resolvedTitle = (standaloneRecipeName || formName || '').trim();
+    const isGenericTitle = !resolvedTitle || resolvedTitle === 'Custom Recipe' || resolvedTitle === 'New Dish Recipe';
+    
+    if (isGenericTitle) {
+      if (standaloneRecipeName && standaloneRecipeName.trim() && standaloneRecipeName.trim() !== 'Custom Recipe') {
+        resolvedTitle = standaloneRecipeName.trim();
+      } else if (matchedTemplate?.name) {
+        resolvedTitle = matchedTemplate.name.replace(/\s*\(\d+\s*(?:pcs|kg|g)\s*batch\)/i, '').trim();
+      } else if (matchedDish?.name) {
+        resolvedTitle = matchedDish.name.trim();
+      } else if (hasViand) {
+        // Synthesize title from primary ingredients
+        const joined = viandNames.join(' ').toLowerCase();
+        if (joined.includes('lumpia') || joined.includes('wrapper')) {
+          resolvedTitle = 'Crispy Lumpiang Shanghai Bento';
+        } else if (joined.includes('sisig') || (joined.includes('pork belly') && joined.includes('liver'))) {
+          resolvedTitle = 'Sizzling Pork Sisig Plate';
+        } else if (joined.includes('tapa') || (joined.includes('beef') && joined.includes('soy'))) {
+          resolvedTitle = 'Special Garlic Beef Tapa Bento';
+        } else if (joined.includes('karaage') || joined.includes('chicken')) {
+          resolvedTitle = 'Crispy Chicken Karaage Bento';
+        } else if (joined.includes('tonkatsu') || joined.includes('katsu')) {
+          resolvedTitle = 'Crispy Pork Tonkatsu Bento';
+        } else if (joined.includes('liempo') || joined.includes('pork belly')) {
+          resolvedTitle = 'Grilled Pork Liempo Bento';
+        } else if (joined.includes('bangus') || joined.includes('fish')) {
+          resolvedTitle = 'Daing na Bangus Bento';
+        } else {
+          // Use primary viand name
+          const primary = viandNames[0] || 'Specialty';
+          resolvedTitle = `${primary} Specialty Bento`;
+        }
+      } else {
+        resolvedTitle = 'New Dish Recipe';
+      }
+    }
+
+    // 4. Resolve Category
+    const lowerTitle = resolvedTitle.toLowerCase();
+    let resolvedCategory: Category = formCategory || 'bento';
+    if (matchedTemplate?.category) {
+      resolvedCategory = matchedTemplate.category;
+    } else if (matchedDish?.category) {
+      resolvedCategory = matchedDish.category;
+    } else if (lowerTitle.includes('bento') || lowerTitle.includes('katsu') || lowerTitle.includes('teriyaki') || lowerTitle.includes('karaage') || lowerTitle.includes('tempura') || lowerTitle.includes('popper') || lowerTitle.includes('poppers') || lowerTitle.includes('nugget') || lowerTitle.includes('popcorn') || lowerTitle.includes('fillet')) {
+      resolvedCategory = 'bento';
+    } else if (lowerTitle.includes('silog') || lowerTitle.includes('tapa') || lowerTitle.includes('tocino') || lowerTitle.includes('bangus') || lowerTitle.includes('longganisa') || lowerTitle.includes('sisig') || lowerTitle.includes('adobo') || lowerTitle.includes('lechon') || lowerTitle.includes('kawali') || lowerTitle.includes('liempo') || lowerTitle.includes('inasal')) {
+      resolvedCategory = 'silog';
+    } else if (lowerTitle.includes('bowl') || lowerTitle.includes('don') || lowerTitle.includes('chahan') || lowerTitle.includes('curry')) {
+      resolvedCategory = 'rice-bowl';
+    } else if (lowerTitle.includes('tea') || lowerTitle.includes('juice') || lowerTitle.includes('shake') || lowerTitle.includes('drink') || lowerTitle.includes('coffee') || lowerTitle.includes('soda') || lowerTitle.includes('gulaman')) {
+      resolvedCategory = 'drinks';
+    }
+
+    // 5. Resolve Recipe Ingredients (Comma-Separated string of tags)
+    // Include viand, rice, and garnishes
+    const riceName = (formIncludeRice || standaloneIncludeRice)
+      ? (formSelectedRiceIngredient || standaloneSelectedRiceIngredient || 'Steamed Rice').trim()
+      : null;
+
+    const activeGarnishes = (formGarnishes && formGarnishes.length > 0)
+      ? formGarnishes.filter(g => g.selected !== false).map(g => String(g.name).trim())
+      : (standaloneSelectedGarnishes && standaloneSelectedGarnishes.length > 0)
+        ? standaloneSelectedGarnishes.filter(g => g.selected !== false).map(g => String(g.name).trim())
+        : (matchedTemplate?.garnishes ? matchedTemplate.garnishes.filter(g => g.selected !== false).map(g => String(g.name).trim()) : []);
+
+    const allIngList: string[] = [];
+    viandNames.forEach(n => {
+      if (!allIngList.some(item => item.toLowerCase() === n.toLowerCase())) {
+        allIngList.push(n);
+      }
+    });
+    if (riceName && !allIngList.some(item => item.toLowerCase() === riceName.toLowerCase())) {
+      allIngList.push(riceName);
+    }
+    activeGarnishes.forEach(g => {
+      if (g && !allIngList.some(item => item.toLowerCase() === g.toLowerCase())) {
+        allIngList.push(g);
+      }
+    });
+    const resolvedIngredients = allIngList.join(', ');
+
+    // 6. Resolve Description
+    const unit = formBatchYieldUnit || standaloneBatchUnit || 'g';
+    const batchG = Number(formBatchYieldGrams) || Number(standaloneBatchWeight) || (unit === 'pcs' ? 100 : 2000);
+    const servingG = Number(formServingSizeGrams) || Number(standaloneServingGrams) || (unit === 'pcs' ? 4 : 90);
+    const ricePortion = Number(formRicePortionGrams) || Number(standaloneRicePortionGrams) || 150;
+    const incRice = formIncludeRice || standaloneIncludeRice;
+
+    let resolvedDescription = (formDescription || '').trim();
+    const isGenericDesc = !resolvedDescription || resolvedDescription.includes('Prepared in bulk 2.0kg viand batch') || resolvedDescription.includes('Prepared in bulk');
+
+    if (isGenericDesc || !resolvedDescription) {
+      if (matchedTemplate?.description) {
+        resolvedDescription = matchedTemplate.description;
+      } else if (matchedDish?.description) {
+        resolvedDescription = matchedDish.description;
+      } else if (hasViand) {
+        const topViands = viandNames.slice(0, 3).join(', ');
+        const riceText = incRice ? ` with ${ricePortion}g steamed rice` : '';
+        const garnishesText = activeGarnishes.length > 0 ? ` and ${activeGarnishes.slice(0, 2).join(', ')}` : '';
+        resolvedDescription = `Special ${resolvedTitle} made with fresh ${topViands}, perfectly cooked in bulk batch and portioned at ${servingG}${unit === 'pcs' ? ' pcs' : 'g'}${riceText}${garnishesText}.`;
+      } else {
+        resolvedDescription = `Prepared in bulk ${unit === 'pcs' ? `${batchG} pcs` : `${(batchG / 1000).toFixed(1)}kg`} viand batch, portioned at ${servingG}${unit === 'pcs' ? ' pcs' : 'g meat'}${incRice ? ` with ${ricePortion}g steamed rice` : ''}. Served fresh with savory traditional accompaniments.`;
+      }
+    }
+
+    return {
+      title: resolvedTitle,
+      description: resolvedDescription,
+      ingredients: resolvedIngredients,
+      category: resolvedCategory,
+      matchedTemplate,
+      matchedDish
+    };
+  }, [
+    formName,
+    formDescription,
+    formCategory,
+    formBatchIngredients,
+    formIncludeRice,
+    formSelectedRiceIngredient,
+    formRicePortionGrams,
+    formGarnishes,
+    formBatchYieldUnit,
+    formBatchYieldGrams,
+    formServingSizeGrams,
+    standaloneIngredients,
+    standaloneRecipeName,
+    standaloneBatchUnit,
+    standaloneBatchWeight,
+    standaloneServingGrams,
+    standaloneIncludeRice,
+    standaloneSelectedRiceIngredient,
+    standaloneRicePortionGrams,
+    standaloneSelectedGarnishes,
+    selectedRecipeToLoad,
+    formSelectedTemplateKey,
+    savedRecipeTemplates,
+    menuItems
+  ]);
+
+  const handleAutoFillRecipeFieldsFromBulk = React.useCallback((force: boolean = false) => {
+    const auto = resolveBulkCalculatorAutoFill();
+    if (force || !formName || formName.trim() === '' || formName === 'Custom Recipe' || formName === 'New Dish Recipe') {
+      if (auto.title) setFormName(auto.title);
+    }
+    if (force || !formDescription || formDescription.trim() === '') {
+      if (auto.description) setFormDescription(auto.description);
+    }
+    if (force || !formIngredients || formIngredients.trim() === '') {
+      if (auto.ingredients) setFormIngredients(auto.ingredients);
+    }
+    if (auto.category) {
+      setFormCategory(auto.category);
+    }
+  }, [resolveBulkCalculatorAutoFill, formName, formDescription, formIngredients]);
+
+  // Automatically populate Title, Description & Ingredients tags when modal is opened with bulk calculator items
+  useEffect(() => {
+    if (!isFormOpen) return;
+    if (editingItem) return; // Do not overwrite when modifying an existing catalog dish
+    
+    const hasBulkItems = (standaloneIngredients && standaloneIngredients.length > 0) || 
+                         (formBatchIngredients && formBatchIngredients.length > 0);
+    if (!hasBulkItems) return;
+
+    const needsName = !formName || formName.trim() === '' || formName === 'Custom Recipe' || formName === 'New Dish Recipe';
+    const needsDesc = !formDescription || formDescription.trim() === '';
+    const needsIngs = !formIngredients || formIngredients.trim() === '';
+
+    if (needsName || needsDesc || needsIngs) {
+      const auto = resolveBulkCalculatorAutoFill();
+      if (needsName && auto.title) setFormName(auto.title);
+      if (needsDesc && auto.description) setFormDescription(auto.description);
+      if (needsIngs && auto.ingredients) setFormIngredients(auto.ingredients);
+      if (auto.category) setFormCategory(auto.category);
+    }
+  }, [
+    isFormOpen,
+    editingItem,
+    standaloneIngredients,
+    formBatchIngredients,
+    resolveBulkCalculatorAutoFill,
+    formName,
+    formDescription,
+    formIngredients
+  ]);
+
+  const handleSaveAllBatchCostingChanges = (options?: { closeModal?: boolean; sectionLabel?: string; openMenuForm?: boolean; navigateToBuilder?: boolean }) => {
+    try {
+      const autoResolved = resolveBulkCalculatorAutoFill();
+      let finalName = (standaloneRecipeName || formName || '').trim();
+      if (!finalName || finalName === 'Custom Recipe' || finalName === 'New Dish Recipe') {
+        finalName = autoResolved.title || 'Custom Recipe';
+      }
+      const batchWeightG = Math.max(1, Number(standaloneBatchWeight) || (standaloneBatchUnit === 'pcs' ? 100 : 2000));
+      const servingG = Math.max(1, Number(standaloneServingGrams) || (standaloneBatchUnit === 'pcs' ? 4 : 90));
+
+      // Calculate portion amounts for viand ingredients
+      const scaledReqs: Array<{ name: string; amount: number }> = [];
+      (standaloneIngredients || []).forEach(item => {
+        if (!item || !item.name) return;
+        const itemName = String(item.name).trim();
+        if (!itemName) return;
+
+        const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && inv.name.toLowerCase().trim() === itemName.toLowerCase());
+        const invUnit = (invMatch?.unit || item.unit || 'g').toLowerCase();
+        const inputUnit = (item.unit || invUnit).toLowerCase();
+        const isCountable = inputUnit === 'pcs' || inputUnit === 'cans' || inputUnit === 'pc' || inputUnit === 'pack';
+        const rawAmt = Number(item.batchAmount) || 0;
+        
+        let finalAmt: number;
+        if (rawAmt <= 0) {
+          finalAmt = 0;
+        } else if (isCountable) {
+          const scaled = (rawAmt / batchWeightG) * servingG;
+          finalAmt = Number(scaled.toFixed(3));
+        } else {
+          // Convert to base units (grams for weight, ml for volume)
+          const baseAmount = getBaseEquivalentUnits(rawAmt, inputUnit);
+          const scaledBase = (baseAmount / batchWeightG) * servingG;
+          finalAmt = Number(scaledBase.toFixed(2));
+        }
+
+        scaledReqs.push({
+          name: itemName,
+          amount: finalAmt
+        });
+      });
+
+      if (standaloneIncludeRice) {
+        const riceName = (standaloneSelectedRiceIngredient || 'Steamed Rice').trim();
+        scaledReqs.push({
+          name: riceName,
+          amount: Number(standaloneRicePortionGrams) || 150
+        });
+      }
+
+      if (standaloneIncludeGarnishes && Array.isArray(standaloneSelectedGarnishes)) {
+        standaloneSelectedGarnishes
+          .filter(g => g && g.selected && g.name)
+          .forEach(g => {
+            const garnishName = String(g.name).trim();
+            const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && inv.name.toLowerCase().trim() === garnishName.toLowerCase());
+            const garnishUnit = (g.unit || 'pcs').toLowerCase();
+            const isGarnishWeightUnit = garnishUnit === 'g' || garnishUnit === 'ml';
+            const isWeightStockPcs = (invMatch?.unit === 'g' || invMatch?.unit === 'kg') && !isGarnishWeightUnit;
+            const gramsPerPc = getGarnishGramsPerPiece(garnishName, invMatch);
+            const reqAmount = isGarnishWeightUnit
+              ? (Number(g.amount) || 1)
+              : isWeightStockPcs
+                ? (Number(g.amount) || 1) * gramsPerPc
+                : (Number(g.amount) || 1);
+
+            scaledReqs.push({
+              name: garnishName,
+              amount: reqAmount
+            });
+          });
+      }
+
+      if (standaloneIncludePackaging && Array.isArray(standaloneSelectedPackaging)) {
+        standaloneSelectedPackaging
+          .filter(p => p && p.selected && p.name)
+          .forEach(p => {
+            scaledReqs.push({
+              name: String(p.name).trim(),
+              amount: Number(p.amount) || 1
+            });
+          });
+      }
+      const finalCombinedReqs = deduplicateAndNormalizeRequirements(scaledReqs);
+      const allIngredientNames = Array.from(new Set(finalCombinedReqs.map(p => p.name)));
+
+      const batchCost = standaloneTotalBatchCost !== undefined && standaloneTotalBatchCost > 0
+        ? standaloneTotalBatchCost
+        : (standaloneIngredients || []).reduce((sum, item) => sum + (Number(item?.cost) || 0), 0);
+      const viandCostPerServing = (batchCost / batchWeightG) * servingG;
+      const riceCostPerServing = standaloneIncludeRice ? (Number(standaloneRicePortionGrams) || 0) * (Number(standaloneRiceCostPerGram) || 0) : 0;
+      const garnishesCostPerServing = standaloneIncludeGarnishes && Array.isArray(standaloneSelectedGarnishes)
+        ? standaloneSelectedGarnishes.filter(g => g && g.selected).reduce((sum, g) => sum + (Number(g.amount) || 1) * (Number(g.costPerUnit) || 0), 0)
+        : 0;
+      const packagingCostPerServing = standaloneIncludePackaging && Array.isArray(standaloneSelectedPackaging)
+        ? standaloneSelectedPackaging.filter(p => p && p.selected).reduce((sum, p) => sum + (Number(p.amount) || 1) * (Number(p.costPerUnit) || 0), 0)
+        : 0;
+      const totalPlateCogs = viandCostPerServing + riceCostPerServing + garnishesCostPerServing + packagingCostPerServing;
+      const targetMarginRatio = (Number(standaloneTargetMargin) || 50) / 100;
+      const recSellingPrice = Math.max(1, Math.round(totalPlateCogs / Math.max(0.05, (1 - targetMarginRatio))));
+
+      // Update Form States (so the Add/Edit form always has the fresh values)
+      const exactBatchIngredients = (standaloneIngredients || []).map(item => ({
+        name: String(item?.name || '').trim(),
+        batchAmount: Number(item?.batchAmount) || 0,
+        unit: item?.unit || 'g',
+        cost: Number(item?.cost) || 0
+      })).filter(i => i.name.length > 0);
+
+      setFormBatchIngredients(exactBatchIngredients);
+      setFormGarnishes(standaloneSelectedGarnishes || []);
+      setFormPackaging(standaloneSelectedPackaging || []);
+      setFormBatchTotalCost(batchCost);
+      setFormPrice(recSellingPrice);
+      setFormTargetMargin(Number(standaloneTargetMargin) || 50);
+      setFormBatchYieldUnit(standaloneBatchUnit);
+      setFormServingSizeUnit(standaloneBatchUnit);
+      setFormBatchYieldGrams(batchWeightG);
+      setFormServingSizeGrams(servingG);
+      setFormIncludeRice(standaloneIncludeRice);
+      setFormRicePortionGrams(Number(standaloneRicePortionGrams) || 150);
+      setFormRiceCostPerGram(Number(standaloneRiceCostPerGram) || 0.04);
+      setFormSelectedRiceIngredient(standaloneSelectedRiceIngredient);
+      setFormRecipeRequirements(finalCombinedReqs);
+      setFormIngredients(allIngredientNames.join(', '));
+
+      // Intelligent Category Inference based on dish title keywords
+      const lowerName = finalName.toLowerCase();
+      let inferredCategory: Category = formCategory || 'silog';
+      if (lowerName.includes('bento') || lowerName.includes('katsu') || lowerName.includes('teriyaki') || lowerName.includes('karaage') || lowerName.includes('tempura') || lowerName.includes('popper') || lowerName.includes('poppers') || lowerName.includes('nugget') || lowerName.includes('popcorn') || lowerName.includes('fillet')) {
+        inferredCategory = 'bento';
+      } else if (lowerName.includes('silog') || lowerName.includes('tapa') || lowerName.includes('tocino') || lowerName.includes('bangus') || lowerName.includes('longganisa') || lowerName.includes('sisig') || lowerName.includes('adobo') || lowerName.includes('lechon') || lowerName.includes('kawali') || lowerName.includes('liempo') || lowerName.includes('inasal')) {
+        inferredCategory = 'silog';
+      } else if (lowerName.includes('bowl') || lowerName.includes('don') || lowerName.includes('chahan') || lowerName.includes('curry')) {
+        inferredCategory = 'rice-bowl';
+      } else if (lowerName.includes('tea') || lowerName.includes('juice') || lowerName.includes('shake') || lowerName.includes('drink') || lowerName.includes('coffee') || lowerName.includes('soda') || lowerName.includes('gulaman')) {
+        inferredCategory = 'drinks';
+      }
+
+      // Auto-assign matching preset image if not custom
+      const matchingPreset = IMAGE_PRESETS.find(p => p.name.toLowerCase().includes(inferredCategory)) || IMAGE_PRESETS[2];
+      const initialImage = formImage && formImage.trim().length > 0 ? formImage : matchingPreset.url;
+
+      const autoDesc = formDescription && formDescription.trim() && !formDescription.includes('Prepared in bulk')
+        ? formDescription.trim()
+        : `Prepared in bulk ${standaloneBatchUnit === 'pcs' ? `${batchWeightG} pcs` : `${(batchWeightG / 1000).toFixed(1)}kg`} viand batch, portioned at ${servingG}${standaloneBatchUnit === 'pcs' ? ' pcs' : 'g meat'}${standaloneIncludeRice ? ` with ${standaloneRicePortionGrams}g steamed rice` : ''}. Served fresh with savory traditional accompaniments.`;
+
+      // Populate Form Fields
+      setFormName(finalName);
+      setFormDescription(autoDesc);
+      setFormCategory(inferredCategory);
+      setFormImage(initialImage);
+      setFormOriginalImage(initialImage);
+      setFormSelectedTemplateKey(selectedRecipeToLoad || '');
+
+      // Check if we are modifying an existing catalog dish or publishing a new one
+      let matchedDish: MenuItem | undefined;
+      if (editingItem) {
+        matchedDish = (menuItems || []).find(item => item && item.id === editingItem.id) || editingItem;
+      } else if (selectedRecipeToLoad && selectedRecipeToLoad.startsWith('dish:')) {
+        const dishId = selectedRecipeToLoad.replace('dish:', '');
+        matchedDish = (menuItems || []).find(item => item && (item.id === dishId || (item as any)._id === dishId || item.customId === dishId));
+      }
+
+      // Also match by exact name if not already matched
+      if (!matchedDish && finalName && finalName !== 'Custom Recipe') {
+        matchedDish = (menuItems || []).find(item => item && item.name && item.name.toLowerCase().trim() === finalName.toLowerCase().trim());
+      }
+
+      let savedDish: MenuItem;
+      if (matchedDish) {
+        savedDish = {
+          ...matchedDish,
+          name: finalName,
+          description: autoDesc,
+          price: recSellingPrice,
+          category: inferredCategory,
+          image: initialImage,
+          batchYieldUnit: standaloneBatchUnit,
+          servingSizeUnit: standaloneBatchUnit,
+          batchYieldGrams: batchWeightG,
+          servingSizeGrams: servingG,
+          targetMarginPercent: Number(standaloneTargetMargin) || 50,
+          totalBatchCost: batchCost,
+          includeRice: standaloneIncludeRice,
+          ricePortionGrams: Number(standaloneRicePortionGrams) || 150,
+          riceCostPerGram: Number(standaloneRiceCostPerGram) || 0.04,
+          batchIngredients: exactBatchIngredients,
+          garnishes: standaloneSelectedGarnishes || [],
+          packaging: standaloneSelectedPackaging || [],
+          recipeRequirements: finalCombinedReqs,
+          ingredients: allIngredientNames
+        };
+        setEditingItem(savedDish);
+        setSelectedRecipeToLoad(`dish:${savedDish.id}`);
+        setFormSelectedTemplateKey(`dish:${savedDish.id}`);
+        if (!options?.openMenuForm && typeof onEditMenuItem === 'function') {
+          onEditMenuItem(savedDish);
+        }
+      } else {
+        const generatedId = `${inferredCategory}-${Date.now().toString(36)}`;
+        savedDish = {
+          id: generatedId,
+          name: finalName,
+          description: autoDesc,
+          price: recSellingPrice,
+          category: inferredCategory,
+          image: initialImage,
+          isAvailable: true,
+          batchYieldUnit: standaloneBatchUnit,
+          servingSizeUnit: standaloneBatchUnit,
+          batchYieldGrams: batchWeightG,
+          servingSizeGrams: servingG,
+          targetMarginPercent: Number(standaloneTargetMargin) || 50,
+          totalBatchCost: batchCost,
+          includeRice: standaloneIncludeRice,
+          ricePortionGrams: Number(standaloneRicePortionGrams) || 150,
+          riceCostPerGram: Number(standaloneRiceCostPerGram) || 0.04,
+          batchIngredients: exactBatchIngredients,
+          garnishes: standaloneSelectedGarnishes || [],
+          packaging: standaloneSelectedPackaging || [],
+          recipeRequirements: finalCombinedReqs,
+          ingredients: allIngredientNames
+        };
+        if (options?.openMenuForm) {
+          // Creating a new recipe: keep editingItem null so the modal displays "Publish New Recipe"
+          setEditingItem(null);
+          setSelectedRecipeToLoad('__active_bulk__');
+          setFormSelectedTemplateKey('__active_bulk__');
+
+          setFormName(finalName);
+          setFormDescription(autoDesc || autoResolved.description);
+          setFormCategory(inferredCategory);
+          setFormImage(initialImage);
+          setFormOriginalImage(initialImage);
+          setFormBatchIngredients(exactBatchIngredients);
+          setFormGarnishes(standaloneSelectedGarnishes || []);
+          setFormPackaging(standaloneSelectedPackaging || []);
+          setFormBatchTotalCost(batchCost);
+          setFormPrice(recSellingPrice);
+          setFormTargetMargin(Number(standaloneTargetMargin) || 50);
+          setFormBatchYieldUnit(standaloneBatchUnit);
+          setFormServingSizeUnit(standaloneBatchUnit);
+          setFormBatchYieldGrams(batchWeightG);
+          setFormServingSizeGrams(servingG);
+          setFormIncludeRice(standaloneIncludeRice);
+          setFormRicePortionGrams(Number(standaloneRicePortionGrams) || 150);
+          setFormRiceCostPerGram(Number(standaloneRiceCostPerGram) || 0.04);
+          setFormSelectedRiceIngredient(standaloneSelectedRiceIngredient || 'Steamed Rice');
+          setFormRecipeRequirements(finalCombinedReqs);
+          setFormIngredients(allIngredientNames.length > 0 ? allIngredientNames.join(', ') : autoResolved.ingredients);
+        } else {
+          if (typeof onAddMenuItem === 'function') {
+            onAddMenuItem(savedDish);
+          }
+          setEditingItem(savedDish);
+          setSelectedRecipeToLoad(`dish:${savedDish.id}`);
+          setFormSelectedTemplateKey(`dish:${savedDish.id}`);
+        }
+      }
+
+      // Also persist to template vault
+      const matchingTemplateIndex = (savedRecipeTemplates || []).findIndex(t => 
+        (selectedRecipeToLoad && selectedRecipeToLoad.startsWith('template:') && t && t.id === selectedRecipeToLoad.replace('template:', '')) ||
+        (t && t.name && t.name.toLowerCase().trim() === finalName.toLowerCase().trim()) || 
+        (matchedDish && t && t.id === `template-${matchedDish.id}`)
+      );
+
+      const updatedTemplate: SavedRecipeTemplate = {
+        id: matchingTemplateIndex !== -1 ? savedRecipeTemplates[matchingTemplateIndex].id : (matchedDish ? `template-${matchedDish.id}` : (selectedRecipeToLoad && selectedRecipeToLoad.startsWith('template:') ? selectedRecipeToLoad.replace('template:', '') : `template-${Date.now()}`)),
         name: finalName,
-        price: recSellingPrice,
         batchYieldUnit: standaloneBatchUnit,
         servingSizeUnit: standaloneBatchUnit,
-        batchYieldGrams: batchWeightG,
         servingSizeGrams: servingG,
-        targetMarginPercent: Number(standaloneTargetMargin) || 50,
-        totalBatchCost: batchCost,
+        batchYieldGrams: batchWeightG,
+        targetMargin: Number(standaloneTargetMargin) || 50,
         includeRice: standaloneIncludeRice,
         ricePortionGrams: Number(standaloneRicePortionGrams) || 150,
         riceCostPerGram: Number(standaloneRiceCostPerGram) || 0.04,
-        batchIngredients: exactBatchIngredients,
-        garnishes: standaloneSelectedGarnishes,
-        packaging: standaloneSelectedPackaging,
-        recipeRequirements: finalCombinedReqs,
-        ingredients: allIngredientNames
+        includeGarnishes: standaloneIncludeGarnishes,
+        garnishes: standaloneSelectedGarnishes || [],
+        includePackaging: standaloneIncludePackaging,
+        packaging: standaloneSelectedPackaging || [],
+        ingredients: exactBatchIngredients
       };
-      onEditMenuItem(updatedDish);
+
+      let newTemplates = [...(savedRecipeTemplates || [])];
+      if (matchingTemplateIndex !== -1) {
+        newTemplates[matchingTemplateIndex] = updatedTemplate;
+      } else {
+        newTemplates = [updatedTemplate, ...newTemplates];
+      }
+      saveRecipeTemplates(newTemplates);
+
+      // Clear builder search and filters so newly saved dish is immediately visible
+      setBuilderSearchQuery('');
+      setBuilderCategoryFilter('all');
+
+      // Navigation & Modal triggers
+      if (options?.closeModal) {
+        setIsBatchCalcModalOpen(false);
+      }
+      if (options?.navigateToBuilder || options?.openMenuForm) {
+        setChefTab('builder');
+      }
+      if (options?.openMenuForm) {
+        setIsFormOpen(true);
+      }
+
+      if (!options?.openMenuForm) {
+        const sectionNotice = options?.sectionLabel ? `[${options.sectionLabel}] ` : '';
+        alert(`🍱 ${sectionNotice}All costing and selling price (₱${recSellingPrice.toFixed(2)}) successfully applied & saved to "${finalName}"! It is now live in the Recipe Builder catalog.`);
+      }
+    } catch (err) {
+      console.error('Error in handleSaveAllBatchCostingChanges:', err);
+      if (options?.closeModal) setIsBatchCalcModalOpen(false);
+      if (options?.navigateToBuilder || options?.openMenuForm) setChefTab('builder');
+      if (options?.openMenuForm) setIsFormOpen(true);
     }
-
-    // Also persist to template
-    const matchingTemplateIndex = savedRecipeTemplates.findIndex(t => 
-      t.name.toLowerCase() === finalName.toLowerCase() || 
-      (matchedDish && t.id === `template-${matchedDish.id}`) ||
-      (selectedRecipeToLoad && selectedRecipeToLoad.startsWith('template:') && t.id === selectedRecipeToLoad.replace('template:', ''))
-    );
-
-    const updatedTemplate: SavedRecipeTemplate = {
-      id: matchingTemplateIndex !== -1 ? savedRecipeTemplates[matchingTemplateIndex].id : (matchedDish ? `template-${matchedDish.id}` : `template-${Date.now()}`),
-      name: finalName,
-      batchYieldUnit: standaloneBatchUnit,
-      servingSizeUnit: standaloneBatchUnit,
-      servingSizeGrams: servingG,
-      batchYieldGrams: batchWeightG,
-      targetMargin: Number(standaloneTargetMargin) || 50,
-      includeRice: standaloneIncludeRice,
-      ricePortionGrams: Number(standaloneRicePortionGrams) || 150,
-      riceCostPerGram: Number(standaloneRiceCostPerGram) || 0.04,
-      includeGarnishes: standaloneIncludeGarnishes,
-      garnishes: standaloneSelectedGarnishes,
-      includePackaging: standaloneIncludePackaging,
-      packaging: standaloneSelectedPackaging,
-      ingredients: exactBatchIngredients
-    };
-
-    let newTemplates = [...savedRecipeTemplates];
-    if (matchingTemplateIndex !== -1) {
-      newTemplates[matchingTemplateIndex] = updatedTemplate;
-    } else {
-      newTemplates = [updatedTemplate, ...newTemplates];
-    }
-    saveRecipeTemplates(newTemplates);
-
-    if (options?.closeModal) {
-      setIsBatchCalcModalOpen(false);
-    }
-    if (options?.openMenuForm) {
-      setIsFormOpen(true);
-    }
-
-    const sectionNotice = options?.sectionLabel ? `[${options.sectionLabel}] ` : '';
-    alert(`💾 ${sectionNotice}All costing sections successfully saved! (Selling Price: ₱${recSellingPrice.toFixed(2)})`);
   };
 
   const handleUpdateSelectedRecipe = () => {
-    handleSaveAllBatchCostingChanges();
+    if (selectedRecipeToLoad.startsWith('template:')) {
+      handleSaveCurrentBatchAsTemplate();
+    } else {
+      handleSaveAllBatchCostingChanges();
+    }
+  };
+
+  const handleApplyTemplateDirectlyToForm = (recipeKey: string) => {
+    try {
+      if (!recipeKey || recipeKey === '__fresh__') {
+        setFormName('');
+        setFormDescription('');
+        setFormIngredients('');
+        setFormRecipeRequirements([]);
+        setFormBatchIngredients([]);
+        setFormGarnishes([]);
+        setFormPackaging([]);
+        setFormSelectedTemplateKey('__fresh__');
+        return;
+      }
+
+      // ⚡ 1. Direct Import from Active Bulk Calculator Setup
+      if (recipeKey === '__active_bulk__') {
+        const autoResolved = resolveBulkCalculatorAutoFill();
+        let finalName = (standaloneRecipeName || formName || '').trim();
+        if (!finalName || finalName === 'Custom Recipe' || finalName === 'New Dish Recipe') {
+          finalName = autoResolved.title || 'Custom Recipe';
+        }
+        const unit = standaloneBatchUnit || 'g';
+        const batchG = Math.max(1, Number(standaloneBatchWeight) || (unit === 'pcs' ? 100 : 2000));
+        const servingG = Math.max(1, Number(standaloneServingGrams) || (unit === 'pcs' ? 4 : 90));
+        const targetMargin = Number(standaloneTargetMargin) || 50;
+
+        const exactBatchIngredients = (standaloneIngredients || []).map(item => ({
+          name: String(item?.name || '').trim(),
+          batchAmount: Number(item?.batchAmount) || 0,
+          unit: item?.unit || 'g',
+          cost: Number(item?.cost) || 0
+        })).filter(i => i.name.length > 0);
+
+        const scaledReqs: Array<{ name: string; amount: number }> = [];
+        exactBatchIngredients.forEach(item => {
+          const itemName = item.name;
+          const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === itemName.toLowerCase());
+          const invUnit = (invMatch?.unit || item.unit || 'g').toLowerCase();
+          const inputUnit = (item.unit || invUnit).toLowerCase();
+          const isCountable = inputUnit === 'pcs' || inputUnit === 'cans' || inputUnit === 'pc' || inputUnit === 'pack';
+          const rawAmt = Number(item.batchAmount) || 0;
+          let finalAmt: number;
+          if (rawAmt <= 0) {
+            finalAmt = 0;
+          } else if (isCountable) {
+            finalAmt = Number(((rawAmt / batchG) * servingG).toFixed(3));
+          } else {
+            const baseAmount = getBaseEquivalentUnits(rawAmt, inputUnit);
+            finalAmt = Number(((baseAmount / batchG) * servingG).toFixed(2));
+          }
+          scaledReqs.push({ name: itemName, amount: finalAmt });
+        });
+
+        if (standaloneIncludeRice) {
+          scaledReqs.push({
+            name: (standaloneSelectedRiceIngredient || 'Steamed Rice').trim(),
+            amount: Number(standaloneRicePortionGrams) || 150
+          });
+        }
+
+        const resolvedGarnishes = standaloneIncludeGarnishes && Array.isArray(standaloneSelectedGarnishes)
+          ? standaloneSelectedGarnishes.filter(g => g && g.selected !== false && g.name).map(g => {
+              const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === String(g.name).toLowerCase().trim());
+              const pCost = getGarnishPieceCost(g.name, g.costPerUnit, invMatch);
+              return {
+                name: String(g.name).trim(),
+                amount: Number(g.amount) || 1,
+                unit: (g.unit || invMatch?.unit || 'pcs') as 'pcs' | 'g' | 'ml',
+                costPerUnit: pCost,
+                selected: true
+              };
+            })
+          : [];
+        resolvedGarnishes.forEach(g => {
+          scaledReqs.push({ name: g.name, amount: Number(g.amount) || 1 });
+        });
+
+        const resolvedPackaging = standaloneIncludePackaging && Array.isArray(standaloneSelectedPackaging)
+          ? standaloneSelectedPackaging.filter(p => p && p.selected !== false && p.name).map(p => {
+              const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === String(p.name).toLowerCase().trim());
+              const pCost = p.costPerUnit !== undefined ? Number(p.costPerUnit) : (invMatch?.costPerUnit !== undefined ? Number(invMatch.costPerUnit) : 5.0);
+              return {
+                name: String(p.name).trim(),
+                amount: Number(p.amount) || 1,
+                unit: 'pcs' as const,
+                costPerUnit: pCost,
+                selected: true
+              };
+            })
+          : [];
+        resolvedPackaging.forEach(p => {
+          scaledReqs.push({ name: p.name, amount: Number(p.amount) || 1 });
+        });
+
+        const finalCombinedReqs = deduplicateAndNormalizeRequirements(scaledReqs);
+        const allIngredientNames = Array.from(new Set([
+          ...finalCombinedReqs.map(p => p.name),
+          ...exactBatchIngredients.map(i => i.name)
+        ])).filter(Boolean);
+
+        const batchCost = standaloneTotalBatchCost !== undefined && standaloneTotalBatchCost > 0
+          ? standaloneTotalBatchCost
+          : exactBatchIngredients.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
+        const viandCostPerServing = (batchCost / batchG) * servingG;
+        const riceCostPerServing = standaloneIncludeRice ? (Number(standaloneRicePortionGrams) || 0) * (Number(standaloneRiceCostPerGram) || 0) : 0;
+        const garnishCostPerServing = resolvedGarnishes.reduce((sum, g) => sum + (Number(g.amount) || 1) * (Number(g.costPerUnit) || 0), 0);
+        const pkgCostPerServing = resolvedPackaging.reduce((sum, p) => sum + (Number(p.amount) || 1) * (Number(p.costPerUnit) || 0), 0);
+        const totalPlateCogs = viandCostPerServing + riceCostPerServing + garnishCostPerServing + pkgCostPerServing;
+        const recSellingPrice = Math.max(1, Math.round(totalPlateCogs / Math.max(0.05, (1 - targetMargin / 100))));
+
+        const lowerName = finalName.toLowerCase();
+        let inferredCategory: Category = formCategory || 'silog';
+        if (lowerName.includes('bento') || lowerName.includes('katsu') || lowerName.includes('teriyaki') || lowerName.includes('karaage') || lowerName.includes('tempura') || lowerName.includes('popper') || lowerName.includes('poppers') || lowerName.includes('nugget') || lowerName.includes('popcorn') || lowerName.includes('fillet')) {
+          inferredCategory = 'bento';
+        } else if (lowerName.includes('silog') || lowerName.includes('tapa') || lowerName.includes('tocino') || lowerName.includes('bangus') || lowerName.includes('longganisa') || lowerName.includes('sisig') || lowerName.includes('adobo') || lowerName.includes('lechon') || lowerName.includes('kawali') || lowerName.includes('liempo') || lowerName.includes('inasal')) {
+          inferredCategory = 'silog';
+        } else if (lowerName.includes('bowl') || lowerName.includes('don') || lowerName.includes('chahan') || lowerName.includes('curry')) {
+          inferredCategory = 'rice-bowl';
+        } else if (lowerName.includes('tea') || lowerName.includes('juice') || lowerName.includes('shake') || lowerName.includes('drink') || lowerName.includes('coffee') || lowerName.includes('soda') || lowerName.includes('gulaman')) {
+          inferredCategory = 'drinks';
+        }
+
+        const matchingPreset = IMAGE_PRESETS.find(p => p.name.toLowerCase().includes(inferredCategory)) || IMAGE_PRESETS[2];
+        const initialImage = formImage && formImage.trim().length > 0 ? formImage : matchingPreset.url;
+
+        const autoDesc = formDescription && formDescription.trim() && !formDescription.includes('Prepared in bulk')
+          ? formDescription.trim()
+          : (autoResolved.description || `Prepared in bulk ${unit === 'pcs' ? `${batchG} pcs` : `${(batchG / 1000).toFixed(1)}kg`} viand batch, portioned at ${servingG}${unit === 'pcs' ? ' pcs' : 'g meat'}${standaloneIncludeRice ? ` with ${standaloneRicePortionGrams || 150}g steamed rice` : ''}. Served fresh with savory traditional accompaniments.`);
+
+        setFormName(finalName || autoResolved.title);
+        setFormDescription(autoDesc);
+        setFormCategory(inferredCategory);
+        setFormImage(initialImage);
+        setFormOriginalImage(initialImage);
+        setFormBatchIngredients(exactBatchIngredients);
+        setFormGarnishes(resolvedGarnishes);
+        setFormPackaging(resolvedPackaging);
+        setFormBatchTotalCost(batchCost);
+        setFormPrice(recSellingPrice);
+        setFormTargetMargin(targetMargin);
+        setFormBatchYieldUnit(unit);
+        setFormServingSizeUnit(unit);
+        setFormBatchYieldGrams(batchG);
+        setFormServingSizeGrams(servingG);
+        setFormIncludeRice(standaloneIncludeRice);
+        setFormRicePortionGrams(Number(standaloneRicePortionGrams) || 150);
+        setFormRiceCostPerGram(Number(standaloneRiceCostPerGram) || 0.04);
+        setFormSelectedRiceIngredient(standaloneSelectedRiceIngredient || 'Steamed Rice');
+        setFormRecipeRequirements(finalCombinedReqs);
+        setFormIngredients(allIngredientNames.length > 0 ? allIngredientNames.join(', ') : autoResolved.ingredients);
+        setFormSelectedTemplateKey('__active_bulk__');
+        return;
+      }
+
+      // 📋 2. Handle Saved Recipe Templates
+      if (recipeKey.startsWith('template:')) {
+        const templateId = recipeKey.replace(/^template:/, '').trim();
+        let t = (savedRecipeTemplates || []).find(item => item && (
+          String(item.id || '') === templateId || 
+          String((item as any)._id || '') === templateId || 
+          String(item.customId || '') === templateId || 
+          String(item.id || '').toLowerCase() === templateId.toLowerCase() || 
+          String((item as any)._id || '').toLowerCase() === templateId.toLowerCase() || 
+          String((item as any).customId || '').toLowerCase() === templateId.toLowerCase() || 
+          (item.name && item.name.toLowerCase().trim() === templateId.toLowerCase())
+        ));
+
+        if (!t) {
+          t = DEFAULT_RECIPE_TEMPLATES.find(item => item && (
+            String(item.id || '') === templateId ||
+            String(item.id || '').toLowerCase() === templateId.toLowerCase() ||
+            (item.name && item.name.toLowerCase().trim() === templateId.toLowerCase())
+          ));
+        }
+
+        if (!t && standaloneIngredients && standaloneIngredients.length > 0 && standaloneRecipeName && standaloneRecipeName.toLowerCase().trim() === templateId.toLowerCase()) {
+          t = {
+            id: templateId,
+            name: standaloneRecipeName,
+            batchYieldUnit: standaloneBatchUnit,
+            servingSizeUnit: standaloneBatchUnit,
+            servingSizeGrams: Number(standaloneServingGrams) || 90,
+            batchYieldGrams: Number(standaloneBatchWeight) || 2000,
+            targetMargin: Number(standaloneTargetMargin) || 50,
+            includeRice: standaloneIncludeRice,
+            ricePortionGrams: Number(standaloneRicePortionGrams) || 150,
+            riceCostPerGram: Number(standaloneRiceCostPerGram) || 0.04,
+            includeGarnishes: standaloneIncludeGarnishes,
+            garnishes: standaloneSelectedGarnishes || [],
+            includePackaging: standaloneIncludePackaging,
+            packaging: standaloneSelectedPackaging || [],
+            ingredients: standaloneIngredients
+          };
+        }
+
+        if (!t) {
+          console.warn('Recipe template not found for key:', recipeKey);
+          return;
+        }
+
+        const unit = t.batchYieldUnit || 'g';
+        const servingG = Number(t.servingSizeGrams) || (unit === 'pcs' ? 4 : 90);
+        const batchG = Number(t.batchYieldGrams) || (unit === 'pcs' ? 100 : 2000);
+        const targetMargin = Number(t.targetMargin) || 50;
+
+        const rawIngs = Array.isArray(t.ingredients) ? t.ingredients : [];
+        const mappedBatchIngs = rawIngs.map((ing: any) => {
+          const ingName = typeof ing === 'string' ? ing.trim() : String(ing?.name || (ing as any)?.ingredient || '').trim();
+          const ingUnit = (typeof ing === 'object' && ing?.unit ? String(ing.unit).trim() : 'g');
+          const rawAmt = typeof ing === 'object' ? Number(ing?.batchAmount ?? (ing as any)?.amount ?? 0) : 100;
+          const invCost = ingName ? computeInventoryIngredientCost(ingName, rawAmt, ingUnit) : 0;
+          const fallbackCost = typeof ing === 'object' ? Number(ing?.cost || 0) : 0;
+          return {
+            name: ingName,
+            batchAmount: rawAmt,
+            unit: ingUnit,
+            cost: invCost > 0 ? invCost : fallbackCost
+          };
+        }).filter(i => i.name.length > 0);
+
+        const scaledReqs: Array<{ name: string; amount: number }> = [];
+        mappedBatchIngs.forEach(item => {
+          if (!item || !item.name) return;
+          const itemName = String(item.name).trim();
+          const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === itemName.toLowerCase());
+          const invUnit = (invMatch?.unit || item.unit || 'g').toLowerCase();
+          const inputUnit = (item.unit || invUnit).toLowerCase();
+          const isCountable = inputUnit === 'pcs' || inputUnit === 'cans' || inputUnit === 'pc' || inputUnit === 'pack';
+          const rawAmt = Number(item.batchAmount) || 0;
+          let finalAmt: number;
+          if (rawAmt <= 0) {
+            finalAmt = 0;
+          } else if (isCountable) {
+            finalAmt = Number(((rawAmt / batchG) * servingG).toFixed(3));
+          } else {
+            const baseAmount = getBaseEquivalentUnits(rawAmt, inputUnit);
+            finalAmt = Number(((baseAmount / batchG) * servingG).toFixed(2));
+          }
+          scaledReqs.push({ name: itemName, amount: finalAmt });
+        });
+
+        const includeRice = t.includeRice ?? true;
+        const ricePortion = Number(t.ricePortionGrams) || 150;
+        const riceCostPerGram = Number(t.riceCostPerGram) || 0.04;
+        if (includeRice) {
+          scaledReqs.push({ name: 'Steamed Rice', amount: ricePortion });
+        }
+
+        const garnishes = (Array.isArray(t.garnishes) ? t.garnishes : [])
+          .filter(g => g && g.selected !== false && g.name)
+          .map(g => {
+            const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === String(g.name).toLowerCase().trim());
+            const pCost = getGarnishPieceCost(g.name, g.costPerUnit, invMatch);
+            return {
+              name: String(g.name).trim(),
+              amount: Number(g.amount) || 1,
+              unit: (g.unit || invMatch?.unit || 'pcs') as 'pcs' | 'g' | 'ml',
+              costPerUnit: pCost,
+              selected: true
+            };
+          });
+        garnishes.forEach(g => {
+          scaledReqs.push({ name: g.name, amount: Number(g.amount) || 1 });
+        });
+
+        const packaging = (Array.isArray(t.packaging) ? t.packaging : [])
+          .filter(p => p && p.selected !== false && p.name)
+          .map(p => {
+            const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === String(p.name).toLowerCase().trim());
+            const pCost = p.costPerUnit !== undefined ? Number(p.costPerUnit) : (invMatch?.costPerUnit !== undefined ? Number(invMatch.costPerUnit) : 5.0);
+            return {
+              name: String(p.name).trim(),
+              amount: Number(p.amount) || 1,
+              unit: 'pcs' as const,
+              costPerUnit: pCost,
+              selected: true
+            };
+          });
+        packaging.forEach(p => {
+          scaledReqs.push({ name: p.name, amount: Number(p.amount) || 1 });
+        });
+
+        const finalCombinedReqs = deduplicateAndNormalizeRequirements(scaledReqs);
+        const allIngredientNames = Array.from(new Set([
+          ...finalCombinedReqs.map(p => p.name),
+          ...mappedBatchIngs.map(i => i.name)
+        ])).filter(Boolean);
+
+        const totalBatchCost = mappedBatchIngs.reduce((sum, i) => sum + (Number(i.cost) || 0), 0);
+        const viandCostPerServing = (totalBatchCost / batchG) * servingG;
+        const riceCostPerServing = includeRice ? ricePortion * riceCostPerGram : 0;
+        const garnishCostPerServing = garnishes.reduce((sum, g) => sum + (Number(g.amount) || 1) * (Number(g.costPerUnit) || 0), 0);
+        const pkgCostPerServing = packaging.reduce((sum, p) => sum + (Number(p.amount) || 1) * (Number(p.costPerUnit) || 0), 0);
+        const totalPlateCogs = viandCostPerServing + riceCostPerServing + garnishCostPerServing + pkgCostPerServing;
+        const recSellingPrice = Math.max(1, Math.round(totalPlateCogs / Math.max(0.05, (1 - targetMargin / 100))));
+
+        const lowerName = (t.name || '').toLowerCase();
+        let inferredCategory: Category = t.category || formCategory || 'silog';
+        if (!t.category) {
+          if (lowerName.includes('bento') || lowerName.includes('katsu') || lowerName.includes('teriyaki') || lowerName.includes('karaage') || lowerName.includes('tempura') || lowerName.includes('popper') || lowerName.includes('poppers') || lowerName.includes('nugget') || lowerName.includes('popcorn') || lowerName.includes('fillet')) {
+            inferredCategory = 'bento';
+          } else if (lowerName.includes('silog') || lowerName.includes('tapa') || lowerName.includes('tocino') || lowerName.includes('bangus') || lowerName.includes('longganisa') || lowerName.includes('sisig') || lowerName.includes('adobo') || lowerName.includes('lechon') || lowerName.includes('kawali') || lowerName.includes('liempo') || lowerName.includes('inasal')) {
+            inferredCategory = 'silog';
+          } else if (lowerName.includes('bowl') || lowerName.includes('don') || lowerName.includes('chahan') || lowerName.includes('curry')) {
+            inferredCategory = 'rice-bowl';
+          } else if (lowerName.includes('tea') || lowerName.includes('juice') || lowerName.includes('shake') || lowerName.includes('drink') || lowerName.includes('coffee') || lowerName.includes('soda') || lowerName.includes('gulaman')) {
+            inferredCategory = 'drinks';
+          }
+        }
+
+        const matchingPreset = IMAGE_PRESETS.find(p => p.name.toLowerCase().includes(inferredCategory)) || IMAGE_PRESETS[2];
+        const initialImage = formImage && formImage.trim().length > 0 ? formImage : matchingPreset.url;
+
+        const autoDesc = (t.description && t.description.trim())
+          ? t.description.trim()
+          : `Prepared in bulk ${unit === 'pcs' ? `${batchG} pcs` : `${(batchG / 1000).toFixed(1)}kg`} viand batch, portioned at ${servingG}${unit === 'pcs' ? ' pcs' : 'g meat'}${includeRice ? ` with ${ricePortion}g steamed rice` : ''}. Served fresh with savory traditional accompaniments.`;
+
+        setFormName(t.name);
+        setFormCategory(inferredCategory);
+        setFormDescription(autoDesc);
+        setFormImage(initialImage);
+        setFormOriginalImage(initialImage);
+        setFormBatchIngredients(mappedBatchIngs);
+        setFormGarnishes(garnishes);
+        setFormPackaging(packaging);
+        setFormBatchTotalCost(totalBatchCost);
+        setFormPrice(recSellingPrice);
+        setFormTargetMargin(targetMargin);
+        setFormBatchYieldUnit(unit);
+        setFormServingSizeUnit(unit);
+        setFormBatchYieldGrams(batchG);
+        setFormServingSizeGrams(servingG);
+        setFormIncludeRice(includeRice);
+        setFormRicePortionGrams(ricePortion);
+        setFormRiceCostPerGram(riceCostPerGram);
+        setFormSelectedRiceIngredient('Steamed Rice');
+        setFormRecipeRequirements(finalCombinedReqs);
+        setFormIngredients(allIngredientNames.join(', '));
+        setFormSelectedTemplateKey(recipeKey);
+
+        // Also synchronize active Bulk Calculator states
+        setStandaloneIngredients(mappedBatchIngs);
+        setStandaloneBatchWeight(batchG);
+        setStandaloneServingGrams(servingG);
+        setStandaloneBatchUnit(unit);
+        setStandaloneRecipeName(t.name);
+        setStandaloneTargetMargin(targetMargin);
+        setStandaloneIncludeRice(includeRice);
+        setStandaloneRicePortionGrams(ricePortion);
+        setStandaloneRiceCostPerGram(riceCostPerGram);
+        setStandaloneIncludeGarnishes(garnishes.length > 0);
+        setStandaloneSelectedGarnishes(garnishes);
+        setStandaloneIncludePackaging(packaging.length > 0);
+        setStandaloneSelectedPackaging(packaging);
+        setStandaloneTotalBatchCost(totalBatchCost);
+        setSelectedRecipeToLoad(recipeKey);
+        return;
+      }
+
+      // 🍱 3. Handle Existing Menu Dishes
+      if (recipeKey.startsWith('dish:')) {
+        const dishId = recipeKey.replace('dish:', '').trim();
+        const dish = menuItems.find(item => item && (
+          String(item.id || '') === dishId || 
+          String(item.customId || '') === dishId || 
+          String((item as any)._id || '') === dishId || 
+          String(item.id || '').toLowerCase() === dishId.toLowerCase() || 
+          String((item as any)._id || '').toLowerCase() === dishId.toLowerCase() || 
+          (item.name && item.name.toLowerCase().trim() === dishId.toLowerCase().trim())
+        ));
+        if (!dish) return;
+
+        if (editingItem) {
+          handleOpenEditForm(dish);
+        } else {
+          setFormName(dish.name);
+          setFormDescription(dish.description);
+          setFormPrice(dish.price);
+          setFormCategory(dish.category);
+          setFormImage(dish.image);
+          setFormOriginalImage(dish.image);
+          setFormSpicy(dish.spicy || false);
+          setFormPopular(dish.popular || false);
+        }
+
+        const normalizedReqs = deduplicateAndNormalizeRequirements(dish.recipeRequirements || []);
+        const unit = dish.batchYieldUnit || 'g';
+        const servingG = dish.servingSizeGrams !== undefined ? dish.servingSizeGrams : (unit === 'pcs' ? 4 : 90);
+        const batchG = dish.batchYieldGrams !== undefined ? dish.batchYieldGrams : (unit === 'pcs' ? 100 : 2000);
+
+        const resolvedGarnishes = (dish.garnishes && dish.garnishes.length > 0)
+          ? dish.garnishes.map(g => ({ ...g, selected: g.selected !== false }))
+          : normalizedReqs.filter(r => isGarnishRequirement(r.name)).map(g => {
+              const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === String(g.name).toLowerCase().trim());
+              const pCost = getGarnishPieceCost(g.name, undefined, invMatch);
+              return {
+                name: g.name,
+                amount: Number(g.amount) || 1,
+                unit: (invMatch?.unit || 'pcs') as 'pcs' | 'g' | 'ml',
+                costPerUnit: pCost,
+                selected: true
+              };
+            });
+
+        const resolvedPackaging = (dish.packaging && dish.packaging.length > 0)
+          ? dish.packaging.map(p => ({ ...p, selected: p.selected !== false }))
+          : normalizedReqs.filter(r => isPackagingRequirement(r.name)).map(p => {
+              const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === String(p.name).toLowerCase().trim());
+              const pCost = invMatch ? (Number(invMatch.costPerUnit) || 0) : 5.0;
+              return {
+                name: p.name,
+                amount: Number(p.amount) || 1,
+                unit: 'pcs' as const,
+                costPerUnit: pCost,
+                selected: true
+              };
+            });
+
+        setFormGarnishes(resolvedGarnishes);
+        setFormPackaging(resolvedPackaging);
+
+        let finalBatchIngs = dish.batchIngredients && dish.batchIngredients.length > 0 ? dish.batchIngredients : [];
+        if (finalBatchIngs.length === 0) {
+          const garnishNames = new Set(resolvedGarnishes.map(g => g.name.toLowerCase()));
+          const viandReqs = normalizedReqs.filter(r => !isPackagingRequirement(r.name) && !isRiceRequirement(r.name) && !garnishNames.has(r.name.toLowerCase()));
+          if (viandReqs.length > 0) {
+            const multiplier = batchG / Math.max(1, servingG);
+            finalBatchIngs = viandReqs.map(r => {
+              const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === String(r.name).toLowerCase().trim());
+              const ingUnit = invMatch?.unit || (unit === 'pcs' ? 'pcs' : 'g');
+              const batchAmt = Number((r.amount * multiplier).toFixed(ingUnit === 'pcs' ? 0 : 1));
+              const cost = computeInventoryIngredientCost(r.name, batchAmt, ingUnit);
+              return {
+                name: r.name,
+                batchAmount: batchAmt,
+                unit: ingUnit,
+                cost: cost > 0 ? cost : 0
+              };
+            });
+          }
+        }
+        setFormBatchIngredients(finalBatchIngs);
+        setFormRecipeRequirements(normalizedReqs);
+
+        const allDishIngs = Array.from(new Set([
+          ...normalizedReqs.map(r => r.name),
+          ...finalBatchIngs.map(i => i.name),
+          ...(Array.isArray(dish.ingredients) ? dish.ingredients : [])
+        ])).filter(Boolean);
+        setFormIngredients(allDishIngs.join(', '));
+        setFormSelectedTemplateKey(recipeKey);
+
+        // Also synchronize active Bulk Calculator states
+        setStandaloneIngredients(finalBatchIngs);
+        setStandaloneBatchWeight(batchG);
+        setStandaloneServingGrams(servingG);
+        setStandaloneBatchUnit(unit);
+        setStandaloneRecipeName(dish.name);
+        setStandaloneIncludeGarnishes(resolvedGarnishes.length > 0);
+        setStandaloneSelectedGarnishes(resolvedGarnishes);
+        setStandaloneIncludePackaging(resolvedPackaging.length > 0);
+        setStandaloneSelectedPackaging(resolvedPackaging);
+        setSelectedRecipeToLoad(recipeKey);
+        return;
+      }
+    } catch (err) {
+      console.error('Error applying recipe template to form:', err);
+    }
   };
 
   const handleLoadRecipeIntoBatch = (recipeKey: string) => {
@@ -5274,34 +6996,42 @@ function AdminPanel({
     }
 
     if (recipeKey.startsWith('template:')) {
-      const templateId = recipeKey.replace('template:', '');
-      const t = savedRecipeTemplates.find(item => item.id === templateId);
-      if (!t) return;
+      const templateId = recipeKey.replace(/^template:/, '').trim();
+      const t = (savedRecipeTemplates || []).find(item => item && (
+        item.id === templateId || 
+        item.customId === templateId || 
+        String(item.id || '').toLowerCase() === templateId.toLowerCase() || 
+        String(item.customId || '').toLowerCase() === templateId.toLowerCase() ||
+        (item.name && item.name.toLowerCase().trim() === templateId.toLowerCase())
+      )) || DEFAULT_RECIPE_TEMPLATES.find(item => item && (
+        item.id === templateId || 
+        (item.name && item.name.toLowerCase().trim() === templateId.toLowerCase())
+      ));
+      if (!t) {
+        console.warn('Recipe template not found for batch key:', recipeKey);
+        return;
+      }
 
       const unit = t.batchYieldUnit || 'g';
       setStandaloneBatchUnit(unit);
       setStandaloneRecipeName(t.name);
-      setStandaloneServingGrams(t.servingSizeGrams || (unit === 'pcs' ? 4 : 90));
-      setStandaloneBatchWeight(t.batchYieldGrams || (unit === 'pcs' ? 100 : 2000));
-      setStandaloneTargetMargin(t.targetMargin || 50);
+      setStandaloneServingGrams(Number(t.servingSizeGrams) || (unit === 'pcs' ? 4 : 90));
+      setStandaloneBatchWeight(Number(t.batchYieldGrams) || (unit === 'pcs' ? 100 : 2000));
+      setStandaloneTargetMargin(Number(t.targetMargin) || 50);
       setStandaloneIncludeRice(t.includeRice ?? true);
-      setStandaloneRicePortionGrams(t.ricePortionGrams || 150);
-      setStandaloneRiceCostPerGram(t.riceCostPerGram || 0.04);
+      setStandaloneRicePortionGrams(Number(t.ricePortionGrams) || 150);
+      setStandaloneRiceCostPerGram(Number(t.riceCostPerGram) || 0.04);
       setStandaloneIncludeGarnishes(t.includeGarnishes ?? (t.garnishes && t.garnishes.length > 0 ? true : false));
-      if (t.garnishes && t.garnishes.length > 0) {
-        setStandaloneSelectedGarnishes(t.garnishes);
-      }
+      setStandaloneSelectedGarnishes(Array.isArray(t.garnishes) && t.garnishes.length > 0 ? t.garnishes : []);
       setStandaloneIncludePackaging(t.includePackaging ?? (t.packaging && t.packaging.length > 0 ? true : false));
-      if (t.packaging && t.packaging.length > 0) {
-        setStandaloneSelectedPackaging(t.packaging);
-      }
+      setStandaloneSelectedPackaging(Array.isArray(t.packaging) && t.packaging.length > 0 ? t.packaging : []);
 
-      const mapped = t.ingredients.map(ing => {
+      const mapped = (t.ingredients || []).map(ing => {
         const cost = computeInventoryIngredientCost(ing.name, ing.batchAmount, ing.unit);
         return {
           name: ing.name,
-          batchAmount: ing.batchAmount,
-          unit: ing.unit,
+          batchAmount: Number(ing.batchAmount) || 0,
+          unit: ing.unit || 'g',
           cost: cost > 0 ? cost : (Number(ing.cost) || 0)
         };
       });
@@ -5314,7 +7044,12 @@ function AdminPanel({
 
     if (recipeKey.startsWith('dish:')) {
       const dishId = recipeKey.replace('dish:', '');
-      const dish = menuItems.find(item => item.id === dishId);
+      const dish = menuItems.find(item => item && (
+        item.id === dishId || 
+        item.customId === dishId || 
+        String(item.id).toLowerCase() === dishId.toLowerCase() || 
+        (item.name && item.name.toLowerCase().trim() === dishId.toLowerCase().trim())
+      ));
       if (!dish) return;
       handleOpenBatchCalculatorForRecipe(dish);
     }
@@ -5342,14 +7077,24 @@ function AdminPanel({
         : item.batchIngredients.reduce((sum, ing) => sum + (Number(ing.cost) || 0), 0);
       setStandaloneTotalBatchCost(totalCost);
 
-      if (item.garnishes && item.garnishes.length > 0) {
-        setStandaloneIncludeGarnishes(true);
-        setStandaloneSelectedGarnishes(item.garnishes);
+      const hasGarnishes = item.garnishes && item.garnishes.length > 0;
+      setStandaloneIncludeGarnishes(hasGarnishes ? true : false);
+      setStandaloneSelectedGarnishes(item.garnishes || []);
+
+      const hasPackaging = item.packaging && item.packaging.length > 0;
+      setStandaloneIncludePackaging(hasPackaging ? true : false);
+      setStandaloneSelectedPackaging(item.packaging || []);
+
+      const riceReq = (item.recipeRequirements || []).find(r => isRiceRequirement(r.name));
+      if (riceReq) {
+        setStandaloneIncludeRice(true);
+        if (Number(riceReq.amount) > 0) setStandaloneRicePortionGrams(Number(riceReq.amount));
+        setStandaloneSelectedRiceIngredient(riceReq.name);
+      } else {
+        setStandaloneIncludeRice(item.includeRice ?? true);
+        setStandaloneSelectedRiceIngredient('Steamed Rice');
       }
-      if (item.packaging && item.packaging.length > 0) {
-        setStandaloneIncludePackaging(true);
-        setStandaloneSelectedPackaging(item.packaging);
-      }
+
       setIsBatchCalcModalOpen(true);
       return;
     }
@@ -5544,6 +7289,7 @@ function AdminPanel({
         setStandaloneIncludePackaging(true);
         setStandaloneSelectedPackaging(formPackaging);
       }
+      setIsFormOpen(false);
       setIsBatchCalcModalOpen(true);
       return;
     }
@@ -5646,6 +7392,7 @@ function AdminPanel({
         setStandaloneTotalBatchCost(totalCost);
       }
     }
+    setIsFormOpen(false);
     setIsBatchCalcModalOpen(true);
   };
 
@@ -6027,9 +7774,10 @@ function AdminPanel({
     const rentCost = rentBaseRate * rateFactor;
     const laborCost = laborBaseRate * rateFactor;
     const gasCost = gasBaseRate * rateFactor;
+    const deliveryGasCost = deliveryGasBaseRate * rateFactor;
     const otherCost = otherBaseRate * rateFactor;
 
-    const operationalOverhead = electricityCost + waterCost + rentCost + laborCost + gasCost + otherCost;
+    const operationalOverhead = electricityCost + waterCost + rentCost + laborCost + gasCost + deliveryGasCost + otherCost;
     const totalExpenses = ingredientsCost + operationalOverhead;
     const netIncome = totalSales - totalExpenses;
     const netMarginPercent = totalSales > 0 ? (netIncome / totalSales) * 100 : 0;
@@ -6047,6 +7795,7 @@ function AdminPanel({
       rentCost,
       laborCost,
       gasCost,
+      deliveryGasCost,
       otherCost,
       operationalOverhead,
       totalExpenses,
@@ -6339,7 +8088,14 @@ function AdminPanel({
 
   // Open Form Modal for Creating dynamic item
   const handleOpenAddForm = () => {
+    // If chef has active batch ingredients formulated in the Bulk Calculator, automatically populate it!
+    if ((standaloneIngredients && standaloneIngredients.length > 0) || (formBatchIngredients && formBatchIngredients.length > 0)) {
+      handleSaveAllBatchCostingChanges({ closeModal: false, openMenuForm: true });
+      return;
+    }
+
     setEditingItem(null);
+    setFormSelectedTemplateKey('');
     setFormName('');
     setFormDescription('');
     setFormPrice(130);
@@ -6397,190 +8153,221 @@ function AdminPanel({
 
   // Open Form Modal for Editing dynamic item
   const handleOpenEditForm = (item: MenuItem) => {
-    setEditingItem(item);
-    setFormName(item.name);
-    setFormDescription(item.description);
-    setFormPrice(item.price);
-    setFormCategory(item.category);
-    setFormImage(item.image);
-    setFormOriginalImage(item.image);
-    setFormSpicy(item.spicy || false);
-    setFormPopular(item.popular || false);
-    const normalizedReqs = deduplicateAndNormalizeRequirements(item.recipeRequirements || []);
-    setFormIngredients(item.ingredients ? item.ingredients.join(', ') : normalizedReqs.map(r => r.name).join(', '));
-    setFormRecipeRequirements(normalizedReqs);
-    setFormBatchIngredients(item.batchIngredients || []);
-    setFormGarnishes(item.garnishes || []);
-    setFormPackaging(item.packaging || []);
-    setFormTargetMargin(item.targetMarginPercent !== undefined ? item.targetMarginPercent : 50);
-    setBatchServingsTarget(20);
-    setFormElecOverhead(item.utilityOverhead?.electricity !== undefined ? item.utilityOverhead.electricity : 3.00);
-    setFormGasOverhead(item.utilityOverhead?.gas !== undefined ? item.utilityOverhead.gas : 2.50);
-    setFormWaterOverhead(item.utilityOverhead?.water !== undefined ? item.utilityOverhead.water : 1.00);
-    setFormPkgOverhead(item.utilityOverhead?.packaging !== undefined ? item.utilityOverhead.packaging : 0.00);
-    setFormBatchYieldUnit(item.batchYieldUnit || 'g');
-    setFormServingSizeUnit(item.servingSizeUnit || 'g');
-    setFormBatchYieldGrams(item.batchYieldGrams !== undefined ? item.batchYieldGrams : (item.batchYieldUnit === 'pcs' ? 100 : 2000));
-    setFormServingSizeGrams(item.servingSizeGrams !== undefined ? item.servingSizeGrams : (item.servingSizeUnit === 'pcs' ? 4 : 90));
-    setFormBatchTotalCost(item.totalBatchCost !== undefined ? item.totalBatchCost : 3000);
-    setBatchYieldInputMode('quick');
+    try {
+      setEditingItem(item);
+      setFormSelectedTemplateKey(`dish:${item.id}`);
+      setFormName(item.name);
+      setFormDescription(item.description);
+      setFormPrice(item.price);
+      setFormCategory(item.category);
+      setFormImage(item.image);
+      setFormOriginalImage(item.image);
+      setFormSpicy(item.spicy || false);
+      setFormPopular(item.popular || false);
+      const normalizedReqs = deduplicateAndNormalizeRequirements(item.recipeRequirements || []);
+      setFormIngredients(item.ingredients ? item.ingredients.join(', ') : normalizedReqs.map(r => r.name).join(', '));
+      setFormRecipeRequirements(normalizedReqs);
+      const bG = item.batchYieldGrams !== undefined ? item.batchYieldGrams : (item.batchYieldUnit === 'pcs' ? 100 : 2000);
+      const sG = item.servingSizeGrams !== undefined ? item.servingSizeGrams : (item.servingSizeUnit === 'pcs' ? 4 : 90);
+      let finalBatchIngs = item.batchIngredients && item.batchIngredients.length > 0 ? item.batchIngredients : [];
+      if (finalBatchIngs.length === 0 && normalizedReqs.length > 0) {
+        const multiplier = bG / Math.max(1, sG);
+        const garnishNames = new Set((item.garnishes || []).map(g => (g.name || '').toLowerCase()));
+        const viandReqs = normalizedReqs.filter(r => !isPackagingRequirement(r.name) && !isRiceRequirement(r.name) && !garnishNames.has((r.name || '').toLowerCase()));
+        if (viandReqs.length > 0) {
+          finalBatchIngs = viandReqs.map(r => {
+            const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && String(inv.name).toLowerCase().trim() === String(r.name).toLowerCase().trim());
+            const ingUnit = invMatch?.unit || (item.batchYieldUnit === 'pcs' ? 'pcs' : 'g');
+            const batchAmt = Number((r.amount * multiplier).toFixed(ingUnit === 'pcs' ? 0 : 1));
+            const cost = computeInventoryIngredientCost(r.name, batchAmt, ingUnit);
+            return {
+              name: r.name,
+              batchAmount: batchAmt,
+              unit: ingUnit,
+              cost: cost > 0 ? cost : 0
+            };
+          });
+        }
+      }
+      setFormBatchIngredients(finalBatchIngs);
+      setFormGarnishes(item.garnishes || []);
+      setFormPackaging(item.packaging || []);
+      setFormTargetMargin(item.targetMarginPercent !== undefined ? item.targetMarginPercent : 50);
+      setBatchServingsTarget(20);
+      setFormElecOverhead(item.utilityOverhead?.electricity !== undefined ? item.utilityOverhead.electricity : 3.00);
+      setFormGasOverhead(item.utilityOverhead?.gas !== undefined ? item.utilityOverhead.gas : 2.50);
+      setFormWaterOverhead(item.utilityOverhead?.water !== undefined ? item.utilityOverhead.water : 1.00);
+      setFormPkgOverhead(item.utilityOverhead?.packaging !== undefined ? item.utilityOverhead.packaging : 0.00);
+      setFormBatchYieldUnit(item.batchYieldUnit || 'g');
+      setFormServingSizeUnit(item.servingSizeUnit || 'g');
+      setFormBatchYieldGrams(bG);
+      setFormServingSizeGrams(sG);
+      setFormBatchTotalCost(item.totalBatchCost !== undefined ? item.totalBatchCost : (finalBatchIngs.reduce((sum, ing) => sum + (Number(ing.cost) || 0), 0) || 3000));
+      setBatchYieldInputMode('quick');
 
-    const riceReq = normalizedReqs.find(r => isRiceRequirement(r.name));
-    setFormIncludeRice(item.includeRice !== undefined ? item.includeRice : (item.category !== 'drinks' && (riceReq !== undefined || item.category === 'bento' || item.category === 'silog' || item.category === 'rice-bowl')));
-    setFormRicePortionGrams(item.ricePortionGrams || (riceReq ? riceReq.amount : 150));
-    setFormRiceCostPerGram(item.riceCostPerGram || 0.04);
-    setFormSelectedRiceIngredient(riceReq ? riceReq.name : '');
-    setFormRiceCostMode('simple');
-    setFormRawRiceKg(2);
-    setFormRawRiceCostKg(50);
-    setFormRiceExpansionRatio(2.3);
-    setFormRiceOverhead(10);
-    setFormCustomOptions(item.customizableOptions && item.customizableOptions.length > 0 ? item.customizableOptions.map(co => ({
-      id: 'opt-' + Math.random().toString(36).substr(2, 4),
-      title: co.title,
-      choices: co.choices.map((c, idx) => {
-        const isRiceGroup = co.title.toLowerCase().includes('rice');
-        const isPlain = isRiceGroup && c.name.toLowerCase().includes('plain');
-        const isGarlic = isRiceGroup && c.name.toLowerCase().includes('garlic') && !c.name.toLowerCase().includes('double');
-        return {
-          id: c.id || 'ch-' + Math.random().toString(36).substr(2, 4),
-          name: isPlain ? 'Plain Rice' : isGarlic ? 'Garlic Rice' : c.name,
-          price: (isPlain || isGarlic) && c.price < 0 ? 0 : c.price,
-          isDefault: c.isDefault !== undefined ? c.isDefault : idx === 0
-        };
-      })
-    })) : (
-      item.includeRice !== false && item.category !== 'drinks'
-        ? [
-            {
-              id: 'opt-' + Math.random().toString(36).substr(2, 4),
-              title: 'Rice (Included with Meal)',
-              choices: [
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0, isDefault: true },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0, isDefault: false },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20, isDefault: false },
-              ]
-            },
-            {
-              id: 'opt-' + Math.random().toString(36).substr(2, 4),
-              title: 'Extra Rice (Add-on)',
-              choices: [
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'No Extra Rice', price: 0, isDefault: true },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Plain Rice', price: 15, isDefault: false },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Garlic Rice', price: 20, isDefault: false },
-                { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Java Rice', price: 25, isDefault: false },
-              ]
-            }
-          ]
-        : []
-    ));
-
-    // Synchronize Batch Calculator state with this recipe
-    const unit = item.batchYieldUnit || 'g';
-    setStandaloneBatchUnit(unit);
-    const batchG = item.batchYieldGrams !== undefined ? item.batchYieldGrams : (unit === 'pcs' ? 100 : 2000);
-    const servingG = item.servingSizeGrams !== undefined ? item.servingSizeGrams : (unit === 'pcs' ? 4 : 90);
-    const multiplier = batchG / Math.max(1, servingG);
-
-    setStandaloneRecipeName(item.name);
-    setStandaloneBatchWeight(batchG);
-    setStandaloneServingGrams(servingG);
-    setStandaloneTargetMargin(item.targetMarginPercent !== undefined ? item.targetMarginPercent : 50);
-    setStandaloneIncludeRice(item.includeRice !== undefined ? item.includeRice : true);
-    if (riceReq) {
-      setStandaloneIncludeRice(true);
-      setStandaloneRicePortionGrams(Number(riceReq.amount) || 150);
-      setStandaloneSelectedRiceIngredient(riceReq.name);
-    } else {
-      setStandaloneIncludeRice(false);
-      setStandaloneSelectedRiceIngredient('');
-    }
-
-    const garnishReqs = normalizedReqs.filter(r => isGarnishRequirement(r.name));
-    if (garnishReqs.length > 0) {
-      setStandaloneIncludeGarnishes(true);
-      const mappedGarnishes = garnishReqs.map(g => {
-        const invMatch = (ingredientsInventory || []).find(inv => inv.name.toLowerCase() === g.name.toLowerCase());
-        const pCost = getGarnishPieceCost(g.name, undefined, invMatch);
-        const gramsPerPc = getGarnishGramsPerPiece(g.name, invMatch);
-        const isGramUnit = invMatch?.unit === 'g' || invMatch?.unit === 'kg';
-        const amt = isGramUnit && Number(g.amount) > 1 && !g.name.toLowerCase().includes('/pc')
-          ? Math.max(1, Math.round(Number(g.amount) / gramsPerPc))
-          : (Number(g.amount) || 1);
-
-        return {
-          name: g.name,
-          amount: amt,
-          costPerUnit: pCost,
-          unit: 'pcs',
-          selected: true
-        };
-      });
-      setStandaloneSelectedGarnishes(mappedGarnishes);
-    } else {
-      setStandaloneIncludeGarnishes(false);
-    }
-
-    const pkgReqs = normalizedReqs.filter(r => isPackagingRequirement(r.name));
-    if (pkgReqs.length > 0) {
-      setStandaloneIncludePackaging(true);
-      const mappedPkgs = pkgReqs.map(p => {
-        const invMatch = (ingredientsInventory || []).find(inv => inv.name.toLowerCase() === p.name.toLowerCase());
-        return {
-          name: p.name,
-          amount: Number(p.amount) || 1,
-          costPerUnit: Number(invMatch?.costPerUnit) || (p.name.toLowerCase().includes('bowl') ? 2.50 : 1.50),
-          unit: invMatch?.unit || 'pcs',
-          selected: true
-        };
-      });
-      setStandaloneSelectedPackaging(mappedPkgs);
-    } else {
-      setStandaloneIncludePackaging(false);
-    }
-
-    if (normalizedReqs.length > 0) {
-      const converted = normalizedReqs
-        .filter(r => isViandRequirement(r.name))
-        .map(r => {
-          const inv = ingredientsInventory.find(i => i.name.toLowerCase() === r.name.toLowerCase());
-          const unit = inv?.unit || 'g';
-          const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
-          const rawAmt = Number(r.amount) || 0;
-          let batchAmount: number;
-          let finalUnit = unit;
-          if (isCountable) {
-            const scaled = rawAmt * multiplier;
-            batchAmount = scaled >= 1 ? (scaled % 1 === 0 ? scaled : Number(scaled.toFixed(1))) : Number(scaled.toFixed(2));
-          } else if (unit === 'kg') {
-            const batchGrams = rawAmt * multiplier;
-            if (batchGrams >= 1000) {
-              batchAmount = Number((batchGrams / 1000).toFixed(2));
-              finalUnit = 'kg';
-            } else {
-              batchAmount = Number(batchGrams.toFixed(1));
-              finalUnit = 'g';
-            }
-          } else {
-            batchAmount = Number((rawAmt * multiplier).toFixed(1));
-          }
-          const cost = computeInventoryIngredientCost(r.name, batchAmount, finalUnit);
+      const riceReq = normalizedReqs.find(r => isRiceRequirement(r.name));
+      setFormIncludeRice(item.includeRice !== undefined ? item.includeRice : (item.category !== 'drinks' && (riceReq !== undefined || item.category === 'bento' || item.category === 'silog' || item.category === 'rice-bowl')));
+      setFormRicePortionGrams(item.ricePortionGrams || (riceReq ? riceReq.amount : 150));
+      setFormRiceCostPerGram(item.riceCostPerGram || 0.04);
+      setFormSelectedRiceIngredient(riceReq ? riceReq.name : '');
+      setFormRiceCostMode('simple');
+      setFormRawRiceKg(2);
+      setFormRawRiceCostKg(50);
+      setFormRiceExpansionRatio(2.3);
+      setFormRiceOverhead(10);
+      setFormCustomOptions(item.customizableOptions && item.customizableOptions.length > 0 ? item.customizableOptions.map(co => ({
+        id: 'opt-' + Math.random().toString(36).substr(2, 4),
+        title: co.title,
+        choices: (co.choices || []).map((c, idx) => {
+          const isRiceGroup = (co.title || '').toLowerCase().includes('rice');
+          const isPlain = isRiceGroup && (c.name || '').toLowerCase().includes('plain');
+          const isGarlic = isRiceGroup && (c.name || '').toLowerCase().includes('garlic') && !(c.name || '').toLowerCase().includes('double');
           return {
-            name: r.name,
-            batchAmount,
-            unit: finalUnit,
-            cost
+            id: c.id || 'ch-' + Math.random().toString(36).substr(2, 4),
+            name: isPlain ? 'Plain Rice' : isGarlic ? 'Garlic Rice' : c.name,
+            price: (isPlain || isGarlic) && c.price < 0 ? 0 : c.price,
+            isDefault: c.isDefault !== undefined ? c.isDefault : idx === 0
+          };
+        })
+      })) : (
+        item.includeRice !== false && item.category !== 'drinks'
+          ? [
+              {
+                id: 'opt-' + Math.random().toString(36).substr(2, 4),
+                title: 'Rice (Included with Meal)',
+                choices: [
+                  { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Garlic Rice', price: 0, isDefault: true },
+                  { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Plain Rice', price: 0, isDefault: false },
+                  { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'Java Rice', price: 20, isDefault: false },
+                ]
+              },
+              {
+                id: 'opt-' + Math.random().toString(36).substr(2, 4),
+                title: 'Extra Rice (Add-on)',
+                choices: [
+                  { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: 'No Extra Rice', price: 0, isDefault: true },
+                  { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Plain Rice', price: 15, isDefault: false },
+                  { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Garlic Rice', price: 20, isDefault: false },
+                  { id: 'ch-' + Math.random().toString(36).substr(2, 4), name: '+1 Extra Java Rice', price: 25, isDefault: false },
+                ]
+              }
+            ]
+          : []
+      ));
+
+      // Synchronize Batch Calculator state with this recipe
+      const unit = item.batchYieldUnit || 'g';
+      setStandaloneBatchUnit(unit);
+      const batchG = item.batchYieldGrams !== undefined ? item.batchYieldGrams : (unit === 'pcs' ? 100 : 2000);
+      const servingG = item.servingSizeGrams !== undefined ? item.servingSizeGrams : (unit === 'pcs' ? 4 : 90);
+      const multiplier = batchG / Math.max(1, servingG);
+
+      setStandaloneRecipeName(item.name);
+      setStandaloneBatchWeight(batchG);
+      setStandaloneServingGrams(servingG);
+      setStandaloneTargetMargin(item.targetMarginPercent !== undefined ? item.targetMarginPercent : 50);
+      setStandaloneIncludeRice(item.includeRice !== undefined ? item.includeRice : true);
+      if (riceReq) {
+        setStandaloneIncludeRice(true);
+        setStandaloneRicePortionGrams(Number(riceReq.amount) || 150);
+        setStandaloneSelectedRiceIngredient(riceReq.name);
+      } else {
+        setStandaloneIncludeRice(false);
+        setStandaloneSelectedRiceIngredient('');
+      }
+
+      const garnishReqs = normalizedReqs.filter(r => isGarnishRequirement(r.name));
+      if (garnishReqs.length > 0) {
+        setStandaloneIncludeGarnishes(true);
+        const mappedGarnishes = garnishReqs.map(g => {
+          const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && inv.name.toLowerCase() === String(g.name || '').toLowerCase());
+          const pCost = getGarnishPieceCost(g.name, undefined, invMatch);
+          const gramsPerPc = getGarnishGramsPerPiece(g.name, invMatch);
+          const isGramUnit = invMatch?.unit === 'g' || invMatch?.unit === 'kg';
+          const amt = isGramUnit && Number(g.amount) > 1 && !String(g.name || '').toLowerCase().includes('/pc')
+            ? Math.max(1, Math.round(Number(g.amount) / gramsPerPc))
+            : (Number(g.amount) || 1);
+
+          return {
+            name: g.name,
+            amount: amt,
+            costPerUnit: pCost,
+            unit: 'pcs',
+            selected: true
           };
         });
-
-      if (converted.length > 0) {
-        setStandaloneIngredients(converted);
-        const totalCost = converted.reduce((sum, ing) => sum + (Number(ing.cost) || 0), 0);
-        setStandaloneTotalBatchCost(totalCost);
+        setStandaloneSelectedGarnishes(mappedGarnishes);
+      } else {
+        setStandaloneIncludeGarnishes(false);
       }
-    }
 
-    setIsFormOpen(true);
+      const pkgReqs = normalizedReqs.filter(r => isPackagingRequirement(r.name));
+      if (pkgReqs.length > 0) {
+        setStandaloneIncludePackaging(true);
+        const mappedPkgs = pkgReqs.map(p => {
+          const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && inv.name.toLowerCase() === String(p.name || '').toLowerCase());
+          return {
+            name: p.name,
+            amount: Number(p.amount) || 1,
+            costPerUnit: Number(invMatch?.costPerUnit) || (String(p.name || '').toLowerCase().includes('bowl') ? 2.50 : 1.50),
+            unit: invMatch?.unit || 'pcs',
+            selected: true
+          };
+        });
+        setStandaloneSelectedPackaging(mappedPkgs);
+      } else {
+        setStandaloneIncludePackaging(false);
+      }
+
+      if (finalBatchIngs.length > 0) {
+        setStandaloneIngredients(finalBatchIngs);
+        const totalCost = finalBatchIngs.reduce((sum, ing) => sum + (Number(ing.cost) || 0), 0);
+        setStandaloneTotalBatchCost(totalCost);
+      } else if (normalizedReqs.length > 0) {
+        const converted = normalizedReqs
+          .filter(r => isViandRequirement(r.name))
+          .map(r => {
+            const inv = (ingredientsInventory || []).find(i => i && i.name && i.name.toLowerCase() === String(r.name || '').toLowerCase());
+            const unit = inv?.unit || 'g';
+            const isCountable = unit === 'pcs' || unit === 'cans' || unit === 'pc' || unit === 'pack';
+            const rawAmt = Number(r.amount) || 0;
+            let batchAmount: number;
+            let finalUnit = unit;
+            if (isCountable) {
+              const scaled = rawAmt * multiplier;
+              batchAmount = scaled >= 1 ? (scaled % 1 === 0 ? scaled : Number(scaled.toFixed(1))) : Number(scaled.toFixed(2));
+            } else if (unit === 'kg') {
+              const batchGrams = rawAmt * multiplier;
+              if (batchGrams >= 1000) {
+                batchAmount = Number((batchGrams / 1000).toFixed(2));
+                finalUnit = 'kg';
+              } else {
+                batchAmount = Number(batchGrams.toFixed(1));
+                finalUnit = 'g';
+              }
+            } else {
+              batchAmount = Number((rawAmt * multiplier).toFixed(1));
+            }
+            const cost = computeInventoryIngredientCost(r.name, batchAmount, finalUnit);
+            return {
+              name: r.name,
+              batchAmount,
+              unit: finalUnit,
+              cost
+            };
+          });
+
+        if (converted.length > 0) {
+          setStandaloneIngredients(converted);
+          const totalCost = converted.reduce((sum, ing) => sum + (Number(ing.cost) || 0), 0);
+          setStandaloneTotalBatchCost(totalCost);
+        }
+      }
+
+      setIsFormOpen(true);
+    } catch (err) {
+      console.error("Error opening edit form:", err);
+    }
   };
 
   // Handle Dynamic Menu Item Submission (Add/Edit)
@@ -6738,6 +8525,92 @@ function AdminPanel({
       packaging: formPkgOverhead
     };
 
+    // Compute effective per-serving requirements if formRecipeRequirements is not yet populated
+    const effectiveBatch = (formBatchIngredients && formBatchIngredients.length > 0)
+      ? formBatchIngredients
+      : ((formSelectedTemplateKey === '__active_bulk__' || !editingItem) && standaloneIngredients && standaloneIngredients.length > 0)
+        ? standaloneIngredients.map(item => ({
+            name: String(item?.name || '').trim(),
+            batchAmount: Number(item?.batchAmount) || 0,
+            unit: item?.unit || 'g',
+            cost: Number(item?.cost) || 0
+          })).filter(i => i.name.length > 0)
+        : [];
+
+    const effectiveBatchYieldG = Math.max(1, Number(formBatchYieldGrams) || Number(standaloneBatchWeight) || (formBatchYieldUnit === 'pcs' ? 100 : 2000));
+    const effectiveServingG = Math.max(1, Number(formServingSizeGrams) || Number(standaloneServingGrams) || (formServingSizeUnit === 'pcs' ? 4 : 90));
+
+    const effectiveReqs = (formRecipeRequirements && formRecipeRequirements.length > 0)
+      ? formRecipeRequirements
+      : (() => {
+          if (!effectiveBatch || effectiveBatch.length === 0) return [];
+          const reqs: Array<{ name: string; amount: number }> = [];
+          effectiveBatch.forEach(item => {
+            if (!item || !item.name) return;
+            const itemName = String(item.name).trim();
+            const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && inv.name.toLowerCase().trim() === itemName.toLowerCase().trim());
+            const invUnit = (invMatch?.unit || item.unit || 'g').toLowerCase();
+            const inputUnit = (item.unit || invUnit).toLowerCase();
+            const isCountable = inputUnit === 'pcs' || inputUnit === 'cans' || inputUnit === 'pc' || inputUnit === 'pack';
+            const rawAmt = Number(item.batchAmount) || 0;
+            let finalAmt: number;
+            if (rawAmt <= 0) {
+              finalAmt = 0;
+            } else if (isCountable) {
+              finalAmt = Number(((rawAmt / effectiveBatchYieldG) * effectiveServingG).toFixed(3));
+            } else {
+              const baseAmount = getBaseEquivalentUnits(rawAmt, inputUnit);
+              finalAmt = Number(((baseAmount / effectiveBatchYieldG) * effectiveServingG).toFixed(2));
+            }
+            reqs.push({ name: itemName, amount: finalAmt });
+          });
+          if (formIncludeRice || standaloneIncludeRice) {
+            reqs.push({ name: formSelectedRiceIngredient || standaloneSelectedRiceIngredient || 'Steamed Rice', amount: Number(formRicePortionGrams) || Number(standaloneRicePortionGrams) || 150 });
+          }
+          return reqs;
+        })();
+
+    const effectiveGarnishes = (formGarnishes && formGarnishes.length > 0)
+      ? formGarnishes
+      : ((formSelectedTemplateKey === '__active_bulk__' || !editingItem) && standaloneSelectedGarnishes && standaloneSelectedGarnishes.length > 0)
+        ? standaloneSelectedGarnishes
+        : [];
+
+    const effectivePackaging = (formPackaging && formPackaging.length > 0)
+      ? formPackaging
+      : ((formSelectedTemplateKey === '__active_bulk__' || !editingItem) && standaloneSelectedPackaging && standaloneSelectedPackaging.length > 0)
+        ? standaloneSelectedPackaging
+        : [];
+
+    const effectiveBatchIngs = (formBatchIngredients && formBatchIngredients.length > 0)
+      ? formBatchIngredients
+      : (effectiveBatch.length > 0)
+        ? effectiveBatch
+        : (() => {
+            const multiplier = effectiveBatchYieldG / Math.max(1, effectiveServingG);
+            const garnishNames = new Set((effectiveGarnishes || []).map(g => (g.name || '').toLowerCase()));
+            const viandReqs = effectiveReqs.filter(r => !isPackagingRequirement(r.name) && !isRiceRequirement(r.name) && !garnishNames.has((r.name || '').toLowerCase()));
+            return viandReqs.map(r => {
+              const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && inv.name.toLowerCase().trim() === r.name.toLowerCase().trim());
+              const ingUnit = invMatch?.unit || (formBatchYieldUnit === 'pcs' ? 'pcs' : 'g');
+              const batchAmt = Number((r.amount * multiplier).toFixed(ingUnit === 'pcs' ? 0 : 1));
+              const cost = computeInventoryIngredientCost(r.name, batchAmt, ingUnit);
+              return {
+                name: r.name,
+                batchAmount: batchAmt,
+                unit: ingUnit,
+                cost: cost > 0 ? cost : 0
+              };
+            });
+          })();
+
+    const derivedIngredients = parsedIngredients.length > 0
+      ? parsedIngredients
+      : Array.from(new Set([
+          ...effectiveReqs.map(r => r.name),
+          ...effectiveBatchIngs.map(i => i.name)
+        ])).filter(Boolean);
+
     if (editingItem) {
       // Edit existing
       const updated: MenuItem = {
@@ -6759,11 +8632,11 @@ function AdminPanel({
         includeRice: formIncludeRice,
         ricePortionGrams: formIncludeRice ? (Number(formRicePortionGrams) || 150) : undefined,
         riceCostPerGram: formIncludeRice ? (Number(formRiceCostPerGram) || 0.04) : undefined,
-        ingredients: parsedIngredients.length > 0 ? parsedIngredients : undefined,
-        recipeRequirements: formRecipeRequirements.length > 0 ? formRecipeRequirements.map(r => ({ name: r.name, amount: Number(r.amount) || 0 })) : undefined,
-        batchIngredients: formBatchIngredients.length > 0 ? formBatchIngredients : undefined,
-        garnishes: formGarnishes.length > 0 ? formGarnishes : undefined,
-        packaging: formPackaging.length > 0 ? formPackaging : undefined,
+        ingredients: derivedIngredients.length > 0 ? derivedIngredients : undefined,
+        recipeRequirements: effectiveReqs.length > 0 ? effectiveReqs.map(r => ({ name: r.name, amount: Number(r.amount) || 0 })) : undefined,
+        batchIngredients: effectiveBatchIngs.length > 0 ? effectiveBatchIngs : undefined,
+        garnishes: effectiveGarnishes.length > 0 ? effectiveGarnishes : undefined,
+        packaging: effectivePackaging.length > 0 ? effectivePackaging : undefined,
         customizableOptions: finalCustomOptions
       };
       onEditMenuItem(updated);
@@ -6790,11 +8663,11 @@ function AdminPanel({
         includeRice: formIncludeRice,
         ricePortionGrams: formIncludeRice ? (Number(formRicePortionGrams) || 150) : undefined,
         riceCostPerGram: formIncludeRice ? (Number(formRiceCostPerGram) || 0.04) : undefined,
-        ingredients: parsedIngredients.length > 0 ? parsedIngredients : undefined,
-        recipeRequirements: formRecipeRequirements.length > 0 ? formRecipeRequirements.map(r => ({ name: r.name, amount: Number(r.amount) || 0 })) : undefined,
-        batchIngredients: formBatchIngredients.length > 0 ? formBatchIngredients : undefined,
-        garnishes: formGarnishes.length > 0 ? formGarnishes : undefined,
-        packaging: formPackaging.length > 0 ? formPackaging : undefined,
+        ingredients: derivedIngredients.length > 0 ? derivedIngredients : undefined,
+        recipeRequirements: effectiveReqs.length > 0 ? effectiveReqs.map(r => ({ name: r.name, amount: Number(r.amount) || 0 })) : undefined,
+        batchIngredients: effectiveBatchIngs.length > 0 ? effectiveBatchIngs : undefined,
+        garnishes: effectiveGarnishes.length > 0 ? effectiveGarnishes : undefined,
+        packaging: effectivePackaging.length > 0 ? effectivePackaging : undefined,
         customizableOptions: finalCustomOptions
       };
       onAddMenuItem(newItem);
@@ -6903,6 +8776,69 @@ function AdminPanel({
     setEditingIngredientId(null);
   };
 
+  const handleResetAllRawMaterialStocksToZero = () => {
+    if (ingredientsInventory.length === 0) {
+      alert("No raw materials in inventory to reset.");
+      return;
+    }
+    const confirmReset = confirm(
+      `⚠️ Reset ALL Raw Material quantities to 0?\n\nThis will make all ${ingredientsInventory.length} raw material quantities 0.\n\n✓ None of your created materials, pack sizes, or purchase costs will be deleted.`
+    );
+    if (!confirmReset) return;
+
+    if (onUpdateMultipleIngredientsStock) {
+      const updates: Record<string, number> = {};
+      ingredientsInventory.forEach((ing) => {
+        updates[ing.id] = 0;
+      });
+      onUpdateMultipleIngredientsStock(updates);
+    } else {
+      ingredientsInventory.forEach((ing) => {
+        onUpdateIngredientStock(ing.id, 0);
+      });
+    }
+
+    if (stockBatches && stockBatches.length > 0 && onUpdateStockBatch) {
+      stockBatches.forEach((batch) => {
+        if (batch.remainingQuantity > 0) {
+          onUpdateStockBatch(batch.id, { remainingQuantity: 0, status: 'depleted' });
+        }
+      });
+    }
+
+    alert(`✓ Successfully reset ${ingredientsInventory.length} raw material stocks to 0 quantity.\nAll items remain in your catalog.`);
+  };
+
+  const handleResetAllDishStocksToZero = () => {
+    if (menuItems.length === 0) {
+      alert("No menu items to reset.");
+      return;
+    }
+    const confirmReset = confirm(
+      `⚠️ Reset ALL Finished Dish stocks to 0?\n\nThis will set all ${menuItems.length} menu items to 0 stock (Sold Out / Out of Stock).\n\n✓ None of your created menu dishes or recipes will be deleted.`
+    );
+    if (!confirmReset) return;
+
+    menuItems.forEach((item) => {
+      onUpdateStockLevel(item.id, 0);
+    });
+
+    alert(`✓ Successfully reset all ${menuItems.length} dish stocks to 0 quantity.\nAll menu items remain in your catalog.`);
+  };
+
+  const handleResetIndividualIngredientToZero = (ingId: string, ingName: string) => {
+    if (confirm(`Set stock of "${ingName}" to 0?\n\nThe raw material will NOT be deleted, only its quantity will be made 0.`)) {
+      onUpdateIngredientStock(ingId, 0);
+      if (stockBatches && stockBatches.length > 0 && onUpdateStockBatch) {
+        stockBatches.filter(b => b.ingredientId === ingId).forEach(batch => {
+          if (batch.remainingQuantity > 0) {
+            onUpdateStockBatch(batch.id, { remainingQuantity: 0, status: 'depleted' });
+          }
+        });
+      }
+    }
+  };
+
   // Filter menu items for Menu Builder view
   const filteredBuilderItems = menuItems.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(builderSearchQuery.toLowerCase()) || 
@@ -6977,14 +8913,26 @@ function AdminPanel({
               🍽️ Dish Recipes Availability ({menuItems.length})
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsFifoModalOpen(true)}
-              className="ml-auto mb-2 px-3.5 py-1.5 rounded-xl bg-brand-gold/15 hover:bg-brand-gold/25 border border-brand-gold/40 text-brand-gold text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Open Smart FIFO Multi-Lot Inventory & Loss Intelligence Engine"
-            >
-              📦 FIFO Batches & Cost Losses ({stockBatches.length})
-            </button>
+            <div className="ml-auto mb-2 flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={stockViewMode === 'ingredients' ? handleResetAllRawMaterialStocksToZero : handleResetAllDishStocksToZero}
+                className="px-3.5 py-1.5 rounded-xl bg-brand-red/15 hover:bg-brand-red/25 border border-brand-red/40 text-brand-red text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title={stockViewMode === 'ingredients' ? "Make all raw material quantities 0 without deleting items" : "Make all dish stock quantities 0 without deleting dishes"}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{stockViewMode === 'ingredients' ? '🔄 Zero All Raw Stocks (0 Qty)' : '🔄 Zero All Dish Stocks (0 Qty)'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsFifoModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-brand-gold/15 hover:bg-brand-gold/25 border border-brand-gold/40 text-brand-gold text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Open Smart FIFO Multi-Lot Inventory & Loss Intelligence Engine"
+              >
+                📦 FIFO Batches & Cost Losses ({stockBatches.length})
+              </button>
+            </div>
           </div>
 
           {/* Inventory Secondary Stats Widgets */}
@@ -8544,17 +10492,28 @@ function AdminPanel({
                 </div>
 
                 {stockViewMode === 'recipes' && (
-                  <select
-                    value={stockCategoryFilter}
-                    onChange={(e) => setStockCategoryFilter(e.target.value as Category | 'all')}
-                    className="bg-[#0D0D0C] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red"
-                  >
-                    <option value="all">All Categories</option>
-                    <option value="bento">Bento Meals</option>
-                    <option value="silog">Silog Classics</option>
-                    <option value="rice-bowl">Rice Bowls</option>
-                    <option value="drinks">Drinks</option>
-                  </select>
+                  <>
+                    <select
+                      value={stockCategoryFilter}
+                      onChange={(e) => setStockCategoryFilter(e.target.value as Category | 'all')}
+                      className="bg-[#0D0D0C] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red font-semibold"
+                    >
+                      <option value="all">All Categories</option>
+                      <option value="bento">Bento Meals</option>
+                      <option value="silog">Silog Classics</option>
+                      <option value="rice-bowl">Rice Bowls</option>
+                      <option value="drinks">Drinks</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={handleResetAllDishStocksToZero}
+                      className="px-3 py-1.5 bg-brand-red/10 hover:bg-brand-red/20 border border-brand-red/30 text-brand-red rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm transition-all focus:outline-none cursor-pointer"
+                      title="Set all dish quantities to 0 without deleting dishes"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Zero All Stocks
+                    </button>
+                  </>
                 )}
 
                 {stockViewMode === 'ingredients' && (
@@ -8577,8 +10536,17 @@ function AdminPanel({
 
                     <button
                       type="button"
+                      onClick={handleResetAllRawMaterialStocksToZero}
+                      className="px-3 py-1.5 bg-brand-red/10 hover:bg-brand-red/20 border border-brand-red/30 text-brand-red rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm transition-all focus:outline-none cursor-pointer"
+                      title="Set all raw material quantities to 0 without deleting items"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Zero Stocks
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => setIsAddIngredientOpen(true)}
-                      className="px-3.5 py-1.5 bg-brand-red text-white hover:opacity-90 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all focus:outline-none"
+                      className="px-3.5 py-1.5 bg-brand-red text-white hover:opacity-90 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all focus:outline-none cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" /> Add Material
                     </button>
@@ -9025,11 +10993,21 @@ function AdminPanel({
 
                           {/* Stock level display (edit via Edit form) */}
                           <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[10px] text-gray-500 font-medium">Stock:</span>
                               <span className="font-mono font-bold text-xs text-white bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
                                 {ing.quantity} <span className="text-[9px] text-gray-500 font-bold uppercase">{ing.unit}</span>
                               </span>
+                              {ing.quantity > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleResetIndividualIngredientToZero(ing.id, ing.name)}
+                                  className="px-2 py-1 rounded-lg bg-brand-red/10 hover:bg-brand-red/20 text-brand-red border border-brand-red/25 text-[8.5px] font-mono font-bold uppercase transition-all cursor-pointer"
+                                  title="Reset this raw material to 0 quantity without deleting it"
+                                >
+                                  Zero (0)
+                                </button>
+                              )}
                             </div>
 
                             <span className="text-[10px] text-gray-500 font-medium">
@@ -9123,7 +11101,7 @@ function AdminPanel({
                                     const reqDisplay = ing ? (ing.unit === 'kg' ? `${reqItem.amount}g` : `${reqItem.amount}${ing.unit}`) : `${reqItem.amount} units`;
 
                                     const match = financials.breakDown.find(b => b.name.toLowerCase() === reqItem.name.toLowerCase());
-                                     const costDisplay = match ? ' • ₱' + match.cost.toFixed(2) : '';
+                                     const costDisplay = (match && match.cost !== undefined) ? ' • ₱' + Number(match.cost).toFixed(2) : '';
                                      return (
                                        <div key={reqItem.name} className="flex justify-between items-center text-[10px] text-gray-400">
                                          <span className="truncate max-w-[170px]" title={reqItem.name}>
@@ -9185,13 +11163,13 @@ function AdminPanel({
                           <div className="mt-2.5 bg-brand-gold/5 p-3 rounded-xl border border-brand-gold/15 space-y-1">
                             <div className="flex justify-between items-center text-[10px]">
                               <span className="text-gray-400 font-bold uppercase tracking-wider text-[8px]">💰 Est. Ingredient Cost:</span>
-                              <span className="font-mono font-bold text-gray-200">₱{financials.totalCost.toFixed(2)}</span>
+                              <span className="font-mono font-bold text-gray-200">₱{(financials.totalCost ?? 0).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between items-center text-[10px]">
                               <span className="text-gray-400 font-bold uppercase tracking-wider text-[8px]">💵 Est. Profit (Margin):</span>
                               <div className="flex items-center gap-1.5">
-                                <span className="font-mono font-bold text-green-400">₱{financials.profit.toFixed(2)}</span>
-                                <span className="text-[9px] font-black text-brand-gold bg-brand-gold/10 px-1.5 py-0.2 rounded border border-brand-gold/15">{financials.marginPercent.toFixed(1)}%</span>
+                                <span className="font-mono font-bold text-green-400">₱{(financials.profit ?? 0).toFixed(2)}</span>
+                                <span className="text-[9px] font-black text-brand-gold bg-brand-gold/10 px-1.5 py-0.2 rounded border border-brand-gold/15">{(financials.marginPercent ?? 0).toFixed(1)}%</span>
                               </div>
                             </div>
                           </div>
@@ -9226,6 +11204,17 @@ function AdminPanel({
                             >
                               <Plus className="w-3.5 h-3.5" />
                             </button>
+
+                            {qty > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => onUpdateStockLevel(item.id, 0)}
+                                className="px-2 py-1 rounded-lg bg-brand-red/10 hover:bg-brand-red/20 text-brand-red border border-brand-red/25 text-[8.5px] font-mono font-bold uppercase transition-all cursor-pointer ml-1"
+                                title="Set dish stock to 0 (Keep dish created)"
+                              >
+                                Zero (0)
+                              </button>
+                            )}
                           </div>
 
                           {/* Toggle switches for Availability sync */}
@@ -9469,7 +11458,7 @@ function AdminPanel({
 
                         {/* Display Base Price */}
                         <div className="absolute bottom-3 right-3 bg-brand-gold/15 backdrop-blur-md border border-brand-gold/30 px-3 py-1 rounded-xl">
-                          <span className="font-mono text-brand-gold font-black text-sm">₱{item.price.toFixed(2)}</span>
+                          <span className="font-mono text-brand-gold font-black text-sm">₱{(item.price ?? 0).toFixed(2)}</span>
                         </div>
                       </div>
 
@@ -9552,7 +11541,7 @@ function AdminPanel({
                                     const unit = invItem?.unit || 'g';
                                     const isMissing = !invItem;
                                     const match = financials.breakDown.find(b => b.name.toLowerCase() === req.name.toLowerCase());
-                                    const costDisplay = match ? `(₱${match.cost.toFixed(2)})` : '';
+                                    const costDisplay = (match && match.cost !== undefined) ? `(₱${Number(match.cost).toFixed(2)})` : '';
                                     return (
                                       <span key={index} className={`text-[8.5px] border font-mono px-1.5 py-0.5 rounded-md flex items-center gap-1.5 ${
                                         isMissing 
@@ -9614,19 +11603,19 @@ function AdminPanel({
                             <div className="grid grid-cols-4 gap-1 border-b border-white/5 pb-1.5">
                               <div>
                                 <span className="text-gray-500 uppercase tracking-wider text-[7px] block font-bold">Base Price</span>
-                                <span className="font-mono text-brand-gold font-black">₱{item.price.toFixed(2)}</span>
+                                <span className="font-mono text-brand-gold font-black">₱{(item.price ?? 0).toFixed(2)}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500 uppercase tracking-wider text-[7px] block font-bold">Recipe COGS</span>
-                                <span className="font-mono text-gray-200 font-bold">₱{financials.totalCost.toFixed(2)}</span>
+                                <span className="font-mono text-gray-200 font-bold">₱{(financials.totalCost ?? 0).toFixed(2)}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500 uppercase tracking-wider text-[7px] block font-bold">Est. Profit</span>
-                                <span className="font-mono text-green-400 font-bold">₱{financials.profit.toFixed(2)}</span>
+                                <span className="font-mono text-green-400 font-bold">₱{(financials.profit ?? 0).toFixed(2)}</span>
                               </div>
                               <div className="text-right">
                                 <span className="text-gray-500 uppercase tracking-wider text-[7px] block font-bold">Margin</span>
-                                <span className="text-brand-gold font-extrabold">{financials.marginPercent.toFixed(1)}%</span>
+                                <span className="text-brand-gold font-extrabold">{(financials.marginPercent ?? 0).toFixed(1)}%</span>
                               </div>
                             </div>
 
@@ -9638,7 +11627,7 @@ function AdminPanel({
                                 </span>
                               </div>
                               <div>
-                                <span className="text-gray-400 text-[8.5px]">Rec. Price: <strong className="text-white font-mono">₱{financials.recommendedPrice.toFixed(2)}</strong></span>
+                                <span className="text-gray-400 text-[8.5px]">Rec. Price: <strong className="text-white font-mono">₱{(financials.recommendedPrice ?? 0).toFixed(2)}</strong></span>
                               </div>
                             </div>
                           </div>
@@ -9879,7 +11868,7 @@ function AdminPanel({
                       <span className={`font-display font-extrabold text-2xl ${finCurrent.netIncome >= 0 ? 'text-emerald-400' : 'text-brand-red'}`}>
                         ₱{Math.max(0, finCurrent.netIncome).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
-                      <span className="text-[9px] text-emerald-400/80 block font-bold">Net Margin: {finCurrent.netMarginPercent.toFixed(1)}%</span>
+                      <span className="text-[9px] text-emerald-400/80 block font-bold">Net Margin: {(finCurrent.netMarginPercent ?? 0).toFixed(1)}%</span>
                     </div>
                   </div>
 
@@ -9933,7 +11922,7 @@ function AdminPanel({
                         </h4>
                         <p className="text-gray-400 text-xs mt-0.5 leading-relaxed font-normal">
                           {finCurrent.netIncome >= 0
-                            ? `Generating ₱${finCurrent.netIncome.toFixed(2)} net profit after recipe COGS and 6 kitchen overheads for this period.`
+                            ? `Generating ₱${(finCurrent.netIncome ?? 0).toFixed(2)} net profit after recipe COGS and 6 kitchen overheads for this period.`
                             : `Expenses exceed sales by ₱${Math.abs(finCurrent.netIncome).toFixed(2)}. Inspect overhead baselines or increase order volume.`}
                         </p>
                       </div>
@@ -9986,21 +11975,21 @@ function AdminPanel({
                               <h5 className="font-bold text-white text-sm leading-tight">{item.name}</h5>
                               <span className="text-[9px] text-gray-500 uppercase font-mono font-bold block mt-0.5">{item.category}</span>
                             </div>
-                            <span className="font-mono text-brand-gold font-black text-sm">₱{item.price.toFixed(2)}</span>
+                            <span className="font-mono text-brand-gold font-black text-sm">₱{(item.price ?? 0).toFixed(2)}</span>
                           </div>
 
                           <div className="bg-[#0D0D0C] p-2.5 rounded-xl border border-white/5 space-y-1 font-mono text-[10px]">
                             <div className="flex justify-between text-gray-400">
                               <span>Recipe COGS:</span>
-                              <span className="text-white font-bold">₱{financials.totalCost.toFixed(2)}</span>
+                              <span className="text-white font-bold">₱{(financials.totalCost ?? 0).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between text-gray-400">
                               <span>Est. Profit:</span>
-                              <span className="text-green-400 font-bold">₱{financials.profit.toFixed(2)}</span>
+                              <span className="text-green-400 font-bold">₱{(financials.profit ?? 0).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between text-gray-400 border-t border-white/5 pt-1 mt-1">
                               <span>Profit Margin:</span>
-                              <span className="text-brand-gold font-extrabold">{financials.marginPercent.toFixed(1)}%</span>
+                              <span className="text-brand-gold font-extrabold">{(financials.marginPercent ?? 0).toFixed(1)}%</span>
                             </div>
                           </div>
                         </div>
@@ -10028,10 +12017,10 @@ function AdminPanel({
                         <span className="text-xs text-gray-400 font-bold">Itemized Operating Expenses ({finCurrent.label})</span>
                       </div>
                       <h3 className="font-display font-black text-white text-xl mt-1.5 flex items-center gap-2">
-                        ⚡ Operational Overhead Breakout (6 Operating Costs)
+                        ⚡ Operational Overhead Breakout (7 Operating Costs)
                       </h3>
                       <p className="text-gray-400 text-xs mt-1 max-w-2xl font-medium leading-relaxed">
-                        Track kitchen utilities, rent, shift labor wages, LPG fuel, and packaging supplies. Adjust baseline rate drivers below to recalculate store overheads in real time.
+                        Track kitchen utilities, rent, shift labor wages, LPG fuel, vehicle delivery gas, and packaging supplies. Adjust baseline rate drivers below to recalculate store overheads in real time.
                       </p>
                     </div>
 
@@ -10044,8 +12033,8 @@ function AdminPanel({
                     </div>
                   </div>
 
-                  {/* 6-Utility Cards Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* 7-Utility Cards Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {/* Utility 1 */}
                     <div className="bg-[#181818] border border-white/5 rounded-2xl p-5 space-y-2">
                       <div className="flex justify-between items-center">
@@ -10142,7 +12131,26 @@ function AdminPanel({
                       </div>
                     </div>
 
-                    {/* Utility 6 */}
+                    {/* Utility 6 - Delivery Gas */}
+                    <div className="bg-[#181818] border border-white/5 rounded-2xl p-5 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
+                          🛵 Delivery Fuel
+                        </span>
+                        <span className="text-[9px] bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2 py-0.5 rounded font-mono font-bold">
+                          Riders
+                        </span>
+                      </div>
+                      <div className="text-2xl font-mono font-black text-white">
+                        ₱{(((finCurrent as any).deliveryGasCost ?? (deliveryGasBaseRate * finCurrent.daysCount))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <div className="text-[10px] text-gray-400 space-y-0.5 border-t border-white/5 pt-2">
+                        <div className="flex justify-between"><span>Daily Baseline:</span><span className="font-mono text-white">₱{deliveryGasBaseRate}/day</span></div>
+                        <div className="flex justify-between text-gray-500"><span>Monthly Fuel:</span><span className="font-mono text-gray-300">₱{(deliveryGasBaseRate * 30).toFixed(2)}</span></div>
+                      </div>
+                    </div>
+
+                    {/* Utility 7 */}
                     <div className="bg-[#181818] border border-white/5 rounded-2xl p-5 space-y-2">
                       <div className="flex justify-between items-center">
                         <span className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
@@ -10349,9 +12357,10 @@ function AdminPanel({
                       const rentCost = rentBaseRate;
                       const laborCost = laborBaseRate;
                       const gasCost = gasBaseRate;
+                      const deliveryGasCost = deliveryGasBaseRate;
                       const otherCost = otherBaseRate;
 
-                      const operationalOverhead = electricityCost + waterCost + rentCost + laborCost + gasCost + otherCost;
+                      const operationalOverhead = electricityCost + waterCost + rentCost + laborCost + gasCost + deliveryGasCost + otherCost;
                       const totalExpenses = ingredientsCost + operationalOverhead;
                       const netIncome = totalSales - totalExpenses;
                       const netMarginPercent = totalSales > 0 ? (netIncome / totalSales) * 100 : 0;
@@ -10370,6 +12379,7 @@ function AdminPanel({
                         rentCost,
                         laborCost,
                         gasCost,
+                        deliveryGasCost,
                         otherCost,
                         operationalOverhead,
                         totalExpenses,
@@ -12071,6 +14081,7 @@ function AdminPanel({
             {/* Form body */}
             <form onSubmit={handleFormSubmit} className="flex-1 overflow-y-auto p-6 space-y-5 text-sm">
               
+
               {/* Category */}
               <div className="space-y-1.5">
                 <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Culinary Category *</label>
@@ -12101,7 +14112,24 @@ function AdminPanel({
 
               {/* Name */}
               <div className="space-y-1.5">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Dish Recipe Title *</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Dish Recipe Title *</label>
+                  {((standaloneIngredients && standaloneIngredients.length > 0) || (formBatchIngredients && formBatchIngredients.length > 0)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const auto = resolveBulkCalculatorAutoFill();
+                        if (auto.title) setFormName(auto.title);
+                        if (auto.category) setFormCategory(auto.category);
+                      }}
+                      className="text-[9px] font-bold text-brand-gold hover:underline flex items-center gap-1 cursor-pointer"
+                      title="Sync title from bulk calculator formulation"
+                    >
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>Auto-fill from Calculator</span>
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   required
@@ -12114,7 +14142,23 @@ function AdminPanel({
 
               {/* Description */}
               <div className="space-y-1.5">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Recipe Description *</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Recipe Description *</label>
+                  {((standaloneIngredients && standaloneIngredients.length > 0) || (formBatchIngredients && formBatchIngredients.length > 0)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const auto = resolveBulkCalculatorAutoFill();
+                        if (auto.description) setFormDescription(auto.description);
+                      }}
+                      className="text-[9px] font-bold text-brand-gold hover:underline flex items-center gap-1 cursor-pointer"
+                      title="Generate culinary description from bulk calculator formulation"
+                    >
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>Auto-generate Description</span>
+                    </button>
+                  )}
+                </div>
                 <textarea
                   required
                   rows={3}
@@ -12127,7 +14171,23 @@ function AdminPanel({
 
               {/* Ingredients */}
               <div className="space-y-1.5">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Recipe Ingredients (Comma-separated)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Recipe Ingredients (Comma-separated)</label>
+                  {((standaloneIngredients && standaloneIngredients.length > 0) || (formBatchIngredients && formBatchIngredients.length > 0)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const auto = resolveBulkCalculatorAutoFill();
+                        if (auto.ingredients) setFormIngredients(auto.ingredients);
+                      }}
+                      className="text-[9px] font-bold text-brand-gold hover:underline flex items-center gap-1 cursor-pointer"
+                      title="Sync comma-separated ingredients tags from bulk calculator"
+                    >
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>Auto-fill Ingredients</span>
+                    </button>
+                  )}
+                </div>
                 <textarea
                   rows={2}
                   value={formIngredients}
@@ -12138,143 +14198,272 @@ function AdminPanel({
                 <span className="text-[9px] text-gray-500 font-medium block">Provide ingredients separated by commas to display them as beautiful tags on the customer menu.</span>
               </div>
 
-              {/* Linked Ingredients & Packaging from Bulk Calculator */}
-              <div className="bg-[#0D0D0C]/60 p-4 rounded-2xl border border-white/10 space-y-3.5 text-left shadow-lg">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-[10px] text-gray-200 uppercase tracking-wider font-extrabold flex items-center gap-1.5">
-                        <span>🍱 Ingredients & Packaging from Bulk Calculator</span>
-                        <span className="px-2 py-0.5 rounded-full bg-brand-gold/15 text-brand-gold text-[9px] font-black border border-brand-gold/30">
-                          {formRecipeRequirements.length} Linked Items
-                        </span>
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5 text-[9px] text-gray-400 font-medium flex-wrap">
-                      <span className="text-gray-500 font-bold uppercase text-[8px] tracking-wider">Batch Setup:</span>
-                      <span className="text-amber-400 font-bold">
-                        🥩 {formBatchYieldUnit === 'pcs'
-                          ? `${formBatchYieldGrams} pcs Batch (${formServingSizeGrams} pcs/plate)`
-                          : `${(Number(formBatchYieldGrams) / 1000).toFixed(1)}kg Batch (${formServingSizeGrams}g/plate)`}
-                      </span>
-                      <span className="text-gray-600">•</span>
-                      <span className="text-emerald-400 font-bold">
-                        🍚 {formIncludeRice ? `${formRicePortionGrams}g Rice` : 'No Rice'}
-                      </span>
-                      <span className="text-gray-600">•</span>
-                      <span className="text-blue-400 font-bold">
-                        📦 {formPkgReqs.length > 0 ? `${formPkgReqs.length} Packaging Items` : 'Plated / Dine-In'}
-                      </span>
-                    </div>
-                  </div>
+              {/* Linked Ingredients, Packaging & Profit Margin Calculator */}
+              {(() => {
+                // Compute effective per-serving requirements if formRecipeRequirements is not yet populated
+                const effectiveBatch = (formBatchIngredients && formBatchIngredients.length > 0)
+                  ? formBatchIngredients
+                  : ((formSelectedTemplateKey === '__active_bulk__' || !editingItem) && standaloneIngredients && standaloneIngredients.length > 0)
+                    ? standaloneIngredients.map(item => ({
+                        name: String(item?.name || '').trim(),
+                        batchAmount: Number(item?.batchAmount) || 0,
+                        unit: item?.unit || 'g',
+                        cost: Number(item?.cost) || 0
+                      })).filter(i => i.name.length > 0)
+                    : [];
 
-                  <button
-                    type="button"
-                    onClick={handleSendRecipeFormToBatchCalc}
-                    className="px-3.5 py-2 bg-brand-gold hover:bg-brand-gold-hover text-black text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer hover:scale-105"
-                    title="Open the Commercial Bulk Calculator to modify raw ingredients, batch yield, rice portions, or packaging containers"
-                  >
-                    <Calculator className="w-3.5 h-3.5" />
-                    <span>🧮 Configure in Bulk Calculator →</span>
-                  </button>
-                </div>
+                const effectiveBatchYieldG = Math.max(1, Number(formBatchYieldGrams) || Number(standaloneBatchWeight) || (formBatchYieldUnit === 'pcs' ? 100 : 2000));
+                const effectiveServingG = Math.max(1, Number(formServingSizeGrams) || Number(standaloneServingGrams) || (formBatchYieldUnit === 'pcs' ? 4 : 90));
 
-                {formRecipeRequirements.length === 0 ? (
-                  <div className="text-center py-6 px-4 bg-[#121211] rounded-xl border border-white/5 space-y-2">
-                    <PackageCheck className="w-8 h-8 text-gray-600 mx-auto" />
-                    <p className="text-xs text-gray-300 font-semibold">No ingredients or packaging linked yet.</p>
-                    <p className="text-[10px] text-gray-500 max-w-md mx-auto">
-                      Click the button above to launch the Bulk Calculator and configure raw materials, batch cooked yield, rice portions, and takeout packaging.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {/* Helper shared computation */}
-                    {(() => {
-                      const batchServings = Math.max(1, (Number(formBatchYieldGrams) || 1) / Math.max(1, Number(formServingSizeGrams) || 1));
-                      const garnishNameSet = new Set((formGarnishes || []).map(g => (g.name || '').toLowerCase()));
-
-                      // Cost helpers
-                      const getInvCostPerUnit = (name: string, fallbackUnit = 'g') => {
-                        const inv = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === name.toLowerCase());
-                        const u = inv?.unit || fallbackUnit;
-                        const cpu = inv?.costPerUnit ?? (u === 'g' ? 0.05 : u === 'kg' ? 150 : u === 'pcs' ? 15 : u === 'ml' ? 0.08 : 5);
-                        return { inv, u, cpu };
-                      };
-
-                      const getGarnishEffectiveRate = (g: { name: string; unit?: string; costPerUnit?: number; amount: number }) => {
-                        const inv = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === (g.name || '').toLowerCase());
-                        const gUnit = (g.unit || 'pcs').toLowerCase();
-                        const isVol = gUnit === 'g' || gUnit === 'ml';
-                        const rawRate = inv ? (Number(inv.costPerUnit) || 0) : (g.costPerUnit || 0);
-                        if (isVol && rawRate > 0) {
-                          const iu = (inv?.unit || '').toLowerCase();
-                          if (iu === 'g' || iu === 'ml') return { rate: rawRate, inv };
-                          if (iu === 'kg' || iu === 'l') return { rate: rawRate / 1000, inv };
+                const effectiveReqs = (formRecipeRequirements && formRecipeRequirements.length > 0)
+                  ? formRecipeRequirements
+                  : (() => {
+                      if (!effectiveBatch || effectiveBatch.length === 0) return [];
+                      const reqs: Array<{ name: string; amount: number }> = [];
+                      effectiveBatch.forEach(item => {
+                        if (!item || !item.name) return;
+                        const itemName = String(item.name).trim();
+                        const invMatch = (ingredientsInventory || []).find(inv => inv && inv.name && inv.name.toLowerCase().trim() === itemName.toLowerCase());
+                        const invUnit = (invMatch?.unit || item.unit || 'g').toLowerCase();
+                        const inputUnit = (item.unit || invUnit).toLowerCase();
+                        const isCountable = inputUnit === 'pcs' || inputUnit === 'cans' || inputUnit === 'pc' || inputUnit === 'pack';
+                        const rawAmt = Number(item.batchAmount) || 0;
+                        let finalAmt: number;
+                        if (rawAmt <= 0) {
+                          finalAmt = 0;
+                        } else if (isCountable) {
+                          finalAmt = Number(((rawAmt / effectiveBatchYieldG) * effectiveServingG).toFixed(3));
+                        } else {
+                          const baseAmount = getBaseEquivalentUnits(rawAmt, inputUnit);
+                          finalAmt = Number(((baseAmount / effectiveBatchYieldG) * effectiveServingG).toFixed(2));
                         }
-                        return { rate: g.costPerUnit || rawRate || 0, inv };
-                      };
+                        reqs.push({ name: itemName, amount: finalAmt });
+                      });
+                      if (formIncludeRice || standaloneIncludeRice) {
+                        reqs.push({ name: formSelectedRiceIngredient || standaloneSelectedRiceIngredient || 'Steamed Rice', amount: Number(formRicePortionGrams) || Number(standaloneRicePortionGrams) || 150 });
+                      }
+                      return reqs;
+                    })();
 
-                      // Split requirements by category (EXCLUDE garnishes — they live in formGarnishes)
-                      const viandItems = formRecipeRequirements.filter(r => !isPackagingRequirement(r.name) && !isRiceRequirement(r.name) && !garnishNameSet.has((r.name || '').toLowerCase()));
-                      const riceItems  = formRecipeRequirements.filter(r => isRiceRequirement(r.name));
-                      const pkgItems   = formRecipeRequirements.filter(r => isPackagingRequirement(r.name));
-                      const garnishItems = (formGarnishes || []).filter(g => g.selected);
+                const effectiveGarnishes = (formGarnishes && formGarnishes.length > 0)
+                  ? formGarnishes
+                  : ((formSelectedTemplateKey === '__active_bulk__' || !editingItem) && standaloneSelectedGarnishes && standaloneSelectedGarnishes.length > 0)
+                    ? standaloneSelectedGarnishes
+                    : [];
 
-                      // Costs per section (requirements are already per-serving portions)
-                      const viandCost = viandItems.reduce((acc, req) => {
-                        const { inv, u, cpu } = getInvCostPerUnit(req.name || '');
-                        const portion = Number(req.amount) || 0;
-                        const factor = (u === 'kg' || u === 'l' || u === 'liter') ? portion / 1000 : portion;
-                        return acc + factor * cpu;
-                      }, 0);
-                      const riceCost = riceItems.reduce((acc, req) => {
-                        const { inv, u, cpu } = getInvCostPerUnit(req.name || '');
-                        const amt = Number(req.amount) || 0;
-                        const factor = (u === 'kg' || u === 'l' || u === 'liter') ? amt / 1000 : amt;
-                        return acc + factor * cpu;
-                      }, 0);
-                      const garnishCost = garnishItems.reduce((acc, g) => {
-                        const { rate } = getGarnishEffectiveRate(g);
-                        return acc + rate * (Number(g.amount) || 1);
-                      }, 0);
-                      const pkgCost = pkgItems.reduce((acc, req) => {
-                        const { inv, cpu } = getInvCostPerUnit(req.name || '', 'pcs');
-                        return acc + (Number(req.amount) || 1) * cpu;
-                      }, 0);
-                      const totalCogs = viandCost + riceCost + garnishCost + pkgCost;
+                const effectivePackaging = (formPackaging && formPackaging.length > 0)
+                  ? formPackaging
+                  : ((formSelectedTemplateKey === '__active_bulk__' || !editingItem) && standaloneSelectedPackaging && standaloneSelectedPackaging.length > 0)
+                    ? standaloneSelectedPackaging
+                    : [];
 
-                      // Shared row renderer for viand/rice/pkg
-                      const renderReqRow = (req: { name: string; amount: number }, idx: number, isRiceRow = false, isPkgRow = false) => {
-                        const reqName = req.name || '';
-                        const { inv, u, cpu } = getInvCostPerUnit(reqName);
-                        const portion = Number(req.amount) || 0;
-                        const factor = (u === 'kg' || u === 'l' || u === 'liter') ? portion / 1000 : portion;
-                        const cost = factor > 0 ? factor * cpu : 0;
-                        const displayPortion = (u === 'kg')
-                          ? `${portion >= 1 ? (portion % 1 === 0 ? portion : portion.toFixed(1)) : portion.toFixed(2)}g`
-                          : (u === 'l' || u === 'liter')
-                            ? `${portion >= 1 ? (portion % 1 === 0 ? portion : portion.toFixed(1)) : portion.toFixed(2)}ml`
-                            : `${portion >= 1 ? (portion % 1 === 0 ? portion : portion.toFixed(1)) : portion.toFixed(portion < 0.01 ? 3 : 2)} ${u}`;
-                        return (
-                          <div key={idx} className="flex items-center justify-between gap-2 py-1.5 border-b border-white/[0.04] last:border-0">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-white text-[9.5px] font-semibold truncate">{reqName}</span>
-                              {!inv && <span className="text-[7.5px] text-brand-red/80 italic shrink-0">Unlinked</span>}
-                            </div>
-                            <div className="flex items-center gap-3 shrink-0 text-[8.5px] font-mono">
-                              <span className="text-gray-500 w-16 text-right">{displayPortion}</span>
-                              <span className="text-gray-400 w-20 text-right">
-                                ₱{cpu >= 1 ? cpu.toFixed(2) : cpu.toFixed(3)}/{u}
+                const garnishNameSet = new Set((effectiveGarnishes || []).map(g => (g.name || '').toLowerCase()));
+                const garnishItems = (effectiveGarnishes || []).filter(g => g.selected !== false);
+                const pkgItems = (effectivePackaging || []).filter(p => p.selected !== false);
+                const viandItems = effectiveReqs.filter(r => !isPackagingRequirement(r.name) && !isRiceRequirement(r.name) && !garnishNameSet.has((r.name || '').toLowerCase()));
+                const riceItems = effectiveReqs.filter(r => isRiceRequirement(r.name));
+                const totalItemCount = viandItems.length + riceItems.length + garnishItems.length + pkgItems.length;
+
+                // Cost helpers
+                const getInvCostPerUnit = (name: string, fallbackUnit = 'g') => {
+                  const targetName = String(name || '').toLowerCase();
+                  const inv = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === targetName);
+                  const u = inv?.unit || fallbackUnit;
+                  const cpu = inv?.costPerUnit ?? (u === 'g' ? 0.05 : u === 'kg' ? 150 : u === 'pcs' ? 15 : u === 'ml' ? 0.08 : 5);
+                  return { inv, u, cpu };
+                };
+
+                const getGarnishEffectiveRate = (g: { name: string; unit?: string; costPerUnit?: number; amount: number }) => {
+                  const inv = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === (g.name || '').toLowerCase());
+                  const gUnit = (g.unit || 'pcs').toLowerCase();
+                  const isVol = gUnit === 'g' || gUnit === 'ml';
+                  const rawRate = inv ? (Number(inv.costPerUnit) || 0) : (g.costPerUnit || 0);
+                  if (isVol && rawRate > 0) {
+                    const iu = (inv?.unit || '').toLowerCase();
+                    if (iu === 'g' || iu === 'ml') return { rate: rawRate, inv };
+                    if (iu === 'kg' || iu === 'l') return { rate: rawRate / 1000, inv };
+                  }
+                  return { rate: g.costPerUnit || rawRate || 0, inv };
+                };
+
+                // Costs per section (requirements are already per-serving portions)
+                const viandCost = viandItems.reduce((acc, req) => {
+                  const { inv, u, cpu } = getInvCostPerUnit(req.name || '');
+                  const portion = Number(req.amount) || 0;
+                  const factor = (u === 'kg' || u === 'l' || u === 'liter') ? portion / 1000 : portion;
+                  return acc + factor * cpu;
+                }, 0);
+                const riceCost = riceItems.reduce((acc, req) => {
+                  const { inv, u, cpu } = getInvCostPerUnit(req.name || '');
+                  const amt = Number(req.amount) || 0;
+                  const factor = (u === 'kg' || u === 'l' || u === 'liter') ? amt / 1000 : amt;
+                  return acc + factor * cpu;
+                }, 0);
+                const garnishCost = garnishItems.reduce((acc, g) => {
+                  const { rate } = getGarnishEffectiveRate(g);
+                  return acc + rate * (Number(g.amount) || 1);
+                }, 0);
+                const pkgCost = pkgItems.reduce((acc, req) => {
+                  const { inv, cpu } = getInvCostPerUnit(req.name || '', 'pcs');
+                  return acc + (Number(req.amount) || 1) * cpu;
+                }, 0);
+                const totalCogs = viandCost + riceCost + garnishCost + pkgCost;
+
+                // Shared row renderer for viand/rice/pkg
+                const renderReqRow = (req: { name: string; amount: number }, idx: number, isRiceRow = false, isPkgRow = false) => {
+                  const reqName = req.name || '';
+                  const { inv, u, cpu } = getInvCostPerUnit(reqName, isPkgRow ? 'pcs' : 'g');
+                  const portion = Number(req.amount) || 0;
+                  const factor = (u === 'kg' || u === 'l' || u === 'liter') ? portion / 1000 : portion;
+                  const cost = factor > 0 ? factor * cpu : 0;
+                  const displayPortion = (u === 'kg')
+                    ? `${portion >= 1 ? (portion % 1 === 0 ? portion : portion.toFixed(1)) : portion.toFixed(2)}g`
+                    : (u === 'l' || u === 'liter')
+                      ? `${portion >= 1 ? (portion % 1 === 0 ? portion : portion.toFixed(1)) : portion.toFixed(2)}ml`
+                      : `${portion >= 1 ? (portion % 1 === 0 ? portion : portion.toFixed(1)) : portion.toFixed(portion < 0.01 ? 3 : 2)} ${u}`;
+                  return (
+                    <div key={idx} className="flex items-center justify-between gap-2 py-1.5 border-b border-white/[0.04] last:border-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-white text-[9.5px] font-semibold truncate">{reqName}</span>
+                        {!inv && <span className="text-[7.5px] text-brand-red/80 italic shrink-0">Unlinked</span>}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 text-[8.5px] font-mono">
+                        <span className="text-gray-500 w-16 text-right">{displayPortion}</span>
+                        <span className="text-gray-400 w-20 text-right">
+                          ₱{cpu >= 1 ? cpu.toFixed(2) : cpu.toFixed(3)}/{u}
+                        </span>
+                        <span className="text-brand-gold font-bold w-14 text-right">₱{cost.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                };
+
+                // Profit margin & selling strategy calculations - perfectly in sync with totalCogs
+                let modalCogs = totalCogs;
+                if (modalCogs === 0 && (Number(formPrice) || 0) > 0) {
+                  modalCogs = (Number(formPrice) || 0) * 0.35;
+                }
+
+                const targetMarginNum = Number(formTargetMargin) || 0;
+                const recPrice = targetMarginNum < 100 && targetMarginNum > 0
+                  ? modalCogs / (1 - targetMarginNum / 100)
+                  : modalCogs * 2;
+                const actualPrice = Number(formPrice) || 0;
+                const targetProfit = recPrice - modalCogs;
+                const actualProfit = actualPrice - modalCogs;
+                const actualMargin = actualPrice > 0 ? (actualProfit / actualPrice) * 100 : 0;
+
+                const handleMarginChange = (newMargin: number | '') => {
+                  if (newMargin === '') {
+                    setFormTargetMargin('');
+                    return;
+                  }
+                  const validMargin = Math.min(95, Math.max(5, newMargin));
+                  setFormTargetMargin(validMargin);
+                  if (modalCogs > 0 && validMargin > 0 && validMargin < 100) {
+                    const computedPrice = Math.ceil(modalCogs / (1 - validMargin / 100));
+                    setFormPrice(computedPrice);
+                  }
+                };
+
+                const handlePriceChange = (newPrice: number | '') => {
+                  if (newPrice === '') {
+                    setFormPrice('');
+                    return;
+                  }
+                  setFormPrice(newPrice);
+                  if (modalCogs > 0 && newPrice > modalCogs) {
+                    const computedMargin = Math.min(95, Math.max(5, Math.round(((newPrice - modalCogs) / newPrice) * 100)));
+                    setFormTargetMargin(computedMargin);
+                  }
+                };
+
+                return (
+                  <>
+                    {/* Linked Ingredients & Packaging from Bulk Calculator */}
+                    <div className="bg-[#0D0D0C]/60 p-4 rounded-2xl border border-white/10 space-y-3.5 text-left shadow-lg">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-[10px] text-gray-200 uppercase tracking-wider font-extrabold flex items-center gap-1.5">
+                              <span>🍱 Ingredients & Packaging from Bulk Calculator</span>
+                              <span className="px-2 py-0.5 rounded-full bg-brand-gold/15 text-brand-gold text-[9px] font-black border border-brand-gold/30">
+                                {totalItemCount} Linked Items
                               </span>
-                              <span className="text-brand-gold font-bold w-14 text-right">₱{cost.toFixed(2)}</span>
-                            </div>
+                            </label>
                           </div>
-                        );
-                      };
+                          <div className="flex items-center gap-2 mt-0.5 text-[9px] text-gray-400 font-medium flex-wrap">
+                            <span className="text-gray-500 font-bold uppercase text-[8px] tracking-wider">Batch Setup:</span>
+                            <span className="text-amber-400 font-bold">
+                              🥩 {formBatchYieldUnit === 'pcs'
+                                ? `${formBatchYieldGrams} pcs Batch (${formServingSizeGrams} pcs/plate)`
+                                : `${(Number(formBatchYieldGrams) / 1000).toFixed(1)}kg Batch (${formServingSizeGrams}g/plate)`}
+                            </span>
+                            <span className="text-gray-600">•</span>
+                            <span className="text-emerald-400 font-bold">
+                              🍚 {formIncludeRice ? `${formRicePortionGrams}g Rice` : 'No Rice'}
+                            </span>
+                            <span className="text-gray-600">•</span>
+                            <span className="text-blue-400 font-bold">
+                              📦 {pkgItems.length > 0 ? `${pkgItems.length} Packaging Items` : 'Plated / Dine-In'}
+                            </span>
+                          </div>
+                        </div>
 
-                      return (
-                        <>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {totalItemCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleAutoFillRecipeFieldsFromBulk(true)}
+                            className="px-3.5 py-2 bg-brand-gold/15 hover:bg-brand-gold/25 border border-brand-gold/40 hover:border-brand-gold text-brand-gold text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+                            title="Auto-fill Dish Title, Description, and Recipe Ingredients tags from the linked bulk calculator items"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-brand-gold" />
+                            <span>✨ Auto-Fill Title & Description</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleSendRecipeFormToBatchCalc}
+                          className="px-3.5 py-2 bg-brand-gold hover:bg-brand-gold-hover text-black text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer hover:scale-105"
+                          title="Open the Commercial Bulk Calculator to modify raw ingredients, batch yield, rice portions, or packaging containers"
+                        >
+                          <Calculator className="w-3.5 h-3.5" />
+                          <span>🧮 Configure in Bulk Calculator →</span>
+                        </button>
+                      </div>
+                      </div>
+
+                      {totalItemCount === 0 ? (
+                        <div className="text-center py-6 px-4 bg-[#121211] rounded-xl border border-white/5 space-y-3">
+                          <PackageCheck className="w-8 h-8 text-gray-600 mx-auto" />
+                          <p className="text-xs text-gray-300 font-semibold">No ingredients or packaging linked yet.</p>
+                          <p className="text-[10px] text-gray-500 max-w-md mx-auto">
+                            Select a recipe template from the dropdown above, or launch the Commercial Bulk Calculator to configure batch raw materials, portion yields, and takeout packaging.
+                          </p>
+                          <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+                            {standaloneIngredients && standaloneIngredients.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleApplyTemplateDirectlyToForm('__active_bulk__')}
+                                className="px-3.5 py-1.5 bg-brand-gold hover:bg-brand-gold-hover text-black text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>📥 Load Bulk Calculator Batch ({standaloneIngredients.length} Items)</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleSendRecipeFormToBatchCalc}
+                              className="px-3.5 py-1.5 bg-[#1f1f1e] hover:bg-[#2a2a29] text-gray-200 text-[10px] font-bold uppercase tracking-wider rounded-xl border border-white/10 transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Calculator className="w-3.5 h-3.5" />
+                              <span>🧮 Launch Bulk Calculator</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
                           {/* Row header labels */}
                           <div className="flex items-center justify-end gap-3 px-1 pb-0.5">
                             <span className="text-[7.5px] text-gray-600 font-bold uppercase tracking-wider w-16 text-right">Portion</span>
@@ -12391,68 +14580,12 @@ function AdminPanel({
                               Open Bulk Calculator →
                             </button>
                           </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                 )}
-              </div>
+                        </div>
+                      )}
+                    </div>
 
-
-              {/* Target Margin & Profit Calculator Card */}
-              <div className="bg-[#0D0D0C]/60 p-4 rounded-2xl border border-brand-gold/20 space-y-3 text-left">
-                {(() => {
-                  let modalCogs = 0;
-                  if (formRecipeRequirements.length > 0) {
-                    formRecipeRequirements.forEach((req) => {
-                      const rName = req?.name || '';
-                      const invItem = ingredientsInventory.find(i => (i?.name || '').toLowerCase() === rName.toLowerCase());
-                      const u = invItem?.unit || 'g';
-                      const costPerUnit = invItem?.costPerUnit ?? (u === 'g' ? 0.05 : u === 'kg' ? 150 : u === 'pcs' ? 15 : u === 'ml' ? 0.08 : 5);
-                      const reqAmt = Number(req?.amount) || 0;
-                      const factor = u === 'kg' ? reqAmt / 1000 : reqAmt;
-                      modalCogs += factor * costPerUnit;
-                    });
-                  } else {
-                    modalCogs = (Number(formPrice) || 0) * 0.35;
-                  }
-
-                  const targetMarginNum = Number(formTargetMargin) || 0;
-                  const recPrice = targetMarginNum < 100 && targetMarginNum > 0
-                    ? modalCogs / (1 - targetMarginNum / 100)
-                    : modalCogs * 2;
-                  const actualPrice = Number(formPrice) || 0;
-                  const targetProfit = recPrice - modalCogs;
-                  const actualProfit = actualPrice - modalCogs;
-                  const actualMargin = actualPrice > 0 ? (actualProfit / actualPrice) * 100 : 0;
-
-                  const handleMarginChange = (newMargin: number | '') => {
-                    if (newMargin === '') {
-                      setFormTargetMargin('');
-                      return;
-                    }
-                    const validMargin = Math.min(95, Math.max(5, newMargin));
-                    setFormTargetMargin(validMargin);
-                    if (modalCogs > 0 && validMargin > 0 && validMargin < 100) {
-                      const computedPrice = Math.ceil(modalCogs / (1 - validMargin / 100));
-                      setFormPrice(computedPrice);
-                    }
-                  };
-
-                  const handlePriceChange = (newPrice: number | '') => {
-                    if (newPrice === '') {
-                      setFormPrice('');
-                      return;
-                    }
-                    setFormPrice(newPrice);
-                    if (modalCogs > 0 && newPrice > modalCogs) {
-                      const computedMargin = Math.min(95, Math.max(5, Math.round(((newPrice - modalCogs) / newPrice) * 100)));
-                      setFormTargetMargin(computedMargin);
-                    }
-                  };
-
-                  return (
-                    <>
+                    {/* Target Margin & Profit Calculator Card */}
+                    <div className="bg-[#0D0D0C]/60 p-4 rounded-2xl border border-brand-gold/20 space-y-3 text-left">
                       <div className="flex items-center justify-between">
                         <div>
                           <label className="text-[10px] text-brand-gold uppercase tracking-wider font-extrabold flex items-center gap-1">
@@ -12572,10 +14705,10 @@ function AdminPanel({
                           </button>
                         </div>
                       </div>
-                    </>
-                  );
-                })()}
-              </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Quick Launch Profit Simulator for this dish */}
               <div className="bg-[#0D0D0C]/80 p-3.5 rounded-2xl border border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
@@ -12880,7 +15013,6 @@ function AdminPanel({
                                 <div className="flex-1">
                                   <input
                                     type="text"
-                                    required
                                     placeholder="e.g. Garlic Fried Rice, Large (22oz), Sunny-Side-Up"
                                     value={choice.name}
                                     onChange={(e) => {
@@ -12898,7 +15030,6 @@ function AdminPanel({
                                     <span className="absolute left-2 top-1 text-[9px] text-gray-500 font-bold">₱</span>
                                     <input
                                       type="number"
-                                      required
                                       placeholder="0"
                                       value={choice.price}
                                       onChange={(e) => {
@@ -13127,7 +15258,6 @@ function AdminPanel({
                   <label className="text-[8px] text-gray-500 font-bold uppercase tracking-wider block">Or paste web image URL:</label>
                   <input
                     type="text"
-                    required
                     value={formImage}
                     onChange={(e) => {
                       setFormImage(e.target.value);
@@ -13177,7 +15307,7 @@ function AdminPanel({
                   type="submit"
                   className="flex-1 py-3 bg-brand-red hover:bg-brand-red-hover text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md hover:shadow-brand-red/20"
                 >
-                  {editingItem ? 'Publish Updates' : 'Add Recipe'}
+                  {editingItem ? 'Publish Updates' : 'Publish New Recipe'}
                 </button>
               </div>
 
@@ -13316,36 +15446,35 @@ function AdminPanel({
 
                 {/* Instant-Load Selector */}
                 <div>
-                  <select
+                  <SearchableSelect
+                    options={[
+                      {
+                        value: '__fresh__',
+                        label: '✨ Start Fresh / Blank Recipe',
+                        sublabel: 'Clear form and start new formulation',
+                      },
+                      ...savedRecipeTemplates.map((tmpl) => ({
+                        value: `template:${tmpl.id || tmpl.customId || tmpl.name}`,
+                        label: `📋 ${tmpl.name}`,
+                        sublabel: `${tmpl.servingSizeGrams || 90}g portion • ${tmpl.ingredients?.length || 0} ingredients`,
+                        badge: `${tmpl.batchYieldGrams || 2000}g batch`,
+                      })),
+                      ...menuItems.map((dish) => ({
+                        value: `dish:${dish.id}`,
+                        label: `🍱 ${dish.name}`,
+                        sublabel: dish.category,
+                        badge: `₱${dish.price}`,
+                      })),
+                    ]}
                     value={selectedRecipeToLoad}
-                    onChange={(e) => {
-                      const val = e.target.value;
+                    onChange={(val) => {
                       setSelectedRecipeToLoad(val);
                       handleLoadRecipeIntoBatch(val);
                     }}
-                    className="w-full bg-[#0D0D0C] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white font-semibold focus:outline-none focus:border-brand-gold cursor-pointer"
-                  >
-                    <option value="">-- Choose a Saved Recipe or Menu Dish to Display --</option>
-                    <option value="__fresh__">✨ Start Fresh / Blank Recipe</option>
-                    {savedRecipeTemplates.length > 0 && (
-                      <optgroup label="📋 Saved Recipe Templates">
-                        {savedRecipeTemplates.map((tmpl) => (
-                          <option key={tmpl.id} value={`template:${tmpl.id}`}>
-                            {tmpl.name} ({tmpl.batchYieldGrams}g batch / {tmpl.servingSizeGrams}g portion)
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {menuItems.length > 0 && (
-                      <optgroup label="🍱 Active Menu Dishes">
-                        {menuItems.map((dish) => (
-                          <option key={dish.id} value={`dish:${dish.id}`}>
-                            {dish.name} (₱{dish.price})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
+                    placeholder="-- Choose a Saved Recipe or Menu Dish to Display --"
+                    searchPlaceholder="Search recipe vault or active menu dishes..."
+                    clearable
+                  />
                 </div>
               </div>
               {/* Recipe Title, Unit Switcher & Batch Parameters */}
@@ -13661,8 +15790,8 @@ function AdminPanel({
                       onClick={() => {
                         const firstInv = ingredientsInventory[0];
                         const defaultName = firstInv ? firstInv.name : 'Ingredient';
-                        const defaultUnit = firstInv ? firstInv.unit : 'g';
-                        const defaultAmt = defaultUnit === 'kg' ? 1 : defaultUnit === 'pcs' ? 1 : 200;
+                        const defaultUnit = firstInv ? (firstInv.unit || 'g') : 'g';
+                        const defaultAmt = defaultUnit === 'kg' || defaultUnit === 'l' ? 1 : (defaultUnit === 'pcs' || defaultUnit === 'cans' || defaultUnit === 'pack' ? 1 : 100);
                         const defaultCost = firstInv ? computeInventoryIngredientCost(defaultName, defaultAmt, defaultUnit) : 50;
                         setStandaloneIngredients([
                           ...standaloneIngredients,
@@ -13836,37 +15965,58 @@ function AdminPanel({
 
                         return (
                           <tr key={i} className="hover:bg-white/[0.02]">
-                            <td className="p-2.5 font-sans min-w-[200px]">
-                              <div className="space-y-1">
-                                <select
-                                  value={isExistingInv ? ing.name : '__custom__'}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
+                            <td className="p-2.5 font-sans min-w-[250px]">
+                              <div className="space-y-1.5">
+                                <SearchableSelect
+                                  options={[
+                                    ...ingredientsInventory.map((item) => ({
+                                      value: item.name,
+                                      label: item.name,
+                                      sublabel: `${item.quantity}${item.unit} stock`,
+                                      badge: item.costPerUnit ? `₱${item.costPerUnit}/${item.unit}` : undefined,
+                                    })),
+                                    {
+                                      value: '__custom__',
+                                      label: '✏️ Custom / Manual Name...',
+                                      sublabel: 'Enter a custom ingredient manually',
+                                    },
+                                  ]}
+                                  value={isExistingInv ? ing.name : (ing.name ? '__custom__' : '')}
+                                  placeholder="Select from Inventory..."
+                                  searchPlaceholder="Search raw materials..."
+                                  onChange={(val) => {
                                     const updated = [...standaloneIngredients];
                                     if (val === '__custom__') {
                                       updated[i].name = '';
                                     } else {
                                       const invMatch = ingredientsInventory.find(inv => inv.name === val);
                                       if (invMatch) {
+                                        const oldUnit = (updated[i].unit || '').toLowerCase();
+                                        const newUnit = (invMatch.unit || 'g').toLowerCase();
+                                        let currentAmt = Number(updated[i].batchAmount) || 0;
+
+                                        // Smart unit adjustment when switching to different measurement system
+                                        if (oldUnit && newUnit && oldUnit !== newUnit) {
+                                          if ((oldUnit === 'g' || oldUnit === 'ml') && (newUnit === 'kg' || newUnit === 'l')) {
+                                            currentAmt = currentAmt >= 1000 ? Number((currentAmt / 1000).toFixed(3)) : (currentAmt > 0 ? Number((currentAmt / 1000).toFixed(3)) : 1);
+                                          } else if ((oldUnit === 'kg' || oldUnit === 'l') && (newUnit === 'g' || newUnit === 'ml')) {
+                                            currentAmt = currentAmt <= 10 ? currentAmt * 1000 : currentAmt;
+                                          } else if (newUnit === 'pcs' || newUnit === 'cans' || newUnit === 'pack') {
+                                            currentAmt = currentAmt > 50 ? 1 : Math.max(1, Math.round(currentAmt));
+                                          } else if (oldUnit === 'pcs' || oldUnit === 'cans' || oldUnit === 'pack') {
+                                            currentAmt = newUnit === 'kg' ? 1 : 100;
+                                          }
+                                        }
+
                                         updated[i].name = invMatch.name;
                                         updated[i].unit = invMatch.unit;
-                                        updated[i].cost = computeInventoryIngredientCost(invMatch.name, updated[i].batchAmount, invMatch.unit);
+                                        updated[i].batchAmount = currentAmt;
+                                        updated[i].cost = computeInventoryIngredientCost(invMatch.name, currentAmt, invMatch.unit);
                                       }
                                     }
                                     setStandaloneIngredients(updated);
                                   }}
-                                  className="w-full bg-[#121211] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white font-semibold focus:outline-none focus:border-brand-gold cursor-pointer"
-                                >
-                                  <option value="" disabled>Select from Inventory...</option>
-                                  <optgroup label="📦 Kitchen Inventory Materials">
-                                    {ingredientsInventory.map((item) => (
-                                      <option key={item.id} value={item.name}>
-                                        {item.name} ({item.quantity}{item.unit} stock{item.costPerUnit ? ` • ₱${item.costPerUnit}/${item.unit}` : ''})
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                  <option value="__custom__">✏️ Custom / Manual Name...</option>
-                                </select>
+                                />
 
                                 {(!isExistingInv || ing.name === '') && (
                                   <input
@@ -13878,21 +16028,29 @@ function AdminPanel({
                                       updated[i].name = e.target.value;
                                       setStandaloneIngredients(updated);
                                     }}
-                                    className="w-full bg-[#121211] border border-brand-gold/40 rounded-lg px-2.5 py-1 text-xs text-brand-gold font-sans placeholder-gray-500 focus:outline-none"
+                                    className="w-full bg-[#121211] border border-brand-gold/40 rounded-xl px-2.5 py-1.5 text-xs text-brand-gold font-sans placeholder-gray-500 focus:outline-none focus:border-brand-gold"
                                   />
                                 )}
                               </div>
                             </td>
                             <td className="p-2.5">
                               {(() => {
-                                const invMatch = ingredientsInventory.find(inv => inv.name.toLowerCase() === ing.name.toLowerCase());
-                                const unitCost = (invMatch?.costPerUnit && invMatch.costPerUnit > 0)
-                                  ? invMatch.costPerUnit
-                                  : (ing.unit === 'g' ? 0.05 : ing.unit === 'kg' ? 150 : ing.unit === 'pcs' ? 15 : ing.unit === 'ml' ? 0.08 : ing.unit === 'cans' ? 45 : 0.05);
+                                const invMatch = ingredientsInventory.find(inv => inv && inv.name && inv.name.toLowerCase().trim() === ing.name.toLowerCase().trim());
+                                const effectiveUnitCost = computeInventoryIngredientCost(ing.name, 1, ing.unit);
+                                const invUnit = (invMatch?.unit || ing.unit || 'g').toLowerCase();
+                                const isDifferentUnit = invMatch && invUnit !== (ing.unit || '').toLowerCase();
+                                
                                 return (
-                                  <span className="text-brand-gold font-mono font-bold bg-brand-gold/10 px-2 py-0.5 rounded text-[8.5px] border border-brand-gold/20 whitespace-nowrap">
-                                    ₱{unitCost >= 1 ? unitCost.toFixed(2) : unitCost.toFixed(3)}/{ing.unit}
-                                  </span>
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-brand-gold font-mono font-bold bg-brand-gold/10 px-2 py-0.5 rounded text-[8.5px] border border-brand-gold/20 whitespace-nowrap">
+                                      ₱{effectiveUnitCost >= 1 ? effectiveUnitCost.toFixed(2) : effectiveUnitCost.toFixed(3)}/{ing.unit}
+                                    </span>
+                                    {isDifferentUnit && invMatch?.costPerUnit && (
+                                      <span className="text-gray-500 font-mono text-[7.5px] whitespace-nowrap">
+                                        Stock: ₱{Number(invMatch.costPerUnit) >= 1 ? Number(invMatch.costPerUnit).toFixed(2) : Number(invMatch.costPerUnit).toFixed(3)}/{invMatch.unit}
+                                      </span>
+                                    )}
+                                  </div>
                                 );
                               })()}
                             </td>
@@ -14125,29 +16283,29 @@ function AdminPanel({
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <select
-                          value={standaloneSelectedRiceIngredient}
-                          onChange={(e) => applyRiceIngredientCost(e.target.value, true)}
-                          className="flex-1 bg-[#0D0D0C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-amber-400"
-                        >
-                          <option value="">-- Choose Rice from Inventory or Use Custom Rate --</option>
-                          {riceInventoryItems.length > 0 && (
-                            <optgroup label="🌾 Rice Materials in Inventory">
-                              {riceInventoryItems.map((item) => (
-                                <option key={item.id} value={item.name}>
-                                  {item.name} (₱{Number(item.costPerUnit || 0).toFixed(2)}/{item.unit}) — Stock: {item.quantity} {item.unit}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                          <optgroup label="📦 All Other Inventory Raw Materials">
-                            {nonRiceInventoryItems.map((item) => (
-                              <option key={item.id} value={item.name}>
-                                {item.name} (₱{Number(item.costPerUnit || 0).toFixed(2)}/{item.unit})
-                              </option>
-                            ))}
-                          </optgroup>
-                        </select>
+                        <div className="flex-1">
+                          <SearchableSelect
+                            options={[
+                              ...riceInventoryItems.map((item) => ({
+                                value: item.name,
+                                label: `🌾 ${item.name}`,
+                                sublabel: `Stock: ${item.quantity} ${item.unit}`,
+                                badge: item.costPerUnit ? `₱${Number(item.costPerUnit || 0).toFixed(2)}/${item.unit}` : undefined,
+                              })),
+                              ...nonRiceInventoryItems.map((item) => ({
+                                value: item.name,
+                                label: `📦 ${item.name}`,
+                                sublabel: `Stock: ${item.quantity} ${item.unit}`,
+                                badge: item.costPerUnit ? `₱${Number(item.costPerUnit || 0).toFixed(2)}/${item.unit}` : undefined,
+                              })),
+                            ]}
+                            value={standaloneSelectedRiceIngredient}
+                            onChange={(val) => applyRiceIngredientCost(val, true)}
+                            placeholder="-- Choose Rice from Inventory or Use Custom Rate --"
+                            searchPlaceholder="Search rice or inventory materials..."
+                            clearable
+                          />
+                        </div>
 
                         {standaloneSelectedRiceIngredient && (
                           <button
@@ -15308,8 +17466,12 @@ ${standaloneIngredients.map((item, idx) => {
 
                         <button
                           type="button"
-                          onClick={() => handleSaveAllBatchCostingChanges({ closeModal: true, openMenuForm: true })}
-                          className="flex-1 sm:flex-initial px-5 py-2.5 bg-brand-gold hover:bg-brand-gold-hover text-black rounded-xl text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleSaveAllBatchCostingChanges({ closeModal: true, navigateToBuilder: true, openMenuForm: true });
+                          }}
+                          className="flex-1 sm:flex-initial px-5 py-2.5 bg-brand-gold hover:bg-brand-gold-hover text-black rounded-xl text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer hover:scale-105 active:scale-95"
                         >
                           <Save className="w-4 h-4 text-black" />
                           <span>🍱 Apply & Save All Costing to Dish (Set Price ₱{recSellingPrice.toFixed(2)}) →</span>
@@ -15411,9 +17573,10 @@ ${standaloneIngredients.map((item, idx) => {
           const rentCost = rentBaseRate * effectiveDaysCount;
           const laborCost = laborBaseRate * effectiveDaysCount;
           const gasCost = gasBaseRate * effectiveDaysCount;
+          const deliveryGasCost = deliveryGasBaseRate * effectiveDaysCount;
           const otherCost = otherBaseRate * effectiveDaysCount;
 
-          const totalExpenses = ingredientsCost + electricityCost + waterCost + rentCost + laborCost + gasCost + otherCost;
+          const totalExpenses = ingredientsCost + electricityCost + waterCost + rentCost + laborCost + gasCost + deliveryGasCost + otherCost;
           const netProfit = totalSales - totalExpenses;
           const profitMargin = totalSales > 0 ? (netProfit / totalSales) * 100 : 0;
 
@@ -15428,6 +17591,7 @@ ${standaloneIngredients.map((item, idx) => {
             rentCost,
             laborCost,
             gasCost,
+            deliveryGasCost,
             otherCost,
             totalExpenses,
             netProfit,
@@ -15615,19 +17779,27 @@ ${standaloneIngredients.map((item, idx) => {
                 <div className="grid grid-cols-2 gap-2 text-[10px] bg-[#0D0D0C]/80 p-2.5 rounded-xl border border-white/5">
                   <div className="text-gray-400 flex justify-between">
                     <span>Ingredients:</span>
-                    <strong className="text-white font-mono">₱{activeFin.ingredientsCost.toFixed(0)}</strong>
+                    <strong className="text-white font-mono">₱{((activeFin.ingredientsCost ?? 0)).toFixed(0)}</strong>
                   </div>
                   <div className="text-gray-400 flex justify-between">
                     <span>Electricity:</span>
-                    <strong className="text-white font-mono">₱{activeFin.electricityCost.toFixed(0)}</strong>
+                    <strong className="text-white font-mono">₱{((activeFin.electricityCost ?? 0)).toFixed(0)}</strong>
                   </div>
                   <div className="text-gray-400 flex justify-between">
                     <span>Rent:</span>
-                    <strong className="text-white font-mono">₱{activeFin.rentCost.toFixed(0)}</strong>
+                    <strong className="text-white font-mono">₱{((activeFin.rentCost ?? 0)).toFixed(0)}</strong>
                   </div>
                   <div className="text-gray-400 flex justify-between">
                     <span>Labor:</span>
-                    <strong className="text-white font-mono">₱{activeFin.laborCost.toFixed(0)}</strong>
+                    <strong className="text-white font-mono">₱{((activeFin.laborCost ?? 0)).toFixed(0)}</strong>
+                  </div>
+                  <div className="text-gray-400 flex justify-between">
+                    <span>Cooking Gas:</span>
+                    <strong className="text-white font-mono">₱{((activeFin.gasCost ?? 0)).toFixed(0)}</strong>
+                  </div>
+                  <div className="text-gray-400 flex justify-between">
+                    <span>Delivery Gas:</span>
+                    <strong className="text-white font-mono">₱{(((activeFin as any).deliveryGasCost ?? 0)).toFixed(0)}</strong>
                   </div>
                 </div>
               </div>
@@ -15667,7 +17839,7 @@ ${standaloneIngredients.map((item, idx) => {
                 {/* Progress bar */}
                 <div className="space-y-1">
                   <div className="flex justify-between text-[10px] font-bold text-gray-400">
-                    <span>Margin: <strong className="text-white font-mono">{activeFin.profitMargin.toFixed(1)}%</strong></span>
+                    <span>Margin: <strong className="text-white font-mono">{((activeFin.profitMargin ?? 0)).toFixed(1)}%</strong></span>
                     <span className="font-mono text-white">{activeFin.netProfit >= activeTargetProfit ? '🎯 Target Reached' : 'On Track'}</span>
                   </div>
                   <div className="w-full h-2 bg-[#0D0D0C] rounded-full overflow-hidden border border-white/10">
@@ -15739,6 +17911,7 @@ ${standaloneIngredients.map((item, idx) => {
                             setRentBaseRate(saved.rentBaseRate);
                             setLaborBaseRate(saved.laborBaseRate);
                             setGasBaseRate(saved.gasBaseRate);
+                            setDeliveryGasBaseRate(saved.deliveryGasBaseRate ?? 100);
                             setOtherBaseRate(saved.otherBaseRate);
                           }
                         }}
@@ -15777,7 +17950,7 @@ ${standaloneIngredients.map((item, idx) => {
                 </div>
               </div>
 
-              <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-all ${!isEditingRates ? 'opacity-75' : ''}`}>
+              <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 transition-all ${!isEditingRates ? 'opacity-75' : ''}`}>
                 
                 {/* Electricity Card */}
                 <div className="bg-[#0D0D0C]/80 border border-white/5 p-4 rounded-2xl space-y-3">
@@ -15872,7 +18045,7 @@ ${standaloneIngredients.map((item, idx) => {
                       💧 Water Utilities
                     </span>
                     <span className="text-[10px] font-mono text-brand-gold font-bold">
-                      ₱{activeFin.waterCost.toFixed(2)} total
+                      ₱{((activeFin.waterCost ?? 0)).toFixed(2)} total
                     </span>
                   </div>
                   
@@ -15927,7 +18100,7 @@ ${standaloneIngredients.map((item, idx) => {
                       🏠 Rent / Facility Lease
                     </span>
                     <span className="text-[10px] font-mono text-brand-gold font-bold">
-                      ₱{activeFin.rentCost.toFixed(2)} total
+                      ₱{((activeFin.rentCost ?? 0)).toFixed(2)} total
                     </span>
                   </div>
                   
@@ -15982,7 +18155,7 @@ ${standaloneIngredients.map((item, idx) => {
                       👥 Kitchen Crew & Staff Wages
                     </span>
                     <span className="text-[10px] font-mono text-brand-gold font-bold">
-                      ₱{activeFin.laborCost.toFixed(2)} total
+                      ₱{((activeFin.laborCost ?? 0)).toFixed(2)} total
                     </span>
                   </div>
                   
@@ -16037,7 +18210,7 @@ ${standaloneIngredients.map((item, idx) => {
                       🔥 Cooking Gas (LPG)
                     </span>
                     <span className="text-[10px] font-mono text-brand-gold font-bold">
-                      ₱{activeFin.gasCost.toFixed(2)} total
+                      ₱{((activeFin.gasCost ?? 0)).toFixed(2)} total
                     </span>
                   </div>
                   
@@ -16085,6 +18258,61 @@ ${standaloneIngredients.map((item, idx) => {
                   </p>
                 </div>
 
+                {/* Delivery Gas / Motor Fuel Card */}
+                <div className="bg-[#0D0D0C]/80 border border-white/5 p-4 rounded-2xl space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      🛵 Delivery Gas (Fuel)
+                    </span>
+                    <span className="text-[10px] font-mono text-brand-gold font-bold">
+                      ₱{(((activeFin as any).deliveryGasCost ?? (deliveryGasBaseRate * activeFin.daysCount))).toFixed(2)} total
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-[10px] text-gray-400">
+                      <span>{expenseInputMode === 'monthly' ? 'Monthly Delivery Fuel:' : 'Daily Delivery Fuel:'}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-white">₱</span>
+                        <input
+                          type="number"
+                          disabled={!isEditingRates}
+                          min="0"
+                          max={expenseInputMode === 'monthly' ? 15000 : 500}
+                          step="any"
+                          value={expenseInputMode === 'monthly' ? Number((deliveryGasBaseRate * 30).toFixed(2)) : deliveryGasBaseRate}
+                          onChange={(e) => {
+                            const val = Number(e.target.value) || 0;
+                            setDeliveryGasBaseRate(expenseInputMode === 'monthly' ? val / 30 : val);
+                          }}
+                          className={`w-20 bg-[#0D0D0C] border rounded px-1.5 py-0.5 text-[10px] text-white font-mono font-bold focus:outline-none focus:border-brand-red text-right ${
+                            !isEditingRates ? 'border-white/5 text-gray-500 cursor-not-allowed' : 'border-white/10'
+                          }`}
+                        />
+                        <span className="text-[9px] text-gray-400">{expenseInputMode === 'monthly' ? '/mo' : '/day'}</span>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      disabled={!isEditingRates}
+                      min="0"
+                      max={expenseInputMode === 'monthly' ? 15000 : 500}
+                      step={expenseInputMode === 'monthly' ? 100 : 10}
+                      value={expenseInputMode === 'monthly' ? Math.round(deliveryGasBaseRate * 30) : deliveryGasBaseRate}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setDeliveryGasBaseRate(expenseInputMode === 'monthly' ? val / 30 : val);
+                      }}
+                      className={`w-full h-1 bg-white/15 rounded-lg appearance-none accent-brand-red ${
+                        !isEditingRates ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                      }`}
+                    />
+                  </div>
+                  <p className="text-[9px] text-gray-500 leading-tight">
+                    Estimated vehicle gasoline and fuel allowance for rider delivery runs.
+                  </p>
+                </div>
+
                 {/* Other Marketing / Ops Card */}
                 <div className="bg-[#0D0D0C]/80 border border-white/5 p-4 rounded-2xl space-y-3">
                   <div className="flex justify-between items-center">
@@ -16092,7 +18320,7 @@ ${standaloneIngredients.map((item, idx) => {
                       📦 Packaging & Marketing
                     </span>
                     <span className="text-[10px] font-mono text-brand-gold font-bold">
-                      ₱{activeFin.otherCost.toFixed(2)} total
+                      ₱{((activeFin.otherCost ?? 0)).toFixed(2)} total
                     </span>
                   </div>
                   
@@ -16421,7 +18649,7 @@ ${standaloneIngredients.map((item, idx) => {
                       {order.changeAmount !== undefined && order.changeAmount > 0 && (
                         <div className="flex justify-between items-center pt-1 border-t border-white/5">
                           <span className="text-[9px] text-amber-400 font-bold">Cash Tendered:</span>
-                          <span className="font-mono text-white font-bold">₱{order.amountTendered?.toFixed(2)} (Change: ₱{order.changeAmount.toFixed(2)})</span>
+                          <span className="font-mono text-white font-bold">₱{(order.amountTendered ?? 0).toFixed(2)} (Change: ₱{(order.changeAmount ?? 0).toFixed(2)})</span>
                         </div>
                       )}
                     </div>
@@ -16491,7 +18719,7 @@ ${standaloneIngredients.map((item, idx) => {
                         />
                       ) : (
                         <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 gap-1.5 p-4 text-center">
-                          <Map className="w-8 h-8 opacity-40 text-brand-gold" />
+                          <MapIcon className="w-8 h-8 opacity-40 text-brand-gold" />
                           <p className="text-xs font-semibold">Store / Loft Pickup (No GPS coordinates required)</p>
                         </div>
                       )}
@@ -16597,7 +18825,7 @@ ${standaloneIngredients.map((item, idx) => {
                                         : 'bg-white/5 border-white/10 text-gray-300'
                                     }`}
                                   >
-                                    + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${opt.choice.price.toFixed(2)})` : ''}
+                                    + {opt.choice.name} {opt.choice.price > 0 ? `(+₱${(opt.choice.price ?? 0).toFixed(2)})` : ''}
                                   </span>
                                 ))}
                               </div>
@@ -16620,7 +18848,7 @@ ${standaloneIngredients.map((item, idx) => {
                             <span className="font-mono text-brand-gold font-black text-sm block">
                               ₱{(item.totalUnitPrice * item.quantity).toFixed(2)}
                             </span>
-                            <span className="text-[9px] text-gray-500 font-mono">₱{item.totalUnitPrice.toFixed(2)} ea</span>
+                            <span className="text-[9px] text-gray-500 font-mono">₱{(item.totalUnitPrice ?? 0).toFixed(2)} ea</span>
                           </div>
                         </div>
                       );
@@ -17286,7 +19514,7 @@ ${standaloneIngredients.map((item, idx) => {
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
                             <span className="absolute bottom-1 left-2 font-mono font-black text-xs text-white">
-                              ₱{item.price.toFixed(2)}
+                              ₱{(item.price ?? 0).toFixed(2)}
                             </span>
                           </div>
 
@@ -17366,7 +19594,7 @@ ${standaloneIngredients.map((item, idx) => {
                             {posSelectedItem.name}
                           </h4>
                           <span className="text-[10px] font-mono text-brand-gold font-bold">
-                            Base: ₱{posSelectedItem.price.toFixed(2)}
+                            Base: ₱{(posSelectedItem.price ?? 0).toFixed(2)}
                           </span>
                         </div>
                         <span className="text-[10px] font-mono font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
@@ -17805,7 +20033,7 @@ ${standaloneIngredients.map((item, idx) => {
                               </p>
                             )}
                             <p className="text-[9px] text-gray-400 font-mono">
-                              ₱{ci.totalUnitPrice.toFixed(2)} each
+                              ₱{(ci.totalUnitPrice ?? 0).toFixed(2)} each
                             </p>
                           </div>
 
@@ -17973,7 +20201,7 @@ ${standaloneIngredients.map((item, idx) => {
                             {posSelectedItem.name}
                           </h4>
                           <span className="text-[10px] font-mono text-brand-gold font-bold">
-                            Base: ₱{posSelectedItem.price.toFixed(2)}
+                            Base: ₱{(posSelectedItem.price ?? 0).toFixed(2)}
                           </span>
                         </div>
                       </div>

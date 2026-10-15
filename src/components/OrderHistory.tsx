@@ -189,7 +189,7 @@ export default function OrderHistory({
                     <div className="flex flex-col md:items-end">
                       <span className="text-gray-500 text-[9px] uppercase tracking-wider font-bold">Paid Total</span>
                       <span className="text-brand-gold font-display font-black text-base md:text-lg">
-                        ₱{order.totalAmount.toFixed(2)}
+                        ₱{(order.totalAmount ?? 0).toFixed(2)}
                       </span>
                     </div>
 

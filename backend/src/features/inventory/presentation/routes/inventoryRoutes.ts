@@ -21,7 +21,7 @@ export const createInventoryRoutes = (inventoryController: InventoryController):
   router.post('/add', inventoryController.createIngredient);
   router.post('/edit', inventoryController.updateIngredient);
   router.post('/delete', inventoryController.deleteIngredient);
-  router.post('/update', inventoryController.updateBatches);
+  router.post('/update', inventoryController.updateInventory);
 
   return router;
 };

@@ -70,12 +70,14 @@ export class InventoryUseCases {
   }
 
   async updateBatches(batches: StockBatch[]) {
-    for (const b of batches) {
-      if (b.id) {
-        await this.inventoryRepo.updateBatch(b.id, b);
-      }
-    }
+    await this.inventoryRepo.bulkUpsertBatches(batches);
     wsGateway.broadcast({ type: 'BATCH_UPDATED', action: 'BULK_UPDATE' });
+    return { success: true };
+  }
+
+  async updateInventory(ingredients: Partial<IngredientStock>[]) {
+    await this.inventoryRepo.bulkUpsertIngredients(ingredients);
+    wsGateway.broadcast({ type: 'INVENTORY_UPDATED', action: 'BULK_UPDATE' });
     return { success: true };
   }
 

@@ -113,7 +113,7 @@ Total Orders Count:   ${deliveredOrders.length} completed (${cancelledOrders.len
 💳 Card Payments:       ₱${cardSales.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${deliveredGrossSales > 0 ? ((cardSales / deliveredGrossSales) * 100).toFixed(1) : 0}%)
 
 --- TOP DISHES SOLD ---
-${dishSalesStats.map((d, i) => `${i + 1}. ${d.menuItem.name}: ${d.qty} plates = ₱${d.totalRev.toFixed(2)}`).join('\n')}
+${dishSalesStats.map((d, i) => `${i + 1}. ${d.menuItem.name}: ${d.qty} plates = ₱${(d.totalRev ?? 0).toFixed(2)}`).join('\n')}
 ===========================================`;
 
     navigator.clipboard.writeText(report);
@@ -131,7 +131,7 @@ ${dishSalesStats.map((d, i) => `${i + 1}. ${d.menuItem.name}: ${d.qty} plates = 
       o.customer.orderType,
       o.paymentMethod,
       o.status,
-      o.totalAmount.toFixed(2),
+      (o.totalAmount ?? 0).toFixed(2),
       `"${o.items.map((i) => `${i.quantity}x ${i.menuItem.name}`).join('; ')}"`,
     ]);
 
@@ -300,7 +300,7 @@ ${dishSalesStats.map((d, i) => `${i + 1}. ${d.menuItem.name}: ${d.qty} plates = 
                           <td className="py-2 font-bold text-white font-sans">{dish.menuItem.name}</td>
                           <td className="py-2 text-gray-400 capitalize">{dish.categories}</td>
                           <td className="py-2 text-center text-brand-gold font-bold">{dish.qty} pcs</td>
-                          <td className="py-2 text-right text-green-400 font-bold">₱{dish.totalRev.toFixed(2)}</td>
+                          <td className="py-2 text-right text-green-400 font-bold">₱{(dish.totalRev ?? 0).toFixed(2)}</td>
                           <td className="py-2 text-right text-gray-400">{share.toFixed(1)}%</td>
                         </tr>
                       );
@@ -389,7 +389,7 @@ ${dishSalesStats.map((d, i) => `${i + 1}. ${d.menuItem.name}: ${d.qty} plates = 
 
                     <div className="flex items-center gap-3 justify-between sm:justify-end shrink-0 border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0">
                       <span className="font-mono font-extrabold text-brand-gold text-sm">
-                        ₱{o.totalAmount.toFixed(2)}
+                        ₱{(o.totalAmount ?? 0).toFixed(2)}
                       </span>
 
                       <button
@@ -609,7 +609,7 @@ Gross Food Margin:     ${grossFoodMargin.toFixed(1)}%
 INGREDIENT CONSUMPTION & CURRENT STOCK LEVELS:
 ${stockAuditList.map((item, i) => {
   const curStock = item.invStock ? `${item.invStock.quantity}${item.invStock.unit}` : 'Not in inventory';
-  return `${i + 1}. ${item.name}: Consumed ${item.consumedAmount.toFixed(1)} ${item.unit} | Cost: ₱${item.estimatedCost.toFixed(2)} | Current In-Stock: ${curStock}`;
+  return `${i + 1}. ${item.name}: Consumed ${((item.consumedAmount ?? 0)).toFixed(1)} ${item.unit} | Cost: ₱${(item.estimatedCost ?? 0).toFixed(2)} | Current In-Stock: ${curStock}`;
 }).join('\n')}
 ===========================================`;
 
@@ -780,11 +780,11 @@ ${stockAuditList.map((item, i) => {
                             )}
                           </td>
                           <td className="p-3 text-center text-brand-gold font-bold">
-                            {item.consumedAmount.toFixed(1)} {item.unit}
+                            {((item.consumedAmount ?? 0)).toFixed(1)} {item.unit}
                           </td>
                           <td className="p-3 text-right text-gray-300 font-bold">
                             <div className="flex items-center justify-end gap-1">
-                              <span>₱{item.estimatedCost.toFixed(2)}</span>
+                              <span>₱{(item.estimatedCost ?? 0).toFixed(2)}</span>
                               {item.isFifoCosted && (
                                 <span className="text-[8px] bg-brand-gold/15 text-brand-gold border border-brand-gold/30 px-1 py-0.2 rounded font-mono font-bold" title="Accurately costed from actual FIFO purchase batches">
                                   FIFO

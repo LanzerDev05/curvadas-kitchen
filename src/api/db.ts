@@ -58,6 +58,7 @@ export interface DatabaseSchema {
     rentBaseRate: number;
     laborBaseRate: number;
     gasBaseRate: number;
+    deliveryGasBaseRate: number;
     otherBaseRate: number;
     targetSalesDay: number;
     targetSalesWeek: number;
@@ -76,13 +77,14 @@ export interface DatabaseSchema {
       rentBaseRate: number;
       laborBaseRate: number;
       gasBaseRate: number;
+      deliveryGasBaseRate: number;
       otherBaseRate: number;
     }>;
   };
 }
 
 // Generate the initial seed database (Includes standard default dishes, ingredients & stock levels)
-const generateDefaultDB = (): DatabaseSchema => {
+export const generateDefaultDB = (): DatabaseSchema => {
   const seedUsers: UserAccount[] = [
     {
       id: 'usr-lanzer',
@@ -187,6 +189,7 @@ const generateDefaultDB = (): DatabaseSchema => {
       rentBaseRate: 300,
       laborBaseRate: 450,
       gasBaseRate: 80,
+      deliveryGasBaseRate: 60,
       otherBaseRate: 50,
       targetSalesDay: 3500,
       targetSalesWeek: 24500,

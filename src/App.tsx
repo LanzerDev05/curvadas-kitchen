@@ -881,6 +881,13 @@ function AppContent() {
       
       if (data.menuItems) setMenuItems(prev => JSON.stringify(prev) !== JSON.stringify(data.menuItems) ? data.menuItems : prev);
       if (data.ingredientsInventory) setIngredientsInventory(prev => JSON.stringify(prev) !== JSON.stringify(data.ingredientsInventory) ? data.ingredientsInventory : prev);
+      if (data.stockBatches) {
+        setStockBatches(prev => JSON.stringify(prev) !== JSON.stringify(data.stockBatches) ? data.stockBatches : prev);
+        localStorage.setItem('curvada_stock_batches', JSON.stringify(data.stockBatches));
+      }
+      if (data.templates && Array.isArray(data.templates) && data.templates.length > 0) {
+        localStorage.setItem('curvada_saved_recipe_templates', JSON.stringify(data.templates));
+      }
       if (data.stockLevels) setStockLevels(prev => JSON.stringify(prev) !== JSON.stringify(data.stockLevels) ? data.stockLevels : prev);
       if (data.manualStockOverrides) setManualStockOverrides(prev => JSON.stringify(prev) !== JSON.stringify(data.manualStockOverrides) ? data.manualStockOverrides : prev);
       if (data.hiddenCategories) setHiddenCategories(prev => JSON.stringify(prev) !== JSON.stringify(data.hiddenCategories) ? data.hiddenCategories : prev);
@@ -2118,8 +2125,16 @@ function AppContent() {
       });
       if (res.ok) {
         const data = await res.json();
-        setMenuItems(data.db.menuItems);
-        setStockLevels(data.db.stockLevels);
+        if (data.db?.menuItems) {
+          setMenuItems(data.db.menuItems);
+        } else if (data.menuItems) {
+          setMenuItems(data.menuItems);
+        } else if (data.menuItem) {
+          setMenuItems((prev) => prev.map((item) => item.id === data.menuItem.id ? data.menuItem : item));
+        }
+        if (data.db?.stockLevels) {
+          setStockLevels(data.db.stockLevels);
+        }
       }
     } catch (e) {
       console.error("Failed to sync new menu item to server", e);
@@ -2142,7 +2157,13 @@ function AppContent() {
       });
       if (res.ok) {
         const data = await res.json();
-        setMenuItems(data.db.menuItems);
+        if (data.db?.menuItems) {
+          setMenuItems(data.db.menuItems);
+        } else if (data.menuItems) {
+          setMenuItems(data.menuItems);
+        } else if (data.menuItem) {
+          setMenuItems((prev) => prev.map((item) => item.id === data.menuItem.id ? data.menuItem : item));
+        }
       }
     } catch (e) {
       console.error("Failed to sync edited menu item to server", e);

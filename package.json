@@ -17,6 +17,7 @@
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
+    "reset-data": "tsx scripts/reset-curvada-data.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

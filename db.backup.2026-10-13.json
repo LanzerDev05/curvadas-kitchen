@@ -1,0 +1,575 @@
+{
+  "menuItems": [
+    {
+      "id": "silog-wt5s6v",
+      "name": "Chicken Poppers",
+      "description": "Chicken Poppers",
+      "price": 89,
+      "category": "silog",
+      "image": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600",
+      "spicy": false,
+      "popular": true,
+      "isAvailable": true,
+      "ingredients": [
+        "Chicken Breast",
+        "Rice",
+        "Paper Container"
+      ],
+      "recipeRequirements": [
+        {
+          "name": "Egg",
+          "amount": 1
+        },
+        {
+          "name": "Chicken Breast",
+          "amount": 80
+        },
+        {
+          "name": "Rice",
+          "amount": 200
+        },
+        {
+          "name": "Paper Container",
+          "amount": 1
+        }
+      ],
+      "customizableOptions": [
+        {
+          "title": "Rice",
+          "choices": [
+            {
+              "id": "ch-p8xn",
+              "name": "Garlic Rice",
+              "price": 0
+            },
+            {
+              "id": "ch-hkis",
+              "name": "Plain Rice",
+              "price": 0
+            },
+            {
+              "id": "ch-qq1b",
+              "name": "Java Rice",
+              "price": 25
+            },
+            {
+              "id": "rice-extra",
+              "name": "Extra Rice",
+              "price": 15
+            }
+          ]
+        }
+      ],
+      "targetMarginPercent": 54,
+      "utilityOverhead": {
+        "electricity": 3,
+        "gas": 2.5,
+        "water": 1,
+        "packaging": 0
+      }
+    }
+  ],
+  "ingredientsInventory": [
+    {
+      "id": "ing-new-o6yj",
+      "name": "Egg",
+      "quantity": 112,
+      "unit": "pcs",
+      "lowStockAlert": 20,
+      "costPerUnit": 8
+    },
+    {
+      "id": "ing-new-keyk",
+      "name": "Chicken Breast",
+      "quantity": 100.36,
+      "unit": "kg",
+      "lowStockAlert": 20,
+      "costPerUnit": 170
+    },
+    {
+      "id": "ing-new-rjtu",
+      "name": "Rice",
+      "quantity": 23.4,
+      "unit": "kg",
+      "lowStockAlert": 1,
+      "costPerUnit": 52
+    },
+    {
+      "id": "ing-new-fnsr",
+      "name": "Paper Container",
+      "quantity": 112,
+      "unit": "pcs",
+      "lowStockAlert": 20,
+      "costPerUnit": 9
+    }
+  ],
+  "stockLevels": {
+    "silog-wt5s6v": 10
+  },
+  "manualStockOverrides": [],
+  "hiddenCategories": [],
+  "orders": [
+    {
+      "id": "ord-2v332p3hb",
+      "items": [
+        {
+          "id": "silog-wt5s6v-Rice Upgrade-ch-hkis-",
+          "menuItem": {
+            "id": "silog-wt5s6v",
+            "name": "Chicken Poppers",
+            "description": "Chicken Poppers",
+            "price": 89,
+            "category": "silog",
+            "image": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600",
+            "spicy": false,
+            "popular": true,
+            "isAvailable": true,
+            "ingredients": [
+              "Chicken Breast",
+              "Rice",
+              "Paper Container"
+            ],
+            "recipeRequirements": [
+              {
+                "name": "Egg",
+                "amount": 1
+              },
+              {
+                "name": "Chicken Breast",
+                "amount": 80
+              },
+              {
+                "name": "Rice",
+                "amount": 200
+              },
+              {
+                "name": "Paper Container",
+                "amount": 1
+              }
+            ],
+            "customizableOptions": [
+              {
+                "title": "Rice Upgrade",
+                "choices": [
+                  {
+                    "id": "ch-p8xn",
+                    "name": "Garlic Fried Rice",
+                    "price": 0
+                  },
+                  {
+                    "id": "ch-hkis",
+                    "name": "Plain Steamed Rice",
+                    "price": -5
+                  },
+                  {
+                    "id": "ch-qq1b",
+                    "name": "Java Rice",
+                    "price": 25
+                  }
+                ]
+              }
+            ],
+            "targetMarginPercent": 54,
+            "utilityOverhead": {
+              "electricity": 3,
+              "gas": 2.5,
+              "water": 1,
+              "packaging": 0
+            }
+          },
+          "selectedOptions": [
+            {
+              "optionTitle": "Rice Upgrade",
+              "choice": {
+                "id": "ch-hkis",
+                "name": "Plain Steamed Rice",
+                "price": -5
+              }
+            }
+          ],
+          "quantity": 4,
+          "totalUnitPrice": 84
+        }
+      ],
+      "totalAmount": 336,
+      "customer": {
+        "name": "Lanzer Villarlibo",
+        "phone": "0917-882-9382",
+        "email": "lanzer@gmail.com",
+        "address": "Block 3 Lot 15, Springville Homes, Bacoor, Cavite",
+        "orderType": "delivery"
+      },
+      "paymentMethod": "cod",
+      "status": "delivered",
+      "timestamp": "2026-09-11T17:29:06.115Z",
+      "logs": [
+        {
+          "status": "pending",
+          "timestamp": "2026-09-11T17:29:06.115Z",
+          "note": "Your order was successfully placed and transmitted to Curvada Kitchen."
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-09-11T17:29:43.770Z",
+          "note": "Status updated by Chef Kitchen Panel to preparing."
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-09-11T17:29:52.910Z",
+          "note": "Status updated by Chef Kitchen Panel to preparing."
+        },
+        {
+          "status": "dispatched",
+          "timestamp": "2026-09-11T17:32:33.095Z",
+          "note": "Status updated by Chef Kitchen Panel to dispatched."
+        },
+        {
+          "status": "delivered",
+          "timestamp": "2026-09-11T17:32:46.170Z"
+        },
+        {
+          "status": "delivered",
+          "timestamp": "2026-09-11T17:32:46.198Z",
+          "note": "Status updated by Chef Kitchen Panel to delivered."
+        }
+      ],
+      "confirmedItemIds": [
+        "silog-wt5s6v-Rice Upgrade-ch-hkis-"
+      ],
+      "cookingStartTime": "2026-09-11T17:29:52.910Z",
+      "estimatedPrepTime": 3,
+      "cookedItemIds": [
+        "silog-wt5s6v-Rice Upgrade-ch-hkis-"
+      ],
+      "startedItemIds": [
+        "silog-wt5s6v-Rice Upgrade-ch-hkis-"
+      ]
+    },
+    {
+      "id": "ord-644nhprmg",
+      "items": [
+        {
+          "id": "silog-wt5s6v-Rice Upgrade-ch-qq1b-",
+          "menuItem": {
+            "id": "silog-wt5s6v",
+            "name": "Chicken Poppers",
+            "description": "Chicken Poppers",
+            "price": 89,
+            "category": "silog",
+            "image": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600",
+            "spicy": false,
+            "popular": true,
+            "isAvailable": true,
+            "ingredients": [
+              "Chicken Breast",
+              "Rice",
+              "Paper Container"
+            ],
+            "recipeRequirements": [
+              {
+                "name": "Egg",
+                "amount": 1
+              },
+              {
+                "name": "Chicken Breast",
+                "amount": 80
+              },
+              {
+                "name": "Rice",
+                "amount": 200
+              },
+              {
+                "name": "Paper Container",
+                "amount": 1
+              }
+            ],
+            "customizableOptions": [
+              {
+                "title": "Rice Upgrade",
+                "choices": [
+                  {
+                    "id": "ch-p8xn",
+                    "name": "Garlic Fried Rice",
+                    "price": 0
+                  },
+                  {
+                    "id": "ch-hkis",
+                    "name": "Plain Steamed Rice",
+                    "price": -5
+                  },
+                  {
+                    "id": "ch-qq1b",
+                    "name": "Java Rice",
+                    "price": 25
+                  }
+                ]
+              }
+            ],
+            "targetMarginPercent": 54,
+            "utilityOverhead": {
+              "electricity": 3,
+              "gas": 2.5,
+              "water": 1,
+              "packaging": 0
+            }
+          },
+          "selectedOptions": [
+            {
+              "optionTitle": "Rice Upgrade",
+              "choice": {
+                "id": "ch-qq1b",
+                "name": "Java Rice",
+                "price": 25
+              }
+            }
+          ],
+          "quantity": 3,
+          "totalUnitPrice": 114
+        }
+      ],
+      "totalAmount": 342,
+      "customer": {
+        "name": "Lanzer Villarlibo",
+        "phone": "0917-882-9382",
+        "email": "lanzer@gmail.com",
+        "address": "Block 3 Lot 15, Springville Homes, Bacoor, Cavite",
+        "orderType": "delivery"
+      },
+      "paymentMethod": "cod",
+      "status": "delivered",
+      "timestamp": "2026-09-11T17:25:22.367Z",
+      "logs": [
+        {
+          "status": "pending",
+          "timestamp": "2026-09-11T17:25:22.367Z",
+          "note": "Your order was successfully placed and transmitted to Curvada Kitchen."
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-09-11T17:25:31.733Z",
+          "note": "Status updated by Chef Kitchen Panel to preparing."
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-09-11T17:25:41.070Z",
+          "note": "Status updated by Chef Kitchen Panel to preparing."
+        },
+        {
+          "status": "dispatched",
+          "timestamp": "2026-09-11T17:26:34.724Z",
+          "note": "Status updated by Chef Kitchen Panel to dispatched."
+        },
+        {
+          "status": "delivered",
+          "timestamp": "2026-09-11T17:27:46.938Z",
+          "note": "Status updated by Chef Kitchen Panel to delivered."
+        }
+      ],
+      "cookingStartTime": "2026-09-11T17:25:41.070Z",
+      "estimatedPrepTime": 14,
+      "confirmedItemIds": [
+        "silog-wt5s6v-Rice Upgrade-ch-qq1b-"
+      ]
+    },
+    {
+      "id": "ord-orf66jenk",
+      "items": [
+        {
+          "id": "silog-wt5s6v-Rice Upgrade-ch-qq1b-",
+          "menuItem": {
+            "id": "silog-wt5s6v",
+            "name": "Chicken Poppers",
+            "description": "Chicken Poppers",
+            "price": 89,
+            "category": "silog",
+            "image": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600",
+            "spicy": false,
+            "popular": true,
+            "isAvailable": true,
+            "ingredients": [
+              "Chicken Breast",
+              "Rice",
+              "Paper Container"
+            ],
+            "recipeRequirements": [
+              {
+                "name": "Egg",
+                "amount": 1
+              },
+              {
+                "name": "Chicken Breast",
+                "amount": 80
+              },
+              {
+                "name": "Rice",
+                "amount": 200
+              },
+              {
+                "name": "Paper Container",
+                "amount": 1
+              }
+            ],
+            "customizableOptions": [
+              {
+                "title": "Rice Upgrade",
+                "choices": [
+                  {
+                    "id": "ch-p8xn",
+                    "name": "Garlic Fried Rice",
+                    "price": 0
+                  },
+                  {
+                    "id": "ch-hkis",
+                    "name": "Plain Steamed Rice",
+                    "price": -5
+                  },
+                  {
+                    "id": "ch-qq1b",
+                    "name": "Java Rice",
+                    "price": 25
+                  }
+                ]
+              }
+            ],
+            "targetMarginPercent": 54,
+            "utilityOverhead": {
+              "electricity": 3,
+              "gas": 2.5,
+              "water": 1,
+              "packaging": 0
+            }
+          },
+          "selectedOptions": [
+            {
+              "optionTitle": "Rice Upgrade",
+              "choice": {
+                "id": "ch-qq1b",
+                "name": "Java Rice",
+                "price": 25
+              }
+            }
+          ],
+          "quantity": 1,
+          "totalUnitPrice": 114
+        }
+      ],
+      "totalAmount": 114,
+      "customer": {
+        "name": "Lanzer Villarlibo",
+        "phone": "0917-882-9382",
+        "email": "lanzer@gmail.com",
+        "address": "Block 3 Lot 15, Springville Homes, Bacoor, Cavite",
+        "orderType": "delivery"
+      },
+      "paymentMethod": "cod",
+      "status": "delivered",
+      "timestamp": "2026-09-11T17:08:19.083Z",
+      "logs": [
+        {
+          "status": "pending",
+          "timestamp": "2026-09-11T17:08:19.083Z",
+          "note": "Your order was successfully placed and transmitted to Curvada Kitchen."
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-09-11T17:09:17.968Z",
+          "note": "Status updated by Chef Kitchen Panel to preparing."
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-09-11T17:09:27.312Z",
+          "note": "Status updated by Chef Kitchen Panel to preparing."
+        },
+        {
+          "status": "dispatched",
+          "timestamp": "2026-09-11T17:10:34.911Z",
+          "note": "Status updated by Chef Kitchen Panel to dispatched."
+        },
+        {
+          "status": "delivered",
+          "timestamp": "2026-09-11T17:16:47.912Z",
+          "note": "Status updated by Chef Kitchen Panel to delivered."
+        }
+      ],
+      "confirmedItemIds": [
+        "silog-wt5s6v-Rice Upgrade-ch-qq1b-"
+      ],
+      "cookingStartTime": "2026-09-11T17:09:27.312Z",
+      "estimatedPrepTime": 10
+    }
+  ],
+  "groupSessions": [],
+  "users": [
+    {
+      "id": "usr-lanzer",
+      "name": "Lanzer Villarlibo",
+      "email": "lanzer@gmail.com",
+      "phone": "0917-882-9382",
+      "address": "Block 3 Lot 15, Springville Homes, Bacoor, Cavite",
+      "password": "password123",
+      "role": "customer",
+      "createdAt": "2026-09-11T14:31:58.240Z"
+    },
+    {
+      "id": "usr-kitchen-staff",
+      "name": "Kitchen Staff",
+      "email": "kitchen@curvada.com",
+      "phone": "0922-000-0001",
+      "address": "Curvada Kitchen Station 1",
+      "password": "kitchen123",
+      "role": "kitchen",
+      "createdAt": "2026-09-11T14:31:58.240Z"
+    },
+    {
+      "id": "usr-admin",
+      "name": "Curvada Manager",
+      "email": "admin@curvada.com",
+      "phone": "0922-000-0002",
+      "address": "Curvada HQ Cavite",
+      "password": "admin123",
+      "role": "admin",
+      "createdAt": "2026-09-11T14:31:58.240Z"
+    }
+  ],
+  "settings": {
+    "salesPace": 0,
+    "electricityBaseRate": 0,
+    "electricityVariableRate": 0,
+    "waterBaseRate": 0,
+    "rentBaseRate": 0,
+    "laborBaseRate": 0,
+    "gasBaseRate": 0,
+    "otherBaseRate": 0,
+    "targetSalesDay": 0,
+    "targetSalesWeek": 0,
+    "targetSalesMonth": 0,
+    "targetSalesYear": 0,
+    "targetProfitDay": 0,
+    "targetProfitWeek": 0,
+    "targetProfitMonth": 0,
+    "targetProfitYear": 0,
+    "financesPeriod": "day",
+    "expenseInputMode": "monthly"
+  },
+  "promoVouchers": [
+    {
+      "id": "vch-10",
+      "code": "WELCOME10",
+      "discountType": "percentage",
+      "discountValue": 10,
+      "minSpend": 200,
+      "isActive": true
+    },
+    {
+      "id": "vch-50",
+      "code": "CURVADA50",
+      "discountType": "fixed",
+      "discountValue": 50,
+      "minSpend": 350,
+      "isActive": true
+    }
+  ],
+  "spoilageLogs": [],
+  "staffShifts": [],
+  "zReadAudits": []
+}

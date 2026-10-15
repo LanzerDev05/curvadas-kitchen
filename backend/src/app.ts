@@ -48,7 +48,17 @@ export const createApp = (): Express => {
   legacyApi.use('/vouchers', container.promoRoutes);
   legacyApi.use('/settings', container.settingsRoutes);
   legacyApi.use('/shifts', container.staffRoutes);
+
+  // Direct legacy endpoint mappings
   legacyApi.get('/db', container.settingsController.getFullDatabaseSnapshot);
+  legacyApi.post('/stock/update', container.settingsController.updateStock);
+  legacyApi.get('/batches', container.inventoryController.getAllBatches);
+  legacyApi.post('/batches/update', container.inventoryController.updateBatches);
+  legacyApi.post('/batches', container.inventoryController.createBatch);
+  legacyApi.get('/templates', container.menuController.getAllTemplates);
+  legacyApi.post('/templates', container.menuController.saveTemplates);
+  legacyApi.post('/templates/update', container.menuController.saveTemplates);
+  legacyApi.delete('/templates/:id', container.menuController.deleteTemplate);
   legacyApi.post('/zread', container.posController.createZRead);
   legacyApi.post('/spoilage', container.inventoryController.logSpoilage);
 

@@ -1122,7 +1122,7 @@ ${squeezedDishes.length > 0
                   >
                     {menuItems.map(item => (
                       <option key={item.id} value={item.id}>
-                        {item.name} — ₱{item.price.toFixed(2)} ({item.category.toUpperCase()})
+                        {item.name} — ₱{(item.price ?? 0).toFixed(2)} ({item.category.toUpperCase()})
                       </option>
                     ))}
                   </select>
@@ -1133,21 +1133,21 @@ ${squeezedDishes.length > 0
                     <div className="bg-[#121211] p-3 rounded-xl border border-white/5 text-right">
                       <span className="text-[10px] text-gray-400 block uppercase font-bold">Selling Price</span>
                       <span className="font-mono font-extrabold text-white text-base">
-                        ₱{menuItems.find(m => m.id === selectedDishId)?.price.toFixed(2)}
+                        ₱{(menuItems.find(m => m.id === selectedDishId)?.price ?? 0).toFixed(2)}
                       </span>
                     </div>
 
                     <div className="bg-[#121211] p-3 rounded-xl border border-white/5 text-right">
                       <span className="text-[10px] text-gray-400 block uppercase font-bold">Actual FIFO Cost</span>
                       <span className="font-mono font-extrabold text-brand-red text-base">
-                        ₱{selectedDishSimulation.totalCost.toFixed(2)}
+                        ₱{(selectedDishSimulation.totalCost ?? 0).toFixed(2)}
                       </span>
                     </div>
 
                     <div className="bg-[#121211] p-3 rounded-xl border border-white/5 text-right">
                       <span className="text-[10px] text-gray-400 block uppercase font-bold">Profit Margin</span>
                       <span className={`font-mono font-extrabold text-base ${selectedDishSimulation.isMarginSqueezed ? 'text-amber-400' : 'text-emerald-400'}`}>
-                        {selectedDishSimulation.marginPercent}% (₱{selectedDishSimulation.profit.toFixed(2)})
+                        {(selectedDishSimulation.marginPercent ?? 0)}% (₱{(selectedDishSimulation.profit ?? 0).toFixed(2)})
                       </span>
                     </div>
                   </div>
@@ -1160,7 +1160,7 @@ ${squeezedDishes.length > 0
                   <AlertCircle className="w-5 h-5 shrink-0 text-amber-400" />
                   <div>
                     <strong>Margin Squeeze Alert:</strong> The current active FIFO stock batches have increased this dish's raw cost by <strong>{selectedDishSimulation.costVariancePercent}%</strong> compared to base rates. 
-                    Target profit margin is <strong>{menuItems.find(m => m.id === selectedDishId)?.targetMarginPercent || 50}%</strong>, but current margin is <strong>{selectedDishSimulation.marginPercent}%</strong>.
+                    Target profit margin is <strong>{menuItems.find(m => m.id === selectedDishId)?.targetMarginPercent ?? 50}%</strong>, but current margin is <strong>{(selectedDishSimulation.marginPercent ?? 0)}%</strong>.
                   </div>
                 </div>
               )}
@@ -1183,7 +1183,7 @@ ${squeezedDishes.length > 0
                             </span>
                           </div>
                           <span className="font-mono font-bold text-brand-gold text-xs">
-                            Line Total: ₱{layer.totalIngredientCost.toFixed(2)}
+                            Line Total: ₱{(layer.totalIngredientCost ?? 0).toFixed(2)}
                           </span>
                         </div>
 
@@ -1196,7 +1196,7 @@ ${squeezedDishes.length > 0
                                 <span className="text-gray-500">(Recv: {bLayer.receivedDate})</span>
                               </span>
                               <span className="font-mono">
-                                {bLayer.quantityUsed} {layer.unit} @ ₱{bLayer.costPerUnit.toFixed(4)}/{layer.unit} = <strong>₱{bLayer.layerCost.toFixed(2)}</strong>
+                                {bLayer.quantityUsed} {layer.unit} @ ₱{(bLayer.costPerUnit ?? 0).toFixed(4)}/{layer.unit} = <strong>₱{(bLayer.layerCost ?? 0).toFixed(2)}</strong>
                               </span>
                             </div>
                           ))}
@@ -1359,7 +1359,7 @@ ${squeezedDishes.length > 0
                         </div>
                         <div className="text-right font-mono">
                           <span className="text-gray-400 text-[10px] block">{rec.amount} {rec.unit}</span>
-                          <span className="text-brand-red font-bold">₱{rec.cost.toFixed(2)}</span>
+                          <span className="text-brand-red font-bold">₱{(rec.cost ?? 0).toFixed(2)}</span>
                         </div>
                       </div>
                     ))}

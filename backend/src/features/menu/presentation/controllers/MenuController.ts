@@ -64,4 +64,33 @@ export class MenuController {
       next(err);
     }
   };
+
+  getAllTemplates = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const templates = await this.menuUseCases.getAllTemplates();
+      res.status(200).json({ success: true, count: templates.length, templates });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  saveTemplates = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const templates = req.body.templates || req.body.savedRecipeTemplates || (Array.isArray(req.body) ? req.body : [req.body.template || req.body]);
+      const saved = await this.menuUseCases.saveTemplates(templates);
+      res.status(200).json({ success: true, count: saved.length, templates: saved });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  deleteTemplate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = req.params.id || req.body.templateId || req.body.id;
+      const result = await this.menuUseCases.deleteTemplate(id);
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  };
 }

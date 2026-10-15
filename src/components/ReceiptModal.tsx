@@ -266,11 +266,11 @@ export default function ReceiptModal({
                   <div className="space-y-1 text-xs pt-1">
                     <div className="flex justify-between">
                       <span>Subtotal</span>
-                      <span>₱{order.totalAmount.toFixed(2)}</span>
+                      <span>₱{(order.totalAmount ?? 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between font-black text-sm pt-1 border-t border-gray-300">
                       <span>TOTAL DUE</span>
-                      <span>₱{order.totalAmount.toFixed(2)}</span>
+                      <span>₱{(order.totalAmount ?? 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-[10px] text-gray-600 pt-1">
                       <span>Payment Method</span>
@@ -280,7 +280,7 @@ export default function ReceiptModal({
                       <>
                         <div className="flex justify-between text-[10px] text-gray-600">
                           <span>Amount Given (Cash)</span>
-                          <span className="font-mono font-bold">₱{order.amountTendered.toFixed(2)}</span>
+                          <span className="font-mono font-bold">₱{(order.amountTendered ?? 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-[10px] text-gray-800 font-bold bg-amber-50 px-1 py-0.5 rounded">
                           <span>Change Due</span>

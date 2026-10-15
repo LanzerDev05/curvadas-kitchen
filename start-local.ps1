@@ -1,14 +1,14 @@
 # ==============================================================================
 # Curvada's Kitchen - Localhost BE & FE Startup Script
 # ==============================================================================
-# Starts Standalone Backend (Port 5000) & Vite Frontend Web App (Port 3000)
+# Starts Standalone Backend (Port 5050) & Vite Frontend Web App (Port 3000)
 # ==============================================================================
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "   Curvada's Kitchen - Launching Local Development" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "   Backend API & WS: http://localhost:5000" -ForegroundColor Yellow
+Write-Host "   Backend API & WS: http://localhost:5050" -ForegroundColor Yellow
 Write-Host "   Frontend Web App: http://localhost:3000" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host ""

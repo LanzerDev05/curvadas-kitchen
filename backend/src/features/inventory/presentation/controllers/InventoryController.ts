@@ -65,8 +65,18 @@ export class InventoryController {
 
   updateBatches = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const batches = req.body.stockBatches || req.body;
+      const batches = req.body.stockBatches || req.body.batches || (Array.isArray(req.body) ? req.body : []);
       const result = await this.inventoryUseCases.updateBatches(batches);
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  updateInventory = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const ingredients = req.body.ingredientsInventory || req.body.ingredients || (Array.isArray(req.body) ? req.body : []);
+      const result = await this.inventoryUseCases.updateInventory(ingredients);
       res.status(200).json(result);
     } catch (err) {
       next(err);

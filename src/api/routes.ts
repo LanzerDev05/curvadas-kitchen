@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Router, Request, Response } from 'express';
-import { readDB, writeDB, DatabaseSchema } from './db';
+import { readDB, writeDB, DatabaseSchema, generateDefaultDB } from './db';
 import { Order, OrderStatus, MenuItem, IngredientStock, GroupOrderSession, GroupCartItem, UserAccount, PromoVoucher, SpoilageRecord, StaffShift, ZReadAudit } from '../types';
 
 export const apiRouter = Router();
@@ -63,6 +63,17 @@ apiRouter.post('/db/sync-from-remote', async (req: Request, res: Response) => {
     res.json({ success: true, message: `Successfully synced database from ${cleanUrl}`, db: remoteData });
   } catch (err: any) {
     res.status(500).json({ error: `Sync failed: ${err.message}` });
+  }
+});
+
+// 1d. Reset database to default seed state
+apiRouter.post('/db/reset', async (req: Request, res: Response) => {
+  try {
+    const defaultDB = generateDefaultDB();
+    await writeDB(defaultDB);
+    res.json({ success: true, message: 'Database successfully reset to clean factory defaults', db: defaultDB });
+  } catch (err: any) {
+    res.status(500).json({ error: `Reset failed: ${err.message}` });
   }
 });
 
@@ -286,7 +297,14 @@ apiRouter.post('/menu/add', async (req: Request, res: Response) => {
     }
 
     const db = await readDB();
-    db.menuItems = [...db.menuItems, menuItem];
+    const existingIndex = db.menuItems.findIndex((item: MenuItem) => 
+      item.id === menuItem.id || (item as any)._id === menuItem.id || (menuItem.customId && item.customId === menuItem.customId)
+    );
+    if (existingIndex >= 0) {
+      db.menuItems[existingIndex] = menuItem;
+    } else {
+      db.menuItems.push(menuItem);
+    }
     if (stockLevels) {
       db.stockLevels = stockLevels;
     }
@@ -308,9 +326,14 @@ apiRouter.post('/menu/edit', async (req: Request, res: Response) => {
     }
 
     const db = await readDB();
-    db.menuItems = db.menuItems.map((item: MenuItem) => 
-      item.id === menuItem.id ? menuItem : item
+    const existingIndex = db.menuItems.findIndex((item: MenuItem) => 
+      item.id === menuItem.id || (item as any)._id === menuItem.id || (menuItem.customId && item.customId === menuItem.customId)
     );
+    if (existingIndex >= 0) {
+      db.menuItems[existingIndex] = menuItem;
+    } else {
+      db.menuItems.push(menuItem);
+    }
 
     await writeDB(db);
     res.json({ success: true, db });
@@ -553,6 +576,7 @@ apiRouter.post('/reset', async (req: Request, res: Response) => {
         rentBaseRate: 0,
         laborBaseRate: 0,
         gasBaseRate: 0,
+        deliveryGasBaseRate: 0,
         otherBaseRate: 0,
         targetSalesDay: 0,
         targetSalesWeek: 0,
@@ -899,6 +923,54 @@ apiRouter.post('/zread', async (req: Request, res: Response) => {
     await writeDB(db);
 
     res.json({ success: true, audit, db });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 29. Recipe Templates
+apiRouter.get('/templates', async (req: Request, res: Response) => {
+  try {
+    const db = await readDB();
+    const templates = (db as any).recipeTemplates || [];
+    res.json({ success: true, count: templates.length, templates });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/templates', async (req: Request, res: Response) => {
+  try {
+    const db = await readDB();
+    const templates = req.body.templates || req.body.savedRecipeTemplates || (Array.isArray(req.body) ? req.body : [req.body.template || req.body]);
+    (db as any).recipeTemplates = templates;
+    await writeDB(db);
+    res.json({ success: true, count: templates.length, templates });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/templates/update', async (req: Request, res: Response) => {
+  try {
+    const db = await readDB();
+    const templates = req.body.templates || req.body.savedRecipeTemplates || (Array.isArray(req.body) ? req.body : [req.body.template || req.body]);
+    (db as any).recipeTemplates = templates;
+    await writeDB(db);
+    res.json({ success: true, count: templates.length, templates });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.delete('/templates/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = await readDB();
+    const current = (db as any).recipeTemplates || [];
+    (db as any).recipeTemplates = current.filter((t: any) => t.id !== id && t.customId !== id);
+    await writeDB(db);
+    res.json({ success: true, message: 'Template deleted' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -270,7 +270,7 @@ export default function MenuSection({
                   {/* Price & Action button */}
                   <div className="flex items-center justify-between mt-4 pt-4 border-t-2 border-white/5">
                     <span className="text-brand-gold font-display font-extrabold text-lg">
-                      ₱{item.price.toFixed(2)}
+                      ₱{(item.price ?? 0).toFixed(2)}
                     </span>
                     
                     {!isUnavailable ? (

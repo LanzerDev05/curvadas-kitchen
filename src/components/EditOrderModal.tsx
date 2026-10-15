@@ -421,7 +421,7 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
                     >
                       {menuItems.map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.name} (₱{m.price.toFixed(2)}) - {m.category}
+                          {m.name} (₱{(m.price ?? 0).toFixed(2)}) - {m.category}
                         </option>
                       ))}
                     </select>

@@ -82,6 +82,7 @@ export interface MenuOption {
 
 export interface MenuItem {
   id: string;
+  customId?: string;
   name: string;
   description: string;
   price: number;

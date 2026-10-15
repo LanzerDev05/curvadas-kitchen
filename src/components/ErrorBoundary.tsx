@@ -15,6 +15,13 @@ export class ErrorBoundary extends Component<Props, State> {
     error: null,
   };
 
+  declare props: Props;
+
+  constructor(props: Props) {
+    super(props);
+    this.props = props;
+  }
+
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
@@ -47,8 +54,13 @@ export class ErrorBoundary extends Component<Props, State> {
               </p>
             </div>
             {this.state.error?.message && (
-              <div className="bg-black/40 rounded-xl p-3 text-left font-mono text-[11px] text-red-400 max-h-28 overflow-y-auto border border-white/5">
-                {this.state.error.message}
+              <div className="bg-black/60 rounded-xl p-3 text-left font-mono text-[11px] text-red-400 max-h-48 overflow-y-auto border border-white/10 space-y-1">
+                <div className="font-bold text-red-300">{this.state.error.message}</div>
+                {this.state.error.stack && (
+                  <pre className="text-[9px] text-gray-400 whitespace-pre-wrap leading-tight mt-1 border-t border-white/10 pt-1">
+                    {this.state.error.stack}
+                  </pre>
+                )}
               </div>
             )}
             <div className="flex flex-col gap-3 pt-2">

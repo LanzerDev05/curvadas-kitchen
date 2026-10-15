@@ -135,3 +135,93 @@ const MenuItemSchema = new Schema<IMenuItemDocument>(
 );
 
 export const MenuItemModel = mongoose.model<IMenuItemDocument>('MenuItem', MenuItemSchema);
+
+export interface IRecipeTemplateDocument extends Document {
+  customId: string;
+  name: string;
+  category?: string;
+  description?: string;
+  batchYieldUnit: string;
+  servingSizeUnit: string;
+  servingSizeGrams: number;
+  batchYieldGrams: number;
+  targetMargin: number;
+  includeRice: boolean;
+  ricePortionGrams: number;
+  riceCostPerGram: number;
+  includeGarnishes: boolean;
+  garnishes: Array<{
+    name: string;
+    amount: number;
+    unit: string;
+    costPerUnit: number;
+    selected: boolean;
+  }>;
+  includePackaging: boolean;
+  packaging: Array<{
+    name: string;
+    amount: number;
+    unit: string;
+    costPerUnit: number;
+    selected: boolean;
+  }>;
+  ingredients: Array<{
+    name: string;
+    batchAmount: number;
+    unit: string;
+    cost?: number;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const RecipeTemplateSchema = new Schema<IRecipeTemplateDocument>(
+  {
+    customId: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true, trim: true },
+    category: String,
+    description: String,
+    batchYieldUnit: { type: String, default: 'g' },
+    servingSizeUnit: { type: String, default: 'g' },
+    servingSizeGrams: { type: Number, default: 90 },
+    batchYieldGrams: { type: Number, default: 2000 },
+    targetMargin: { type: Number, default: 50 },
+    includeRice: { type: Boolean, default: true },
+    ricePortionGrams: { type: Number, default: 150 },
+    riceCostPerGram: { type: Number, default: 0.04 },
+    includeGarnishes: { type: Boolean, default: false },
+    garnishes: [
+      {
+        name: String,
+        amount: Number,
+        unit: String,
+        costPerUnit: Number,
+        selected: Boolean,
+      },
+    ],
+    includePackaging: { type: Boolean, default: false },
+    packaging: [
+      {
+        name: String,
+        amount: Number,
+        unit: String,
+        costPerUnit: Number,
+        selected: Boolean,
+      },
+    ],
+    ingredients: [
+      {
+        name: String,
+        batchAmount: Number,
+        unit: String,
+        cost: Number,
+      },
+    ],
+  },
+  {
+    timestamps: true,
+  }
+);
+
+export const RecipeTemplateModel = mongoose.model<IRecipeTemplateDocument>('RecipeTemplate', RecipeTemplateSchema);
+

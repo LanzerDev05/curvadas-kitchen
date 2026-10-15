@@ -180,7 +180,7 @@ export default function CustomizeModal({
               {item.name}
             </h3>
             <p className="text-brand-gold text-xs drop-shadow-sm mt-0.5 font-bold">
-              Base Price: ₱{item.price.toFixed(2)}
+              Base Price: ₱{(item.price ?? 0).toFixed(2)}
             </p>
           </div>
         </div>

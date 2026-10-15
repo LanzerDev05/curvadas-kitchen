@@ -1,4 +1,4 @@
-import { MenuItemModel, IMenuItemDocument } from '../models/MenuItemModel';
+import { MenuItemModel, IMenuItemDocument, RecipeTemplateModel, IRecipeTemplateDocument } from '../models/MenuItemModel';
 import { MenuItem } from '../../domain/entities/MenuItem';
 
 export class MenuRepository {
@@ -27,10 +27,15 @@ export class MenuRepository {
   }
 
   async update(id: string, item: Partial<MenuItem>): Promise<IMenuItemDocument | null> {
+    const query: any[] = [];
+    if (id && typeof id === 'string' && id.match(/^[0-9a-fA-F]{24}$/)) query.push({ _id: id });
+    if (id) query.push({ customId: id });
+    if (item.name) query.push({ name: new RegExp(`^${item.name.trim()}$`, 'i') });
+
     return MenuItemModel.findOneAndUpdate(
-      { $or: [{ _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }, { customId: id }] },
-      { $set: item },
-      { new: true }
+      query.length > 0 ? { $or: query } : { customId: id },
+      { $set: { ...item, customId: id || item.id || `dish-${Date.now()}` } },
+      { new: true, upsert: true }
     );
   }
 
@@ -48,4 +53,48 @@ export class MenuRepository {
       { new: true }
     );
   }
+
+  // --- Recipe Templates Persistence ---
+  async findAllTemplates(): Promise<any[]> {
+    const docs = await RecipeTemplateModel.find().sort({ name: 1 });
+    return docs.map((doc) => {
+      const obj = doc.toObject ? doc.toObject() : doc;
+      const validId = (obj.customId && obj.customId !== 'undefined') ? obj.customId : `template-${obj._id}`;
+      return {
+        ...obj,
+        id: validId,
+        customId: validId,
+      };
+    });
+  }
+
+  async saveTemplates(templates: any[]): Promise<any[]> {
+    const results: any[] = [];
+    for (const tmpl of templates) {
+      if (!tmpl) continue;
+      const rawId = tmpl.id || tmpl.customId;
+      const validId = (rawId && rawId !== 'undefined') ? rawId : `template-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const cleanName = (tmpl.name || '').trim();
+      if (!cleanName) continue;
+
+      const saved = await RecipeTemplateModel.findOneAndUpdate(
+        { $or: [{ customId: validId }, { name: new RegExp(`^${cleanName}$`, 'i') }] },
+        { $set: { ...tmpl, customId: validId, id: validId } },
+        { upsert: true, new: true }
+      );
+      if (saved) {
+        const obj = saved.toObject ? saved.toObject() : saved;
+        results.push({ ...obj, id: obj.customId || String(obj._id) });
+      }
+    }
+    return results;
+  }
+
+  async deleteTemplate(id: string): Promise<boolean> {
+    const res = await RecipeTemplateModel.findOneAndDelete({
+      $or: [{ _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }, { customId: id }],
+    });
+    return !!res;
+  }
 }
+

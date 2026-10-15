@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
   dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
   const env = loadEnv(mode, process.cwd(), '');
-  const rawTarget = env.VITE_BACKEND_URL || env.DEPLOYED_BACKEND_URL || process.env.VITE_BACKEND_URL || process.env.DEPLOYED_BACKEND_URL;
+  const rawTarget = env.VITE_BACKEND_URL || env.DEPLOYED_BACKEND_URL;
   const backendTarget = rawTarget && rawTarget.trim().startsWith('http') && !rawTarget.includes('YOUR_DEPLOYED_URL') ? rawTarget.trim() : null;
 
   return {
@@ -20,25 +20,25 @@ export default defineConfig(({ mode }) => {
       // Only mount the local Express API middleware if NOT proxying to a deployed backend
       ...(!backendTarget ? [{
         name: 'api-server',
-        configureServer(server: any) {
-          server.middlewares.use(async (req: any, res: any, next: any) => {
-            if (req.url && req.url.startsWith('/api')) {
-              try {
-                const express = await import('express');
-                const { apiRouter } = await import('./src/api/routes');
-                const app = express.default();
-                app.use(express.default.json({ limit: '50mb' }));
-                app.use(express.default.urlencoded({ limit: '50mb', extended: true }));
-                app.use('/api', apiRouter);
-                app(req as any, res as any, next);
-              } catch (err) {
-                console.error('API middleware error:', err);
-                next(err);
+        async configureServer(server: any) {
+          try {
+            const express = (await import('express')).default;
+            const { apiRouter } = await import('./src/api/routes');
+            const app = express();
+            app.use(express.json({ limit: '50mb' }));
+            app.use(express.urlencoded({ limit: '50mb', extended: true }));
+            app.use('/api', apiRouter);
+
+            server.middlewares.use((req: any, res: any, next: any) => {
+              if (req.url && req.url.startsWith('/api')) {
+                app(req, res, next);
+              } else {
+                next();
               }
-            } else {
-              next();
-            }
-          });
+            });
+          } catch (err) {
+            console.error('Failed to initialize api-server in Vite:', err);
+          }
         }
       }] : [])
     ],

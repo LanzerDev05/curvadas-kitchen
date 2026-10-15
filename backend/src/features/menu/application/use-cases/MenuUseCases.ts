@@ -80,4 +80,31 @@ export class MenuUseCases {
 
     return updated;
   }
+
+  // --- Recipe Templates ---
+  async getAllTemplates() {
+    return this.menuRepo.findAllTemplates();
+  }
+
+  async saveTemplates(templates: any[]) {
+    const saved = await this.menuRepo.saveTemplates(templates);
+    wsGateway.broadcast({
+      type: 'TEMPLATES_UPDATED',
+      count: saved.length,
+    });
+    return saved;
+  }
+
+  async deleteTemplate(id: string) {
+    const deleted = await this.menuRepo.deleteTemplate(id);
+    if (!deleted) {
+      throw AppError.notFound('Recipe template not found');
+    }
+    wsGateway.broadcast({
+      type: 'TEMPLATES_UPDATED',
+      action: 'DELETE',
+      templateId: id,
+    });
+    return { success: true, message: 'Recipe template deleted successfully' };
+  }
 }

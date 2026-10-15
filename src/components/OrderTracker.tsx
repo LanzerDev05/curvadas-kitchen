@@ -619,7 +619,7 @@ function OrderTracker({
           <div className="flex justify-between items-center pt-3 border-t-2 border-white/5 font-bold">
             <span className="text-white text-xs font-bold uppercase">Grand Total</span>
             <span className="text-brand-gold font-display font-black text-lg">
-              ₱{totalAmount.toFixed(2)}
+              ₱{(totalAmount ?? 0).toFixed(2)}
             </span>
           </div>
         </div>

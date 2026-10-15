@@ -12,6 +12,10 @@ export class WebSocketGateway {
   public init(server: HttpServer): void {
     this.wss = new WebSocketServer({ server, path: '/ws' });
 
+    this.wss.on('error', (err: any) => {
+      // Gracefully prevent unhandled WebSocketServer crash on port collision
+    });
+
     this.wss.on('connection', (ws: WebSocketClient) => {
       ws.rooms = new Set<string>();
       ws.isAlive = true;
@@ -94,6 +98,15 @@ export class WebSocketGateway {
         client.send(data);
       }
     });
+  }
+
+  public close(): void {
+    if (this.wss) {
+      try {
+        this.wss.close();
+      } catch (_) {}
+      this.wss = null;
+    }
   }
 }
 

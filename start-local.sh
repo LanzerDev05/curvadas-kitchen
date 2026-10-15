@@ -10,7 +10,7 @@ cd "$DIR"
 echo "=========================================================="
 echo "   Curvada's Kitchen - Launching Local Development"
 echo "=========================================================="
-echo "   Backend API & WS: http://localhost:5000"
+echo "   Backend API & WS: http://localhost:5050"
 echo "   Frontend Web App: http://localhost:3000"
 echo "=========================================================="
 
